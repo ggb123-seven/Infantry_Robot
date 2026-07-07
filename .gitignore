@@ -1,0 +1,40 @@
+# Keil MDK user-local files
+*.uvguix.*
+*.uvgui.*
+*.uvopt
+*.uvoptx
+
+# Keil MDK build outputs
+MDK-ARM/Infantry_Robot/
+MDK-ARM/Objects/
+MDK-ARM/Listings/
+MDK-ARM/*.lst
+MDK-ARM/*.map
+MDK-ARM/*.axf
+MDK-ARM/*.elf
+MDK-ARM/*.hex
+MDK-ARM/*.bin
+MDK-ARM/*.htm
+MDK-ARM/*.lnp
+MDK-ARM/*.dep
+MDK-ARM/*.crf
+MDK-ARM/*.d
+MDK-ARM/*.o
+
+# Debugger/J-Link local files
+MDK-ARM/DebugConfig/
+MDK-ARM/JLinkLog.txt
+MDK-ARM/JLinkSettings.ini
+MDK-ARM/*.log
+
+# Keil RTE generated device cache
+MDK-ARM/RTE/Device/
+
+# STM32CubeMX temporary/backup files
+*.ioc.bak
+*.mxproject.bak
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
