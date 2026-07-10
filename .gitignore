@@ -34,6 +34,10 @@ MDK-ARM/RTE/Device/
 *.ioc.bak
 *.mxproject.bak
 
+# CMake/Ninja build outputs
+build/
+*.obj
+
 # OS/editor noise
 .DS_Store
 Thumbs.db

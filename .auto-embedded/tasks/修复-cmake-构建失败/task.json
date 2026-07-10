@@ -1,0 +1,7 @@
+{
+  "id": "修复-cmake-构建失败",
+  "title": "修复 CMake 构建失败",
+  "phase": "RESEARCH",
+  "trace_id": "T-修复-cmake-构建失败",
+  "status": "archived"
+}
