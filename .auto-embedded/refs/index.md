@@ -17,6 +17,7 @@
 | `competition-task-router.md` | 竞赛题型路由器（Task Router） |
 | `contracts.md` | 共享约定 |
 | `control-loop-sign-debug.md` | 闭环控制符号陷阱与对照实验诊断法 |
+| `damiao-motor-can.md` | 达妙电机选型、经典 CAN 协议、版本差异与共总线冲突 |
 | `driver-porting.md` | 驱动库移植完整流程参考 |
 | `embedded-architecture.md` | 嵌入式分层架构规范（避免屎山） |
 | `embed-libs-index.md` | 嵌入式常用开源库速查索引 |
@@ -43,6 +44,7 @@
 | `platform-migration.md` | 跨平台迁移指南 |
 | `riper5-protocol.md` | RIPER-5 嵌入式芯片开发协议 |
 | `riper5-stages.md` | RIPER-5 五阶段详细规则 |
+| `robomaster-motor-can.md` | RoboMaster M3508/C620、M2006/C610、GM6020 协议与维护 |
 | `shared-contracts.md` | 共享约定 |
 | `shared-failure-taxonomy.md` | 失败分类 |
 | `shared-platform-compatibility.md` | 平台兼容性 |

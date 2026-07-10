@@ -5,6 +5,12 @@ description: 当需要调试 CAN 总线通信时使用，支持通过 USB-CAN �
 
 > **auto-embedded 工具技能**：脚本随框架装在 `.auto-embedded/tools/can-debug/`，用 `py` 运行 `.auto-embedded/tools/can-debug/scripts/` 下脚本；详细用法见 `.auto-embedded/tools/can-debug/references/usage.md`。
 
+## 项目电机协议知识入口
+
+- RoboMaster M3508/C620、M2006/C610、GM6020：`.auto-embedded/refs/robomaster-motor-can.md`
+- 达妙 DM-J4310-2EC、MIT/位置速度/速度模式：`.auto-embedded/refs/damiao-motor-can.md`
+- 本项目以 RoboMaster C 板为主控。只复用协议与设备参数；CAN 引脚、收发器、供电和外设初始化必须以 C 板原理图及项目配置为准。
+
 # CAN 总线调试
 
 ## 适用场景

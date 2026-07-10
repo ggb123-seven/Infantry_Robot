@@ -5,6 +5,12 @@ description: 当需要为外部设备（传感器、存储器、显示屏等，�
 
 > **auto-embedded 工具技能**：脚本随框架装在 `.auto-embedded/tools/peripheral-driver/`，用 `py` 运行 `.auto-embedded/tools/peripheral-driver/scripts/bsp_adapter.py`；详细用法见 `.auto-embedded/tools/peripheral-driver/references/usage.md`。设计方法论与 BSP 模板见 `.auto-embedded/refs/stm32-hal/`。
 
+## 项目电机设备知识入口
+
+- RoboMaster M3508/C620、M2006/C610、GM6020：`.auto-embedded/refs/robomaster-motor-can.md`
+- 达妙 DM-J4310-2EC 与版本差异：`.auto-embedded/refs/damiao-motor-can.md`
+- 电机驱动适配属于“设备协议层 + 板级 CAN 端口层”。本项目板级实现必须以 RoboMaster C 板（STM32F407IGH6）原理图和现有 HAL 配置为准。
+
 # 外设驱动开发（基于开源库适配）
 
 ## 适用场景

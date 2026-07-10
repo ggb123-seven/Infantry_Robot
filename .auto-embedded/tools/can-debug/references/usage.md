@@ -80,3 +80,15 @@ python scripts/can_tool.py --interface pcan --channel PCAN_USBBUS1 --listen --fo
 
 - `0`：操作成功
 - `1`：连接失败、无响应或参数错误
+
+## RoboMaster / 达妙电机协议入口
+
+- RoboMaster M3508/C620、M2006/C610、GM6020：`../../../refs/robomaster-motor-can.md`
+- 达妙 DM-J4310-2EC：`../../../refs/damiao-motor-can.md`
+
+调试这些设备时需特别注意：
+
+- 两类设备均常用经典 CAN 标准帧、1 Mbps，但 CAN ID 分配和字节序不同。
+- C620/C610/GM6020 的 16 位字段为大端；达妙位置速度模式和速度模式的 `float32` 为小端。
+- 达妙速度模式 ID 可能与 RoboMaster 的 `0x200` 控制帧和 `0x201..0x208` 反馈帧冲突。
+- 本项目使用 RoboMaster C 板，USB-CAN 示例只用于抓包和台架测试，不能替代 C 板实际引脚、收发器和滤波器配置。
