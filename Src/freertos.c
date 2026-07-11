@@ -22,7 +22,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -42,24 +42,39 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-extern void blue_led_task(void const * argument);
+extern void blue_led_task(void *argument);
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-osThreadId LED_REDHandle;
-osThreadId LED_GREENHandle;
+osThreadId_t LED_REDHandle;
+const osThreadAttr_t LED_RED_attributes = {
+  .name = "LED_RED",
+  .stack_size = 512,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+osThreadId_t LED_GREENHandle;
+const osThreadAttr_t LED_GREEN_attributes = {
+  .name = "LED_GREEN",
+  .stack_size = 512,
+  .priority = (osPriority_t) osPriorityHigh,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
    
-osThreadId led_blue_handle;
+osThreadId_t led_blue_handle;
+const osThreadAttr_t LED_BLUE_attributes = {
+  .name = "LED_BLUE",
+  .stack_size = 512,
+  .priority = (osPriority_t) osPriorityHigh,
+};
 /* USER CODE END FunctionPrototypes */
 
-void red_led_task(void const * argument);
-extern void green_led_task(void const * argument);
+void red_led_task(void *argument);
+extern void green_led_task(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -107,17 +122,14 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the thread(s) */
   /* definition and creation of LED_RED */
-  osThreadDef(LED_RED, red_led_task, osPriorityNormal, 0, 128);
-  LED_REDHandle = osThreadCreate(osThread(LED_RED), NULL);
+  LED_REDHandle = osThreadNew(red_led_task, NULL, &LED_RED_attributes);
 
   /* definition and creation of LED_GREEN */
-  osThreadDef(LED_GREEN, green_led_task, osPriorityHigh, 0, 128);
-  LED_GREENHandle = osThreadCreate(osThread(LED_GREEN), NULL);
+  LED_GREENHandle = osThreadNew(green_led_task, NULL, &LED_GREEN_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-  osThreadDef(LED_BLUE, blue_led_task, osPriorityHigh, 0, 128);
-  led_blue_handle = osThreadCreate(osThread(LED_BLUE), NULL);
+  led_blue_handle = osThreadNew(blue_led_task, NULL, &LED_BLUE_attributes);
   /* USER CODE END RTOS_THREADS */
 
 }
@@ -129,7 +141,7 @@ void MX_FREERTOS_Init(void) {
   * @retval None
   */
 /* USER CODE END Header_red_led_task */
-__weak void red_led_task(void const * argument)
+__weak void red_led_task(void *argument)
 {
 
   /* USER CODE BEGIN red_led_task */

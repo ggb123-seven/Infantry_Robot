@@ -1,7 +1,7 @@
 
 #include "blue_led_task.h"
 
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "main.h"
 
 
@@ -15,7 +15,7 @@
   * @param[in]      argument: NULL
   * @retval         none
   */
-void blue_led_task(void const * argument)
+void blue_led_task(void *argument)
 {
 
     while(1)
@@ -29,5 +29,3 @@ void blue_led_task(void const * argument)
         osDelay(500);
     }
 }
-
-

@@ -16,9 +16,8 @@
   * @param[in]      argument: NULL
   * @retval         none
   */
-extern void green_led_task(void const * argument);
+extern void green_led_task(void *argument);
 
 #endif
-
 
 

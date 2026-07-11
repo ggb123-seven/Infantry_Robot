@@ -20,7 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -49,7 +49,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-osThreadId blue_led_handle;
 
 /* USER CODE END PV */
 
@@ -96,6 +95,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
 
   /* Call init function for freertos objects (in freertos.c) */
   MX_FREERTOS_Init();
