@@ -13,7 +13,7 @@ extern "C" {
 /* USER INCLUDE END */
 /* Exported constants ------------------------------------------------------- */
 /* 任务运行频率 */
-#define MOTOR_CHASSIS_FREQ (500.0)
+#define MOTOR_CHASSIS_FREQ (500U)
 
 /* 任务初始化延时ms */
 #define TASK_INIT_DELAY (100u)

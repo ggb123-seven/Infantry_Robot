@@ -28,3 +28,8 @@ EXECUTE 每完成一个清单项 + 用户确认 → 本地 `git add <具体文�
 
 ## 沉淀（promote 回流）
 > REVIEW 阶段把每次的设计决策/约定/坑/gotcha 沉淀于此，下次自动注入。
+- [约定] Keil ARMCC 工程使用 FreeRTOS V10.3.1 时，必须包含 portable/RVDS/ARM_CM4F/port.c 与 portmacro.h，并将实际启用的外设初始化源文件、HAL 驱动源文件和 HAL 时基源文件纳入 .uvprojx。
+- [约定] VS Code 的 STM32Cube J-Link 调试出现 JLinkGDBServerCL 被 SIGTERM 终止时，该行通常是调试适配器失败后的清理结果；应先检查此前的 GDB Remote 握手错误。若 RTOS 代理链路不稳定，可在 launch.json 中显式设置 serverRtos.enabled=false，使 GDB 直连 J-Link GDB Server。
+- [坑/gotcha] RoboMaster RM 电机参数中的 id 使用反馈 CAN ID（0x200 + 电调 ID）；C620 电调 ID 1 应填 0x201，而不是 1。MOTOR_RM_SetOutput、MOTOR_RM_SetTorqueCurrent 和 MOTOR_RM_Relax 只更新发送缓存，随后必须调用 MOTOR_RM_FlushGroup 或 MOTOR_RM_FlushCAN 才会真正下发。
+- [约定] RoboMaster C620/M3508 首次接入时，由唯一底盘任务拥有 0x200 控制帧发送权；上电默认持续发送零电流，先确认 0x201~0x208 反馈、物理 ID 和安装方向，再通过明确使能条件开放非零输出。
+- [坑/gotcha] J-Link 调试现象与源码不一致时，先比较目标 Flash 0x08000000 的初始 MSP/Reset 向量和待调试 ELF 的 .isr_vector；VS Code 的自动二进制选择可能下载旧 AXF/ELF，应将 imageFileName 与 symbolFileName 显式固定到当前 CMake 产物。

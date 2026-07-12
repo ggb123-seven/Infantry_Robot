@@ -341,7 +341,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F407xx,USE_HAL_DRIVER,STM32F407xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;  ../Middlewares/Third_Party/FreeRTOS/Source/include;  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;  ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;  ../Drivers/CMSIS/Device/ST/STM32F4xx/Include;  ../Drivers/CMSIS/Include;  ..\applications</IncludePath>
+              <IncludePath>../Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;  ../Middlewares/Third_Party/FreeRTOS/Source/include;  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;  ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;  ../Drivers/CMSIS/Device/ST/STM32F4xx/Include;  ../Drivers/CMSIS/Include;  ..\applications;  ..\User</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -406,6 +406,16 @@
               <FilePath>../Src/gpio.c</FilePath>
             </File>
             <File>
+              <FileName>can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Src/can.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_timebase_tim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Src/stm32f4xx_hal_timebase_tim.c</FilePath>
+            </File>
+            <File>
               <FileName>freertos.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Src/freertos.c</FilePath>
@@ -425,6 +435,11 @@
         <Group>
           <GroupName>Drivers/STM32F4xx_HAL_Driver</GroupName>
           <Files>
+            <File>
+              <FileName>stm32f4xx_hal_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_can.c</FilePath>
+            </File>
             <File>
               <FileName>stm32f4xx_hal_tim.c</FileName>
               <FileType>1</FileType>
@@ -584,6 +599,51 @@
               <FileName>red_led_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\applications\red_led_task.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>User/MRobot</GroupName>
+          <Files>
+            <File>
+              <FileName>user_task_init.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\init.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor_chassis.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\motor_chassis.c</FilePath>
+            </File>
+            <File>
+              <FileName>user_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\user_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\can.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_mm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\mm.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_time.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\time.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\device\motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor_rm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\device\motor_rm.c</FilePath>
             </File>
           </Files>
         </Group>

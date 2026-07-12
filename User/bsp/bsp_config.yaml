@@ -1,0 +1,27 @@
+can:
+  devices:
+  - instance: CAN1
+    name: MOTOR_3508
+  enabled: true
+gpio:
+  configs:
+  - custom_name: LED_B
+    has_exti: false
+    ioc_label: LED_B
+    pin: PH10
+    type: OUTPUT
+  - custom_name: LED_G
+    has_exti: false
+    ioc_label: LED_G
+    pin: PH11
+    type: OUTPUT
+  - custom_name: LED_R
+    has_exti: false
+    ioc_label: LED_R
+    pin: PH12
+    type: OUTPUT
+  enabled: true
+mm:
+  enabled: true
+time:
+  enabled: true

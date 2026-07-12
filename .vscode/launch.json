@@ -10,14 +10,17 @@
             "cwd": "${workspaceFolder}",
             "preBuild": "${command:st-stm32-ide-debug-launch.build}",
             "runEntry": "main",
-            "serverExe": "C:\\Program Files\\SEGGER\\JLink_V956\\JLinkGDBServerCL.exe",
+            "serverExe": "${env:LOCALAPPDATA}\\stm32cube\\bundles\\jlink-gdbserver\\9.24.0+st.1\\bin\\JLinkGDBServerCL.exe",
             "serverDevice": "STM32F407IG",
             "serverInterface": "SWD",
             "serverSpeed": "4000",
+            "serverRtos": {
+                "enabled": false
+            },
             "imagesAndSymbols": [
                 {
-                    "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}",
-                    "symbolFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
+                    "imageFileName": "${workspaceFolder}/build/Debug/Infantry_Robot.elf",
+                    "symbolFileName": "${workspaceFolder}/build/Debug/Infantry_Robot.elf"
                 }
             ]
         }

@@ -49,6 +49,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/task/init.c
     User/task/motor_chassis.c
     User/task/user_task.c
+    User/bsp/can.c
+    User/bsp/mm.c
+    User/bsp/time.c
+    User/device/motor.c
+    User/device/motor_rm.c
     applications/blue_led_task.c
     applications/green_led_task.c
     applications/red_led_task.c
