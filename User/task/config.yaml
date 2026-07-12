@@ -1,0 +1,7 @@
+- delay: 0
+  description: ''
+  freq_control: true
+  frequency: 500.0
+  function: Task_motor_chassis
+  name: motor_chassis
+  stack: 256

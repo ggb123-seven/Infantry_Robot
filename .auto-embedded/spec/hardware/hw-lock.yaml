@@ -3,14 +3,24 @@
 # 示例条目见注释，正式条目顶格写在各 section 下。
 
 pins:
-  # - {id: PA9,  func: USART1_TX, owner: bsp_uart}
-  # - {id: PA10, func: USART1_RX, owner: bsp_uart}
+  - {id: PA13, func: SYS_JTMS_SWDIO, owner: cubemx_sys}
+  - {id: PA14, func: SYS_JTCK_SWCLK, owner: cubemx_sys}
+  - {id: PH0, func: RCC_OSC_IN_HSE, owner: cubemx_rcc}
+  - {id: PH1, func: RCC_OSC_OUT_HSE, owner: cubemx_rcc}
+  - {id: PH10, func: GPIO_OUTPUT_LED_B, owner: cubemx_gpio}
+  - {id: PH11, func: GPIO_OUTPUT_LED_G, owner: cubemx_gpio}
+  - {id: PH12, func: GPIO_OUTPUT_LED_R, owner: cubemx_gpio}
+  - {id: PD0, func: CAN1_RX, owner: cubemx_can1}
+  - {id: PD1, func: CAN1_TX, owner: cubemx_can1}
 
 dma:
   # - {stream: DMA1_CH4, peripheral: USART1_TX, owner: drv_uart_dma}
 
 irq:
-  # - {irqn: USART1_IRQn, priority_preempt: 1, priority_sub: 0, owner: drv_uart}
+  - {irqn: PendSV_IRQn, priority_preempt: 15, priority_sub: 0, owner: freertos}
+  - {irqn: SysTick_IRQn, priority_preempt: 15, priority_sub: 0, owner: freertos}
+  - {irqn: CAN1_RX0_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_can1}
+  - {irqn: TIM6_DAC_IRQn, priority_preempt: 15, priority_sub: 0, owner: cubemx_hal_tick}
 
 timers:
-  # - {id: TIM2, func: 1ms_tick, owner: svc_scheduler}
+  - {id: TIM6, func: HAL_1MS_TICK, owner: cubemx_hal_tick}

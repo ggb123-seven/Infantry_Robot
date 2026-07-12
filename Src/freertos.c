@@ -22,7 +22,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
-#include "cmsis_os2.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -49,17 +49,19 @@ extern void blue_led_task(void *argument);
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
+/* Definitions for LED_RED */
 osThreadId_t LED_REDHandle;
 const osThreadAttr_t LED_RED_attributes = {
   .name = "LED_RED",
-  .stack_size = 512,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for LED_GREEN */
 osThreadId_t LED_GREENHandle;
 const osThreadAttr_t LED_GREEN_attributes = {
   .name = "LED_GREEN",
-  .stack_size = 512,
-  .priority = (osPriority_t) osPriorityHigh,
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,22 +79,6 @@ void red_led_task(void *argument);
 extern void green_led_task(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
-
-/* GetIdleTaskMemory prototype (linked to static allocation support) */
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize );
-
-/* USER CODE BEGIN GET_IDLE_TASK_MEMORY */
-static StaticTask_t xIdleTaskTCBBuffer;
-static StackType_t xIdleStack[configMINIMAL_STACK_SIZE];
-  
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
-{
-  *ppxIdleTaskTCBBuffer = &xIdleTaskTCBBuffer;
-  *ppxIdleTaskStackBuffer = &xIdleStack[0];
-  *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
-  /* place for user code */
-}                   
-/* USER CODE END GET_IDLE_TASK_MEMORY */
 
 /**
   * @brief  FreeRTOS initialization
@@ -121,16 +107,20 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of LED_RED */
+  /* creation of LED_RED */
   LED_REDHandle = osThreadNew(red_led_task, NULL, &LED_RED_attributes);
 
-  /* definition and creation of LED_GREEN */
+  /* creation of LED_GREEN */
   LED_GREENHandle = osThreadNew(green_led_task, NULL, &LED_GREEN_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   led_blue_handle = osThreadNew(blue_led_task, NULL, &LED_BLUE_attributes);
   /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
 
 }
 
@@ -143,7 +133,6 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_red_led_task */
 __weak void red_led_task(void *argument)
 {
-
   /* USER CODE BEGIN red_led_task */
   /* Infinite loop */
   for(;;)
@@ -158,4 +147,3 @@ __weak void red_led_task(void *argument)
      
 /* USER CODE END Application */
 
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
