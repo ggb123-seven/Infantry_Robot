@@ -11,6 +11,11 @@
 | 现有控制数据 | `User/task/motor_chassis.c`、`User/task/motor_chassis.h` | 已有带临界区读取的电机反馈快照；当前控制输出是固定转矩电流，尚无 PID 目标、误差和 PID 输出字段。 | 高 | 已确认 |
 | 调试协议 | 任务设计决策 | 默认使用 VOFA+ JustFloat：4 个 float 后接 `00 00 80 7F` 帧尾；100 Hz、20 B/帧时约 2 kB/s。 | 中 | 待实现验证 |
 | 非阻塞发送 | 任务设计决策 | 低优先级独立任务读取快照并使用双缓冲发送；`USBD_BUSY` 时不等待、不重试阻塞，只累计丢帧。 | 中 | 待实现验证 |
+| CubeMX 生成结果 | `Infantry_Robot.ioc`、`Src`、`Inc`、`Middlewares/ST`、`cmake/stm32cubemx/CMakeLists.txt` | 已生成 USB Device CDC、HAL PCD/LL USB、OTG FS 中断及 CMake 源文件列表；PA11/PA12、48 MHz、Device Only、CDC 和中断优先级 5/0 与研究基线一致。 | 高 | 已确认 |
+| USB 初始化位置 | `Src/freertos.c`、`applications/red_led_task.c`、构建 ELF | CubeMX 将 `MX_USB_DEVICE_Init()` 放在弱定义 `red_led_task()` 中，但工程存在同名强定义；ELF 中没有 `MX_USB_DEVICE_Init` 符号，说明弱函数体及 USB 初始化已被链接器回收，当前固件不会启动 USB。 | 高 | 已确认，待处理 |
+| CMake 全量构建 | `aemb-build-cmake`、`build/Debug/Infantry_Robot.elf` | 显式加入本机 ARM GNU 14.3 工具链目录后，从清理后的构建目录完成 Debug 配置和构建，耗时 5.8 秒。 | 高 | 已确认 |
+| 工具链环境 | CMake 清理构建日志 | 当前终端 PATH 不包含 `arm-none-eabi-gcc/g++`；旧缓存可增量构建，但全量配置需显式加入本机工具链 `bin` 目录。 | 高 | 已确认 |
+| CubeMX 库清理 | `git diff --cached --name-status`、`MDK-ARM/Infantry_Robot.uvprojx` | “仅复制必要文件”配合删除旧生成文件清理了 279 个库文件，其中包含 Keil 工程仍引用的 FreeRTOS RVDS/ARM_CM4F 端口，因此当前 Keil 工程已缺少所引用源码。CMake 使用 GCC 端口，不受此项影响。 | 高 | 已确认，待决定是否保留 Keil |
 
 ## CubeMX 待授权配置差异
 

@@ -45,15 +45,27 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    # 用户任务与现有 LED 任务
+    # User/bsp 源文件
+    User/bsp/can.c
+    User/bsp/gpio.c
+    User/bsp/mm.c
+    User/bsp/time.c
+
+    # User/component 源文件
+    User/component/filter.c
+    User/component/pid.c
+    User/component/user_math.c
+
+    # User/device 源文件
+    User/device/motor.c
+    User/device/motor_rm.c
+
+    # User/task 源文件
     User/task/init.c
     User/task/motor_chassis.c
     User/task/user_task.c
-    User/bsp/can.c
-    User/bsp/mm.c
-    User/bsp/time.c
-    User/device/motor.c
-    User/device/motor_rm.c
+
+    # 现有 LED 任务
     applications/blue_led_task.c
     applications/green_led_task.c
     applications/red_led_task.c

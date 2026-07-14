@@ -25,9 +25,9 @@
 /* Private function  -------------------------------------------------------- */
 /* Exported functions ------------------------------------------------------- */
 
-uint32_t BSP_TIME_Get_ms(void) { return xTaskGetTickCount(); }
+uint32_t BSP_TIME_Get_ms() { return xTaskGetTickCount(); }
 
-uint64_t BSP_TIME_Get_us(void) {
+uint64_t BSP_TIME_Get_us() {
   uint32_t tick_freq = osKernelGetTickFreq();
   uint32_t ticks_old = xTaskGetTickCount()*(1000/tick_freq);
   uint32_t tick_value_old = SysTick->VAL;
@@ -40,7 +40,7 @@ uint64_t BSP_TIME_Get_us(void) {
   }
 }
 
-uint64_t BSP_TIME_Get(void) { return BSP_TIME_Get_us(); }
+uint64_t BSP_TIME_Get() __attribute__((alias("BSP_TIME_Get_us")));
 
 int8_t BSP_TIME_Delay_ms(uint32_t ms) {
   uint32_t tick_period = 1000u / osKernelGetTickFreq();
@@ -74,7 +74,7 @@ int8_t BSP_TIME_Delay_us(uint32_t us) {
     return BSP_OK;
 }
 
-int8_t BSP_TIME_Delay(uint32_t ms) { return BSP_TIME_Delay_ms(ms); }
+int8_t BSP_TIME_Delay(uint32_t ms) __attribute__((alias("BSP_TIME_Delay_ms")));
 
 /* USER FUNCTION BEGIN */
 

@@ -21,11 +21,11 @@ extern "C" {
 
 /* Exported types ----------------------------------------------------------- */
 /* Exported functions prototypes -------------------------------------------- */
-uint32_t BSP_TIME_Get_ms(void);
+uint32_t BSP_TIME_Get_ms();
 
-uint64_t BSP_TIME_Get_us(void);
+uint64_t BSP_TIME_Get_us();
 
-uint64_t BSP_TIME_Get(void);
+uint64_t BSP_TIME_Get();
 
 int8_t BSP_TIME_Delay_ms(uint32_t ms);
 

@@ -59,6 +59,9 @@ typedef struct {
 
 typedef MOTOR_Feedback_t MOTOR_RM_Feedback_t;
 
+/* MOTOR_CPP_ADAPTER_DATA: raw protocol feedback alias used by C++ RM wrapper. */
+typedef MOTOR_RawFeedback_t MOTOR_RM_RawFeedback_t;
+
 typedef struct {
     MOTOR_RM_Param_t param;
     MOTOR_RM_Feedback_t feedback;
@@ -81,7 +84,38 @@ typedef struct {
     uint8_t pending_tx_groups;
     MOTOR_RM_t *motors[MOTOR_RM_MAX_MOTORS];
     uint8_t motor_count;
+  /* C++ motor 适配层：由 C++ 对象持有生命周期的外部实例。 */
+    /* MOTOR_CPP_ADAPTER_STATE_BEGIN: external instances owned by C++ wrappers. */
+    MOTOR_RM_t *external_motors[MOTOR_RM_MAX_MOTORS];
+    uint8_t external_motor_count;
+    /* MOTOR_CPP_ADAPTER_STATE_END */
 } MOTOR_RM_CANManager_t;
+
+/* MOTOR_CPP_ADAPTER_DEBUG_BEGIN: transmit snapshots consumed by C++ tests/tools. */
+typedef struct {
+    uint8_t valid;
+    BSP_CAN_t can;
+    uint16_t source_motor_id;
+    uint16_t tx_frame_id;
+    int8_t logical_index;
+    int16_t requested_current;
+    int16_t grouped_output[MOTOR_RM_MAX_MOTORS];
+    uint8_t tx_data[8];
+    uint8_t pending_tx_groups;
+    uint32_t flush_count;
+} MOTOR_RM_TxDebug_t;
+
+  typedef struct {
+    uint8_t valid;
+    BSP_CAN_t can;
+    uint16_t tx_frame_id;
+    int8_t logical_index;
+    int16_t output_value;
+    uint8_t tx_data[8];
+  } MOTOR_RM_SlotTxDebug_t;
+
+  extern MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS];
+/* MOTOR_CPP_ADAPTER_DEBUG_END */
 
 /* Exported functions prototypes -------------------------------------------- */
 
@@ -171,14 +205,36 @@ int8_t MOTOR_RM_Offine(MOTOR_RM_Param_t *param);
  */
 int8_t MOTOR_RM_UpdateAll(void);
 
+/* -------------------------------------------------------------------------- */
+/* C++ motor 适配接口：protocol/motor_t 使用的外部实例、物理量命令、Flush 与调试。 */
+/* -------------------------------------------------------------------------- */
+
 /**
- * @brief 设置 RM 电机的目标电流
- *
- * @param[in] param 电机参数
- * @param[in] current_a 目标电流，单位 A
- * @return 成功返回 DEVICE_OK，参数或设备状态异常时返回对应错误码
+ * @brief 将外部分配的 RM 电机实例附着到底层驱动
+ * @param param 电机参数
+ * @param external_motor 外部实例存储，生命周期需覆盖整个使用期
+ * @return 设备状态码
+ * @note C++ motor 框架专用；外部实例由 C++ 对象持有，不由 C 驱动分配/释放。
+ */
+/* MOTOR_CPP_ADAPTER_API_BEGIN: used by User/device/motor/protocol/rm_protocol.cpp. */
+int8_t MOTOR_RM_AttachExternal(MOTOR_RM_Param_t *param, MOTOR_RM_t *external_motor);
+
+/**
+ * @brief 设置一个电机的转子侧电流命令（C++ 力矩控制主入口）
+ * @param param 电机参数
+ * @param current_a 转子侧目标电流，单位 A
+ * @note C++ RM 驱动会先将目标输出轴力矩按转矩常数、减速比、外部传动比
+ *       换算为转子侧电流（A），本接口再统一完成 A -> RM raw 指令值 的换算。
+ * @return
  */
 int8_t MOTOR_RM_SetTorqueCurrent(MOTOR_RM_Param_t *param, float current_a);
+
+const MOTOR_RM_RawFeedback_t* MOTOR_RM_GetRawFeedback(MOTOR_RM_Param_t *param);
+
+const MOTOR_RM_TxDebug_t* MOTOR_RM_GetTxDebug(void);
+
+const MOTOR_RM_SlotTxDebug_t* MOTOR_RM_GetSlotTxDebug(uint8_t logical_index);
+/* MOTOR_CPP_ADAPTER_API_END */
 
 #ifdef __cplusplus
 }

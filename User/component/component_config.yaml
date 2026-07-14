@@ -1,3 +1,15 @@
+ahrs:
+  dependencies:
+  - component/user_math.h
+  enabled: true
+filter:
+  dependencies:
+  - component/ahrs
+  enabled: true
+pid:
+  dependencies:
+  - component/filter
+  enabled: true
 user_math:
   dependencies: []
   enabled: true

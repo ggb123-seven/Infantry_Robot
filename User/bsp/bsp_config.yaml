@@ -1,7 +1,7 @@
 can:
   devices:
   - instance: CAN1
-    name: MOTOR_3508
+    name: BSP_CAN_MOTOR_3508
   enabled: true
 gpio:
   configs:

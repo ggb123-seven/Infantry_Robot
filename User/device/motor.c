@@ -76,6 +76,12 @@ float MOTOR_GetTemp(const MOTOR_t *motor) {
   return motor->feedback.temp;
 }
 
+/* MOTOR_CPP_ADAPTER_API: exposes raw protocol feedback to C++ wrappers. */
+const MOTOR_RawFeedback_t* MOTOR_GetRawFeedback(const MOTOR_t *motor) {
+  if (motor == NULL) return NULL;
+  return &motor->raw_feedback;
+}
+
 MOTOR_TemperatureProtectionConfig_t MOTOR_NormalizeTemperatureProtection(
     MOTOR_TemperatureProtectionConfig_t config) {
   if (config.warning_c <= 0.0f) {
