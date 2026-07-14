@@ -78,6 +78,7 @@ const osThreadAttr_t LED_BLUE_attributes = {
 void red_led_task(void *argument);
 extern void green_led_task(void *argument);
 
+extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
@@ -134,6 +135,8 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_red_led_task */
 __weak void red_led_task(void *argument)
 {
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN red_led_task */
   /* Infinite loop */
   for(;;)

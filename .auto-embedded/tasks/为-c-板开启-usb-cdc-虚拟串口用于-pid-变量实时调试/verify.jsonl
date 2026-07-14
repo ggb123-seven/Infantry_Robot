@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "执行 ARCH 质量门"}
+{"file": "spec/conventions/index.md", "reason": "按证据完成编译与实机验证"}
+{"file": "spec/hardware/index.md", "reason": "核对引脚、时钟和中断配置"}

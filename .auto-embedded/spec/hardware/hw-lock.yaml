@@ -12,6 +12,8 @@ pins:
   - {id: PH12, func: GPIO_OUTPUT_LED_R, owner: cubemx_gpio}
   - {id: PD0, func: CAN1_RX, owner: cubemx_can1}
   - {id: PD1, func: CAN1_TX, owner: cubemx_can1}
+  - {id: PA11, func: USB_OTG_FS_DM, owner: cubemx_usb_device_cdc}
+  - {id: PA12, func: USB_OTG_FS_DP, owner: cubemx_usb_device_cdc}
 
 dma:
   # - {stream: DMA1_CH4, peripheral: USART1_TX, owner: drv_uart_dma}
@@ -21,6 +23,7 @@ irq:
   - {irqn: SysTick_IRQn, priority_preempt: 15, priority_sub: 0, owner: freertos}
   - {irqn: CAN1_RX0_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_can1}
   - {irqn: TIM6_DAC_IRQn, priority_preempt: 15, priority_sub: 0, owner: cubemx_hal_tick}
+  - {irqn: OTG_FS_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_usb_device_cdc}
 
 timers:
   - {id: TIM6, func: HAL_1MS_TICK, owner: cubemx_hal_tick}

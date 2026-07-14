@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "确认分层约束"}
+{"file": "spec/hardware/index.md", "reason": "确认 C 板 USB 硬件基线"}
+{"file": "spec/guides/pin-planning.md", "reason": "核对 USB 引脚与中断资源"}

@@ -22,8 +22,8 @@
  * 任务以 0.8 A 测试电流持续下发控制命令。
  * @datasheet RoboMaster C620 用户手册“CAN 通信协议”章节
  */
-static MOTOR_RM_Param_t motor_3508_param =
-{
+
+static MOTOR_RM_Param_t motor_3508_param = {
     .can = BSP_CAN_1,
     .id = 0x201U,
     .module = MOTOR_M3508,
@@ -41,16 +41,11 @@ volatile MotorChassisFeedbackSnapshot_t g_motor_chassis_feedback;
  *
  * @return 无返回值
  */
-static void MotorChassis_PublishFeedback(void)
-{
-  MotorChassisFeedbackSnapshot_t snapshot =
-  {
-    0
-  };
+static void MotorChassis_PublishFeedback(void) {
+  MotorChassisFeedbackSnapshot_t snapshot = {0};
 
   MOTOR_RM_t *motor = MOTOR_RM_GetMotor(&motor_3508_param);
-  if (motor != NULL)
-  {
+  if (motor != NULL) {
     snapshot.online = motor->motor.header.online;
     snapshot.output_total_angle_rad = motor->feedback.rotor_total_angle;
     snapshot.output_speed_rpm = motor->feedback.rotor_speed;
@@ -73,10 +68,8 @@ static void MotorChassis_PublishFeedback(void)
  * @return 成功返回 DEVICE_OK，参数为空时返回 DEVICE_ERR_NULL
  */
 int8_t
-MotorChassis_GetFeedbackSnapshot(MotorChassisFeedbackSnapshot_t *snapshot)
-{
-  if (snapshot == NULL)
-  {
+MotorChassis_GetFeedbackSnapshot(MotorChassisFeedbackSnapshot_t *snapshot) {
+  if (snapshot == NULL) {
     return DEVICE_ERR_NULL;
   }
 
@@ -86,8 +79,7 @@ MotorChassis_GetFeedbackSnapshot(MotorChassisFeedbackSnapshot_t *snapshot)
   return DEVICE_OK;
 }
 
-void Task_motor_chassis(void *argument)
-{
+void Task_motor_chassis(void *argument) {
   (void)argument; /* 未使用argument，消除警告 */
 
   /* 计算任务运行到指定频率需要等待的tick数 */
@@ -107,8 +99,7 @@ void Task_motor_chassis(void *argument)
   MotorChassis_PublishFeedback();
   /* USER CODE INIT END */
 
-  while (1)
-  {
+  while (1) {
     tick += delay_tick; /* 计算下一个唤醒时刻 */
     /* USER CODE BEGIN */
     // 读取最新 CAN 反馈并更新 RM 电机设备数据

@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "USB 调试任务遵循分层与依赖方向"}
+{"file": "spec/conventions/index.md", "reason": "遵守非阻塞、volatile 与临界区约定"}
+{"file": "spec/hardware/index.md", "reason": "使用冻结的 USB FS 硬件资源"}
