@@ -43,3 +43,8 @@
 ## 沉淀（promote 回流）
 > 只沉淀**可复用知识**（决策/约定/坑/模式），任务过程性事实留在 tasks/ 不要 promote。下次会自动注入。
 - [设计决策] ARCH-2 只统计 main 类入口的自定义顶层调用；HAL_Init、时钟配置、MX_*_Init 和 RTOS 内核/调度器调用属于生成的启动编排，不计入数量上限。
+- [设计决策] 单个 M3508 电机控制按主运行与速度算法拆分：motor_chassis 拥有任务循环、电机驱动编排、在线判断和电流指令下发；motor_speed_control 只负责这一台电机的速度限幅、缓启动、PID 计算、调参和速度反馈结构体，不代表整个底盘速度闭环。
+- [坑/gotcha] motor_speed_control 是单个 M3508 电机的速度算法模块，不应拥有 Task_motor_chassis 或直接调用 RM 设备驱动；现有 motor_chassis 任务入口、在线判断、反馈采集和电流指令下发必须由 motor_chassis 编排。
+- [约定] motor_chassis 作为当前单电机主运行文件时直接调用现有 RM 驱动 API；仅被该任务使用的一对一 getter/setter 不再包装成公共函数，只有多调用者共享或需要统一策略时才增加封装。
+- [可复用模式] RTOS 业务任务的 while 循环只保留周期推进、module/driver API 调用和等待；算法细节放入 module，实现中不为一对一设备调用增加 task 内 static 步骤函数。
+- [可复用模式] 参考工程采用 task/module/component 三层：task 只负责消息或设备 I/O、调用顺序和周期调度；module 用一个主结构体集中保存 parameter/setpoint/feedback/PID/output，并提供 Init/UpdateFeedback/Control/DumpOutput 业务 API；component 只提供通用 PID、滤波等算法。禁止用 task 文件内的 static 步骤函数替代 module 边界。

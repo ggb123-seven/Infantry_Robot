@@ -1,0 +1,2 @@
+{"file": "spec/hardware/index.md", "reason": "确认不引入新硬件资源且 CAN1 基线不变"}
+{"file": "spec/architecture/index.md", "reason": "架构机械门禁与 motor_chassis 职责检查"}

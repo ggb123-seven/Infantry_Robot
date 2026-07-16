@@ -616,6 +616,11 @@
               <FilePath>..\User\task\motor_chassis.c</FilePath>
             </File>
             <File>
+              <FileName>motor_speed_control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\motor_speed_control.c</FilePath>
+            </File>
+            <File>
               <FileName>user_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\task\user_task.c</FilePath>
