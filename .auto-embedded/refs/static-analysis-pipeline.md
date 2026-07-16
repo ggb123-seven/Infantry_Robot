@@ -266,7 +266,7 @@ lizard project/code/ --duplicate 6 > build/duplicate-report.txt
 | 编号 | 检查 |
 |---|---|
 | ARCH-1 | 应用层 include 厂商头 |
-| ARCH-2 | main() 顶层调用 ≤ 6 |
+| ARCH-2 | main() 自定义顶层调用 ≤ 6；生成的初始化与调度调用不计数 |
 | ARCH-3 | ISR / 回调函数体 ≤ 20 行 |
 | ARCH-4 | 应用层 extern 变量 = 0 |
 | ARCH-5 | 单 .c 文件 ≤ 800 行 |

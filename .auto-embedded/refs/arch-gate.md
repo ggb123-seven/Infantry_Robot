@@ -8,7 +8,7 @@
 | 脚本 | 运行环境 | 说明 |
 |---|---|---|
 | `scripts/arch-check.sh` | bash / zsh（含 Git for Windows 自带 bash） | **行为基准**，8 项检查 ARCH-1~8 |
-| `scripts/arch-check.ps1` | PowerShell 7（pwsh） | `.sh` 的忠实移植，纯 PS 环境用 |
+| `scripts/arch-check.ps1` | Windows PowerShell 5+ / PowerShell 7 | `.sh` 的忠实移植，纯 PowerShell 环境用 |
 
 两者输出协议一致：
 
@@ -44,7 +44,7 @@ pwsh -File .auto-embedded/scripts/arch-check.ps1 --no-hw
 | ARCH-1  | 应用层 `#include` 厂商 HAL 头 | 禁止 |
 | ARCH-1B | 应用层 include catch-all mega-header（间接拉厂商头） | 禁止（`zf_common_headfile.h` 白名单） |
 | ARCH-1C | 应用层裸寄存器访问（`*(volatile..*)0x..`） | 禁止（应封装到 HAL/BSP） |
-| ARCH-2  | `main.c` 类入口顶层调用数 | ≤ 6 |
+| ARCH-2  | `main.c` 类入口自定义顶层调用数 | ≤ 6；CubeMX/HAL/RTOS 生成的初始化与调度调用不计数 |
 | ARCH-3  | ISR / 回调函数体行数 | ≤ 20 |
 | ARCH-4  | 应用层 `extern` 变量数 | = 0 |
 | ARCH-5  | 单 `.c` 文件行数 | ≤ 800 |

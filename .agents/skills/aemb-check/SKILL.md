@@ -15,4 +15,4 @@ py .auto-embedded/scripts/check.py --spec   # 仅 spec 层完整性
 py .auto-embedded/scripts/check.py --json   # 机器可读（CI 用）
 ```
 
-任一项 FAIL（exit≠0）必须先修。HW-CONFLICT 表示 hw-lock.yaml 里 pin/dma/irq/timer 重复或中断优先级撞车。
+任一项 FAIL（exit≠0）必须先修。HW-CONFLICT 表示 hw-lock.yaml 里的 pin、dma stream、IRQn 或 timer 资源标识重复；不同 IRQ 使用相同优先级是合法配置。

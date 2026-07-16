@@ -5,7 +5,7 @@ auto-embedded 统一检查入口（机械门禁，脱离 Claude hook 也能跑�
 
 跑三类检查，任一失败 exit!=0：
   1) 分层架构门禁 ARCH-1~8：调用同目录 arch-check.sh（有 bash）或 arch-check.ps1（纯 PowerShell）
-  2) 硬件资源锁冲突 HW-CONFLICT：hw-lock.yaml 的 pin/dma/irq/timer 重复 + irq 优先级冲突
+  2) 硬件资源锁冲突 HW-CONFLICT：hw-lock.yaml 的 pin/dma/irq/timer 资源标识重复
   3) spec 完整性 SPEC：config.yaml 声明的每个 spec 层 index.md 必须存在
 
 用法（工程根执行）：

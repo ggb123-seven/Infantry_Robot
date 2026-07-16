@@ -13,7 +13,7 @@ py .auto-embedded/scripts/check.py
 ```
 一条命令跑三类机械检查（脱离 AI 自觉）：
 - **ARCH-1~8** 分层架构门禁（arch-check.sh/.ps1 自动选 bash/pwsh）
-- **HW-CONFLICT** 硬件资源锁冲突（pin/dma/irq/timer 重复、irq 优先级撞车）
+- **HW-CONFLICT** 硬件资源锁冲突（pin、dma stream、IRQn 或 timer 资源标识重复）
 - **SPEC** spec 层完整性
 
 不通过（exit≠0）必须先修，再继续下面的人工 REVIEW。

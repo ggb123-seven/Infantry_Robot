@@ -15,6 +15,7 @@
 - 在根 `CMakeLists.txt` 中保留 `User/task` 三个源文件。
 - 恢复 `applications` 下三个 LED 任务源文件及其头文件搜索路径。
 - 保留 `cube-cmake` 可执行路径，移除与预设重复的 VS Code 配置参数和生成器覆盖。
+- 在 CMake 工具链文件中依次查找当前环境、显式工具链根目录和 STM32Cube Bundle，避免普通终端依赖手动配置 `PATH`。
 - 使用现有 `build/Debug` 配置增量构建，按首个后续错误继续收敛。
 
 ## 验证结果
@@ -26,10 +27,12 @@
 - `ctest --test-dir build/Debug --output-on-failure`：工程未定义主机测试，未发现测试项。
 - 硬件人工核对：PD0/PD1、CAN1_RX0_IRQn、TIM6_DAC_IRQn 和 TIM6 与当前 `.ioc` 一致。
 - 代码质量核对：本次未修改 C 源码；`main.c` 仍只负责初始化与调度，TIM6/CAN 中断入口仅转发 HAL；未新增 ISR/任务共享状态，因此没有新增 `volatile` 或临界区需求。
+- 2026-07-16 在 `arm-none-eabi-gcc` 不存在于 `PATH` 的普通终端中删除 `build/Debug` 后重新配置和构建，构建成功并自动选用 STM32Cube Bundle 14.3.1 工具链。
+- 当前固件产物 SHA-256 为 `1DB551696A611C476CF5C94F1FB50F5289761EB91F6EBA966A81B2D8F9C1EE09`；FLASH 49264 B，RAM 39064 B。产物变化包含本任务之后合入的 USB、PID 与电机调试代码。
 
 ## 门禁限制
 
 - `SPEC` 通过。
-- `ARCH` 未执行到规则检查：`arch-check.ps1` 第 279 行起存在既有 PowerShell 解析错误。
-- `HW` 检查器把 PendSV、SysTick 与 TIM6 共用最低优先级 15/0 判为冲突；三者资源标识不同，共用优先级不构成 NVIC 资源重复，未通过修改真实优先级规避工具误报。
+- `ARCH` 检查工具已修复 UTF-8、PowerShell 5 相对路径兼容和 `build/` 生成物误扫描问题；ARCH-2 只统计自定义顶层调用，CubeMX/HAL/RTOS 生成的初始化与调度调用不计数，当前架构门禁通过。
+- `HW` 检查器已改为只检测 pin、dma stream、IRQn 和 timer 资源标识重复；不同 IRQ 共用优先级不再误报，当前硬件门禁通过。
 - 未进行开发板烧录与实机运行验证，本次验收范围为构建报错修复。

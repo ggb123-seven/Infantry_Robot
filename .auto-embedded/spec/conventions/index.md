@@ -33,3 +33,5 @@ EXECUTE 每完成一个清单项 + 用户确认 → 本地 `git add <具体文�
 - [坑/gotcha] RoboMaster RM 电机参数中的 id 使用反馈 CAN ID（0x200 + 电调 ID）；C620 电调 ID 1 应填 0x201，而不是 1。MOTOR_RM_SetOutput、MOTOR_RM_SetTorqueCurrent 和 MOTOR_RM_Relax 只更新发送缓存，随后必须调用 MOTOR_RM_FlushGroup 或 MOTOR_RM_FlushCAN 才会真正下发。
 - [约定] RoboMaster C620/M3508 首次接入时，由唯一底盘任务拥有 0x200 控制帧发送权；上电默认持续发送零电流，先确认 0x201~0x208 反馈、物理 ID 和安装方向，再通过明确使能条件开放非零输出。
 - [坑/gotcha] J-Link 调试现象与源码不一致时，先比较目标 Flash 0x08000000 的初始 MSP/Reset 向量和待调试 ELF 的 .isr_vector；VS Code 的自动二进制选择可能下载旧 AXF/ELF，应将 imageFileName 与 symbolFileName 显式固定到当前 CMake 产物。
+- [可复用模式] CMake 工具链文件先查当前环境，再查显式根目录和 STM32Cube Bundle；同一工具链的 gcc、g++、objcopy 与 size 必须来自同一 bin 目录。
+- [坑/gotcha] Windows PowerShell 5 会把无 BOM 的 UTF-8 脚本按系统代码页读取；含中文的兼容脚本必须保存为 UTF-8 BOM，并避免依赖新版 .NET API。

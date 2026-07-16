@@ -4,16 +4,66 @@ set(CMAKE_SYSTEM_PROCESSOR          arm)
 set(CMAKE_C_COMPILER_ID GNU)
 set(CMAKE_CXX_COMPILER_ID GNU)
 
-# Some default GCC settings
-# arm-none-eabi- must be part of path environment
+# GNU Arm 工具链查找顺序：当前环境、显式根目录、STM32Cube Bundle。
 set(TOOLCHAIN_PREFIX                arm-none-eabi-)
+set(_TOOLCHAIN_SEARCH_DIRS)
 
-set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc)
+if(DEFINED ARM_GNU_TOOLCHAIN_ROOT)
+    list(APPEND _TOOLCHAIN_SEARCH_DIRS "${ARM_GNU_TOOLCHAIN_ROOT}/bin")
+endif()
+
+if(DEFINED ENV{CUBE_BUNDLE_PATH})
+    file(GLOB _CUBE_ENV_TOOLCHAIN_DIRS LIST_DIRECTORIES true
+        "$ENV{CUBE_BUNDLE_PATH}/gnu-tools-for-stm32/*/bin"
+    )
+    list(SORT _CUBE_ENV_TOOLCHAIN_DIRS COMPARE NATURAL ORDER DESCENDING)
+    list(APPEND _TOOLCHAIN_SEARCH_DIRS ${_CUBE_ENV_TOOLCHAIN_DIRS})
+endif()
+
+if(WIN32 AND DEFINED ENV{LOCALAPPDATA})
+    file(GLOB _CUBE_LOCAL_TOOLCHAIN_DIRS LIST_DIRECTORIES true
+        "$ENV{LOCALAPPDATA}/stm32cube/bundles/gnu-tools-for-stm32/*/bin"
+    )
+    list(SORT _CUBE_LOCAL_TOOLCHAIN_DIRS COMPARE NATURAL ORDER DESCENDING)
+    list(APPEND _TOOLCHAIN_SEARCH_DIRS ${_CUBE_LOCAL_TOOLCHAIN_DIRS})
+endif()
+
+find_program(_ARM_GCC_FROM_ENV NAMES ${TOOLCHAIN_PREFIX}gcc NO_CACHE)
+if(_ARM_GCC_FROM_ENV)
+    set(_ARM_GCC_EXECUTABLE "${_ARM_GCC_FROM_ENV}")
+else()
+    find_program(_ARM_GCC_EXECUTABLE
+        NAMES ${TOOLCHAIN_PREFIX}gcc
+        HINTS ${_TOOLCHAIN_SEARCH_DIRS}
+        NO_DEFAULT_PATH
+        NO_CACHE
+        REQUIRED
+    )
+endif()
+
+get_filename_component(_TOOLCHAIN_BIN_DIR "${_ARM_GCC_EXECUTABLE}" DIRECTORY)
+
+function(_find_arm_tool output_variable tool_name)
+    find_program(_TOOL_EXECUTABLE
+        NAMES ${TOOLCHAIN_PREFIX}${tool_name}
+        HINTS "${_TOOLCHAIN_BIN_DIR}"
+        NO_DEFAULT_PATH
+        NO_CACHE
+        REQUIRED
+    )
+    set(${output_variable} "${_TOOL_EXECUTABLE}" PARENT_SCOPE)
+endfunction()
+
+_find_arm_tool(_ARM_GXX_EXECUTABLE g++)
+_find_arm_tool(_ARM_OBJCOPY_EXECUTABLE objcopy)
+_find_arm_tool(_ARM_SIZE_EXECUTABLE size)
+
+set(CMAKE_C_COMPILER                ${_ARM_GCC_EXECUTABLE})
 set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
-set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
-set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
+set(CMAKE_CXX_COMPILER              ${_ARM_GXX_EXECUTABLE})
+set(CMAKE_LINKER                    ${_ARM_GXX_EXECUTABLE})
+set(CMAKE_OBJCOPY                   ${_ARM_OBJCOPY_EXECUTABLE})
+set(CMAKE_SIZE                      ${_ARM_SIZE_EXECUTABLE})
 
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")
 set(CMAKE_EXECUTABLE_SUFFIX_C       ".elf")

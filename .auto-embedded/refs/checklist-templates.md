@@ -240,7 +240,7 @@ hw_lock:
 **冲突检测规则**（arch-check.sh 实现）：
 1. `pins.id` 不可重复
 2. `dma.stream` 不可重复
-3. `irq.irqn` 不可重复；同 `priority_preempt + priority_sub` 不可重复
+3. `irq.irqn` 不可重复；不同 IRQ 可以使用相同的 `priority_preempt + priority_sub`
 4. `pins.owner` 必须出现在文件系统的 `drivers/` 或 `service/` 中
 5. `timers.id` 不可重复
 

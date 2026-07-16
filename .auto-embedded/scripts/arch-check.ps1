@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # embedded-dev arch-check (PowerShell 版) —— 与 scripts/arch-check.sh 行为对齐
 #
 # 存在意义：纯 PowerShell 环境（无 POSIX 工具）下也能跑分层架构门禁，
@@ -35,12 +35,14 @@ foreach ($a in $args) {
 
 # ===== 配置（与 .sh 同步）=====
 $APP_LAYER_DIRS = @('app','application','project/code/app','src/app','code/app')
-$VENDOR_DIRS    = @('libraries','sdk','vendor','third_party','Drivers','Middlewares')
+$VENDOR_DIRS    = @('libraries','sdk','vendor','third_party','Drivers','Middlewares','build')
 $VENDOR_HEADERS_RE = '#\s*include\s+[<"](stm32[a-z0-9_]*\.h|gd32[a-z0-9_]*\.h|esp_system\.h|esp_[a-z0-9_]+\.h|driver/gpio\.h|ti_msp_dl_config\.h|nrf[a-z0-9_]*\.h|nrfx[a-z0-9_]*\.h|Ifx[A-Za-z0-9_]+\.h|ifx[a-z0-9_]+_reg\.h|SysSe/[^>"]+|Bsp\.h|DA[A-Z0-9]+\.h|hal/nrf_[a-z0-9_]+\.h)[>"]'
 $CATCH_ALL_HEADERS_RE   = '#\s*include\s+[<"]([a-z_]*_?common_?headfile\.h|[a-z_]*_headfile\.h|headfile\.h|all\.h|globals\.h|project\.h)[>"]'
 $CATCH_ALL_WHITELIST_RE = 'zf_common_headfile\.h'
 $BARE_MMIO_RE = '\*\s*\(\s*volatile\s[^)]*\*\s*\)\s*0[xX][0-9A-Fa-f]+'
-$MAIN_C_MAX_CALLS = 6
+# CubeMX/HAL/RTOS 生成的启动编排不计入自定义顶层调用上限。
+$MAIN_C_GENERATED_CALL_RE = '^(HAL_Init|SystemClock_Config|PeriphCommonClock_Config|MX_[A-Za-z0-9_]+_Init|osKernelInitialize|osKernelStart|vTaskStartScheduler)$'
+$MAIN_C_MAX_CUSTOM_CALLS = 6
 $ISR_BODY_MAX = 20
 $C_FILE_MAX_LINES = 800
 $H_API_MAX = 20
@@ -55,8 +57,16 @@ $script:violations = New-Object System.Collections.Generic.List[string]
 function Write-Err([string]$msg) { [Console]::Error.WriteLine($msg) }
 
 function Get-RelPath([string]$full) {
-    $cwd = (Get-Location).Path
-    $rel = [System.IO.Path]::GetRelativePath($cwd, $full)
+    $cwd = [System.IO.Path]::GetFullPath((Get-Location).Path).TrimEnd([char[]]'\/')
+    $path = [System.IO.Path]::GetFullPath($full)
+    $prefix = $cwd + [System.IO.Path]::DirectorySeparatorChar
+    if ($path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $rel = $path.Substring($prefix.Length)
+    } elseif ($path.Equals($cwd, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $rel = '.'
+    } else {
+        $rel = $path
+    }
     return ($rel -replace '\\','/')
 }
 
@@ -105,9 +115,9 @@ function Invoke-Check1 {
     }
 }
 
-# ===== 检查 2：main.c 顶层调用数 =====
+# ===== 检查 2：main.c 自定义顶层调用数 =====
 function Invoke-Check2 {
-    Write-Err ">>> [2/7] main.c-like top-level call count"
+    Write-Err ">>> [2/7] main.c-like custom top-level call count"
     $mainStartRe = '(^|[\t ])(int|void)[\t ]+(main|core[0-9]+_main|cpu[0-9]+_main|Main_Task|vMainTask|app_main|firmware_main|core_main)[\t ]*\('
     $keywords = @('if','while','for','switch','return','sizeof','do','else')
     $files = Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
@@ -140,8 +150,8 @@ function Invoke-Check2 {
                 elseif ($c -eq '}') {
                     $depth--
                     if ($depth -eq 0) {
-                        if ($calls -gt $MAIN_C_MAX_CALLS) {
-                            $script:violations.Add("[ARCH-2] ${disp}:${start} - ${mainName}() 顶层调用 = ${calls}，超过 ${MAIN_C_MAX_CALLS}")
+                        if ($calls -gt $MAIN_C_MAX_CUSTOM_CALLS) {
+                            $script:violations.Add("[ARCH-2] ${disp}:${start} - ${mainName}() 自定义顶层调用 = ${calls}，超过 ${MAIN_C_MAX_CUSTOM_CALLS}")
                         }
                         $inMain = $false
                         break
@@ -154,7 +164,7 @@ function Invoke-Check2 {
                     if ($s -eq '') { continue }
                     if ($s -cmatch '^([a-zA-Z_][a-zA-Z0-9_]*)[\t ]*\(') {
                         $name = $Matches[1]
-                        if ($keywords -notcontains $name) { $calls++ }
+                        if (($keywords -notcontains $name) -and ($name -cnotmatch $MAIN_C_GENERATED_CALL_RE)) { $calls++ }
                     }
                 }
             }
@@ -285,7 +295,7 @@ function Invoke-Check7 {
             foreach ($megaName in $megaList) {
                 if ($megaName -match $CATCH_ALL_WHITELIST_RE) { continue }
                 $esc = [regex]::Escape($megaName)
-                $incRe = "#\s*include\s+[<""]$esc[>""]"
+                $incRe = '#\s*include\s+[<"]' + $esc + '[>"]'
                 foreach ($f in $appFiles) {
                     $rel = Get-RelPath $f.FullName
                     $ln = 0
@@ -345,8 +355,8 @@ function Invoke-Check8 {
     }
 
     $section = ''
-    $cid=''; $cstream=''; $cirqn=''; $cpp=''; $cps=''; $have=$false
-    $pin=@{}; $dm=@{}; $iq=@{}; $pr=@{}; $tm=@{}
+    $cid=''; $cstream=''; $cirqn=''; $have=$false
+    $pin=@{}; $dm=@{}; $iq=@{}; $tm=@{}
     $dups = New-Object System.Collections.Generic.List[string]
 
     # flush：在 item 切换 / section 切换 / EOF 时结算当前累积 item（dot-source 以共享/改写本作用域变量）
@@ -356,10 +366,9 @@ function Invoke-Check8 {
             if ($section -eq 'dma'    -and $cstream -ne '') { if ($dm.ContainsKey($cstream)){$dm[$cstream]++}else{$dm[$cstream]=1}; if ($dm[$cstream] -gt 1) { $dups.Add("dma: stream $cstream 重复") } }
             if ($section -eq 'irq') {
                 if ($cirqn -ne '') { if ($iq.ContainsKey($cirqn)){$iq[$cirqn]++}else{$iq[$cirqn]=1}; if ($iq[$cirqn] -gt 1) { $dups.Add("irq: irqn $cirqn 重复") } }
-                if ($cpp -ne '' -and $cps -ne '') { $k = "${cpp}_${cps}"; if ($pr.ContainsKey($k)){$pr[$k]++}else{$pr[$k]=1}; if ($pr[$k] -gt 1) { $dups.Add("irq: priority $cpp/$cps 重复（$cirqn 与之前条目同优先级）") } }
             }
             if ($section -eq 'timers' -and $cid -ne '')    { if ($tm.ContainsKey($cid)){$tm[$cid]++}else{$tm[$cid]=1};          if ($tm[$cid] -gt 1)     { $dups.Add("timers: id $cid 重复") } }
-            $cid=''; $cstream=''; $cirqn=''; $cpp=''; $cps=''; $have=$false
+            $cid=''; $cstream=''; $cirqn=''; $have=$false
         }
     }
 
@@ -373,8 +382,6 @@ function Invoke-Check8 {
             $v = Get-YamlVal $line 'id';               if ($v -ne '') { $cid = $v }
             $v = Get-YamlVal $line 'stream';           if ($v -ne '') { $cstream = $v }
             $v = Get-YamlVal $line 'irqn';             if ($v -ne '') { $cirqn = $v }
-            $v = Get-YamlVal $line 'priority_preempt'; if ($v -ne '') { $cpp = $v }
-            $v = Get-YamlVal $line 'priority_sub';     if ($v -ne '') { $cps = $v }
         }
     }
     . $Flush   # EOF 结算

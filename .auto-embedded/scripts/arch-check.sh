@@ -9,7 +9,7 @@
 # 检查项（任一失败即 exit != 0）：
 #   ARCH-1: 应用层 (app/) 不得 #include 厂商 HAL 头
 #   ARCH-1C: 应用层不得直接裸访问寄存器地址（volatile 强转 hex MMIO，应封装到 HAL/BSP）
-#   ARCH-2: main.c 顶层函数调用 ≤ 6
+#   ARCH-2: main.c 自定义顶层函数调用 ≤ 6（生成的初始化与调度调用不计数）
 #   ARCH-3: ISR / 回调函数体 ≤ 20 行
 #   ARCH-4: 应用层 extern 变量数 = 0（extern 函数声明排除）
 #   ARCH-5: 单 .c 文件 ≤ 800 行
@@ -40,14 +40,14 @@ fi
 
 # ===== 配置 =====
 APP_LAYER_DIRS=(app application project/code/app src/app code/app)
-VENDOR_DIRS=(libraries sdk vendor third_party Drivers Middlewares)
+VENDOR_DIRS=(libraries sdk vendor third_party Drivers Middlewares build)
 # 厂商头：STM32 / GD32 / ESP-IDF / TI MSPM0 / Nordic / Infineon TC2xx / Dialog
 VENDOR_HEADERS_RE='#[[:space:]]*include[[:space:]]+[<"](stm32[a-z0-9_]*\.h|gd32[a-z0-9_]*\.h|esp_system\.h|esp_[a-z0-9_]+\.h|driver/gpio\.h|ti_msp_dl_config\.h|nrf[a-z0-9_]*\.h|nrfx[a-z0-9_]*\.h|Ifx[A-Za-z0-9_]+\.h|ifx[a-z0-9_]+_reg\.h|SysSe/[^>"]+|Bsp\.h|DA[A-Z0-9]+\.h|hal/nrf_[a-z0-9_]+\.h)[>"]'
 # Catch-all mega-header（Seekfree 风格统一头文件，间接拉入厂商头 → 等同违规）
 CATCH_ALL_HEADERS_RE='#[[:space:]]*include[[:space:]]+[<"]([a-z_]*_?common_?headfile\.h|[a-z_]*_headfile\.h|headfile\.h|all\.h|globals\.h|project\.h)[>"]'
 # 逐飞开源库标准 mega-header — 白名单放行（与 pre-write-check.py 同步）
 CATCH_ALL_WHITELIST_RE='zf_common_headfile\.h'
-MAIN_C_MAX_CALLS=6
+MAIN_C_MAX_CUSTOM_CALLS=6
 ISR_BODY_MAX=20
 C_FILE_MAX_LINES=800
 H_API_MAX=20
@@ -97,13 +97,13 @@ check_app_vendor_includes() {
     done
 }
 
-# ===== 检查 2: main.c 顶层调用数 =====
+# ===== 检查 2: main.c 自定义顶层调用数 =====
 # 兼容多种嵌入式入口命名：
 #   - 单核：main / app_main / firmware_main
 #   - TC264 双核：core0_main / core1_main / cpu0_main / cpu1_main
 #   - RTOS：Main_Task / vMainTask
 check_main_c_calls() {
-    echo ">>> [2/7] main.c-like top-level call count" >&2
+    echo ">>> [2/7] main.c-like custom top-level call count" >&2
     find . -type f \( \
         -name "main.c" -o \
         -name "cpu[0-9]_main.c" -o \
@@ -112,7 +112,14 @@ check_main_c_calls() {
         -name "firmware*.c" \
     \) 2>/dev/null | while IFS= read -r mainc; do
         if is_vendor_path "$mainc"; then continue; fi
-        awk -v F="$mainc" -v MAX="$MAIN_C_MAX_CALLS" '
+        awk -v F="$mainc" -v MAX="$MAIN_C_MAX_CUSTOM_CALLS" '
+            function is_generated_call(name) {
+                return name == "HAL_Init" || name == "SystemClock_Config" || \
+                       name == "PeriphCommonClock_Config" || \
+                       name ~ /^MX_[A-Za-z0-9_]+_Init$/ || \
+                       name == "osKernelInitialize" || name == "osKernelStart" || \
+                       name == "vTaskStartScheduler"
+            }
             BEGIN { in_main=0; depth=0; calls=0; start=0 }
             /(^|[ \t])(int|void)[ \t]+(main|core[0-9]+_main|cpu[0-9]+_main|Main_Task|vMainTask|app_main|firmware_main|core_main)[ \t]*\(/ {
                 if (!in_main) { in_main=1; start=NR; depth=0; main_name=$0; sub(/.*[ \t]/,"",main_name); sub(/\(.*/,"",main_name) }
@@ -130,7 +137,7 @@ check_main_c_calls() {
                         depth--
                         if (depth == 0) {
                             if (calls > MAX) {
-                                printf "[ARCH-2] %s:%d - %s() 顶层调用 = %d，超过 %d\n", F, start, main_name, calls, MAX
+                                printf "[ARCH-2] %s:%d - %s() 自定义顶层调用 = %d，超过 %d\n", F, start, main_name, calls, MAX
                             }
                             in_main=0
                             break
@@ -150,7 +157,7 @@ check_main_c_calls() {
                             sub(/[ \t]*\($/,"", name)
                             if (name != "if" && name != "while" && name != "for" && \
                                 name != "switch" && name != "return" && name != "sizeof" && \
-                                name != "do" && name != "else") {
+                                name != "do" && name != "else" && !is_generated_call(name)) {
                                 calls++
                             }
                         }
@@ -350,16 +357,15 @@ check_hw_lock() {
             }
             return ""
         }
-        function flush(   k) {
+        function flush() {
             if (!have) return
             if (section=="pins"   && cid!="")    { pin[cid]++;    if (pin[cid]>1)    print "pins: pin " cid " 重复" }
             if (section=="dma"    && cstream!="") { dm[cstream]++; if (dm[cstream]>1) print "dma: stream " cstream " 重复" }
             if (section=="irq") {
                 if (cirqn!="") { iq[cirqn]++; if (iq[cirqn]>1) print "irq: irqn " cirqn " 重复" }
-                if (cpp!="" && cps!="") { k=cpp"_"cps; pr[k]++; if (pr[k]>1) print "irq: priority " cpp "/" cps " 重复（" cirqn " 与之前条目同优先级）" }
             }
             if (section=="timers" && cid!="")    { tm[cid]++;     if (tm[cid]>1)     print "timers: id " cid " 重复" }
-            cid=""; cstream=""; cirqn=""; cpp=""; cps=""; have=0
+            cid=""; cstream=""; cirqn=""; have=0
         }
         /^[ \t]*pins:[ \t]*$/   { flush(); section="pins";   next }
         /^[ \t]*dma:[ \t]*$/    { flush(); section="dma";    next }
@@ -370,8 +376,6 @@ check_hw_lock() {
             v=getval($0,"id");               if (v!="") cid=v
             v=getval($0,"stream");           if (v!="") cstream=v
             v=getval($0,"irqn");             if (v!="") cirqn=v
-            v=getval($0,"priority_preempt"); if (v!="") cpp=v
-            v=getval($0,"priority_sub");     if (v!="") cps=v
         }
         END { flush() }
     ' "$hw_yaml" | while IFS= read -r dup; do

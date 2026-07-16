@@ -163,7 +163,7 @@ competition_state:
 >   timers:
 >     - {id: TIM2, use: pwm_motor, owner: drv_motor}
 > ```
-> 脚本机械检测（命中任一即输出 `[ARCH-8]` 行，使 `arch-check.sh` 退出码 = 1）：① `pins[].id` 重复；② `dma[].stream` 重复；③ `irq[].irqn` 重复或 `priority_preempt`+`priority_sub` 组合重复（抢占歧义）；④ `timers[].id` 重复。校验键为 `id` / `stream` / `irqn` / `priority_*`（`owner` 等其余字段为人读注释，脚本不据其判定）。
+> 脚本机械检测（命中任一即输出 `[ARCH-8]` 行，使 `arch-check.sh` 退出码 = 1）：① `pins[].id` 重复；② `dma[].stream` 重复；③ `irq[].irqn` 重复；④ `timers[].id` 重复。不同 IRQ 可以使用相同的 `priority_preempt`+`priority_sub` 组合；`owner` 和优先级等其余字段由人工核对，脚本不据其判定资源重复。
 > **fail-closed 边界**：`硬件资源表.md` 存在但**缺 `hw_lock` 块** → 输出 `[ARCH-8]` 视为违规、退出码 1、不放行 CP-1；若该文件整体不存在 → 跳过检测（exit 0）。各 Agent 文档中出现的 `hw_lock` 均指此块。
 
 ### Competition State 与 git tag 一一对应

@@ -293,7 +293,7 @@ int main(void) {
 | 检查项 | 通过标准 | 失败处置 | 自动化 |
 |---|---|---|---|
 | **ARCH-1** 应用层 `#include` 列表 | 只含 `hal_*.h` / `drv_*.h` / `mid_*.h` / `svc_*.h` / `<stdint.h>` 等标准 C | 出现 `stm32f4xx_hal.h` / `gd32f4xx.h` / `ti_msp_dl_config.h` 等 → 强制下沉到 HAL/BSP 层 | ✅ `arch-check.sh` |
-| **ARCH-2** `main()` 顶层调用数 | ≤ 6 | 超出 → 拆出 `app_xxx.c` | ✅ `arch-check.sh` + `pre-write-check.py` |
+| **ARCH-2** `main()` 自定义顶层调用数 | ≤ 6；CubeMX/HAL/RTOS 生成的初始化与调度调用不计数 | 超出 → 拆出 `app_xxx.c` | ✅ `arch-check.sh` + `pre-write-check.py` |
 | **ARCH-3** ISR / 弱回调函数体行数 | ≤ 20 行非空非注释 | 超出 → 业务移到任务 / 标志位 | ✅ `arch-check.sh` + `pre-write-check.py` |
 | **ARCH-4** 应用层 `extern` 变量数 | = 0 | 改 getter/setter API | ✅ `arch-check.sh` + `pre-write-check.py` |
 | **ARCH-5** 单 `.c` 文件行数 | ≤ 800 | 按职责拆分 | ✅ `arch-check.sh` |

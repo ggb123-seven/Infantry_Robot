@@ -22,7 +22,7 @@
 - [ ] 应用层（app/）**不** `#include` 厂商 HAL 头（stm32*/gd32*/esp_*/ti_msp_dl_* 等）
 - [ ] 应用层**不**直接裸写寄存器（`*(volatile..*)0x..`）——封装到 HAL/BSP
 - [ ] 不引入 catch-all mega-header（`*_headfile.h`/`all.h`）间接拉厂商头
-- [ ] `main.c` 只做启动编排与主循环调度，顶层调用 ≤ 6
+- [ ] `main.c` 只做启动编排与主循环调度；CubeMX/HAL/RTOS 生成的初始化与调度调用数量不限，其余自定义顶层调用 ≤ 6
 
 ## 质量门（Quality Check，REVIEW 必跑）
 
@@ -31,7 +31,7 @@
 | 编号 | 规则 |
 |---|---|
 | ARCH-1/1B/1C | 应用层禁厂商头 / 禁 catch-all mega-header / 禁裸 MMIO |
-| ARCH-2 | main.c 顶层调用 ≤ 6 |
+| ARCH-2 | main.c 自定义顶层调用 ≤ 6；`HAL_Init`、时钟配置、`MX_*_Init` 和 RTOS 内核/调度器调用不计数 |
 | ARCH-3 | ISR/回调函数体 ≤ 20 行 |
 | ARCH-4 | 应用层 extern 变量 = 0 |
 | ARCH-5/6 | 单 .c ≤ 800 行；单 .h 公共 API ≤ 20 |
@@ -39,3 +39,7 @@
 | ARCH-8 | hw-lock.yaml pin/dma/irq/timer 冲突检测 |
 
 > 若工程已装 embedded-dev 的 `scripts/arch-check.sh`/`.ps1`，REVIEW 阶段直接跑它做门禁。
+
+## 沉淀（promote 回流）
+> 只沉淀**可复用知识**（决策/约定/坑/模式），任务过程性事实留在 tasks/ 不要 promote。下次会自动注入。
+- [设计决策] ARCH-2 只统计 main 类入口的自定义顶层调用；HAL_Init、时钟配置、MX_*_Init 和 RTOS 内核/调度器调用属于生成的启动编排，不计入数量上限。

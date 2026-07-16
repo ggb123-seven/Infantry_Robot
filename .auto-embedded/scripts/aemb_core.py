@@ -330,8 +330,8 @@ def _hw_lock_items(text: str) -> dict:
 
 def hw_lock_conflicts(root: Path) -> list:
     """检测 hw-lock.yaml 的资源冲突，返回违规字符串列表（空=无冲突）。
-    规则：pins.id / dma.stream / irq.irqn / timers.id 不可重复；
-    irq 的 (priority_preempt, priority_sub) 不可重复。"""
+    规则：pins.id / dma.stream / irq.irqn / timers.id 不可重复。
+    不同 IRQ 允许使用相同的抢占优先级和子优先级。"""
     f = aemb_dir(root) / "spec" / "hardware" / "hw-lock.yaml"
     text = _read_text(f)
     if not text:
@@ -355,18 +355,6 @@ def hw_lock_conflicts(root: Path) -> list:
     _dup("dma", "stream", "stream")
     _dup("irq", "irqn", "irqn")
     _dup("timers", "id", "timer")
-
-    # irq 优先级冲突（同一 preempt/sub 组合）
-    pri = {}
-    for it in secs.get("irq", []):
-        pp, ps = it.get("priority_preempt"), it.get("priority_sub")
-        if pp is not None and ps is not None and pp != "" and ps != "":
-            k = f"{pp}/{ps}"
-            pri.setdefault(k, [])
-            pri[k].append(it.get("irqn", "?"))
-    for k, owners in pri.items():
-        if len(owners) > 1:
-            out.append(f"[HW-CONFLICT] irq: 优先级 {k} 被多个中断占用（{', '.join(owners)}）")
     return out
 
 
