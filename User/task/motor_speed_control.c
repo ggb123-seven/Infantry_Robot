@@ -3,21 +3,11 @@
 #include <math.h>
 #include <stddef.h>
 
-/*
- * Ozone 在线调参入口：
- * - 变量位于 RAM，初值来自头文件中的 PID 默认参数宏。
- * - 速度环每周期校验并同步 kp、ki、kd，非法参数不会进入 PID 计算。
- */
-volatile MotorSpeedPidTune_t g_motor_speed_pid_tune = {
-    .kp = MOTOR_SPEED_PID_KP,
-    .ki = MOTOR_SPEED_PID_KI,
-    .kd = MOTOR_SPEED_PID_KD,
-};
-
 static float MotorSpeedControl_Clamp(float value, float absolute_limit);
 static float MotorSpeedControl_ApplyRamp(float current, float target, float maximum_step);
 static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz);
-static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control);
+static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control,
+                                           const MotorSpeedPidTune_t *pid_tune);
 static void MotorSpeedControl_Reset(MotorSpeedControl_t *control);
 static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control);
 
@@ -30,6 +20,11 @@ static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control);
  */
 int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequency_hz) {
   if (control == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
+  const MotorSpeedPidTune_t default_pid_tune = {
+      .kp = MOTOR_SPEED_PID_KP,
+      .ki = MOTOR_SPEED_PID_KI,
+      .kd = MOTOR_SPEED_PID_KD,
+  };
   *control = (MotorSpeedControl_t){0};
   control->pid_param = (KPID_Params_t){
       .k = 1.0F,
@@ -42,7 +37,7 @@ int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequen
       .range = 0.0F,
   };
   if (!MotorSpeedControl_IsConfigurationValid(sample_frequency_hz) ||
-      !MotorSpeedControl_ApplyPidTune(control)) {
+      !MotorSpeedControl_ApplyPidTune(control, &default_pid_tune)) {
     control->feedback.status = MOTOR_SPEED_CONTROL_CONFIG_ERROR;
     return control->feedback.status;
   }
@@ -72,17 +67,20 @@ int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control, float actu
  *
  * @param[in,out] control 速度环主结构体
  * @param[in] requested_speed_rpm 原始目标速度，单位为输出轴 rpm
+ * @param[in] pid_tune 本周期速度 PID 参数
  * @param[in] enabled 是否允许速度环产生非零电流指令
  * @param[in] control_period_s 本周期控制间隔，单位 s，必须大于 0
  * @return 本周期速度环状态，取值见 MotorSpeedControlStatus_t
  */
-int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_speed_rpm, bool enabled, float control_period_s) {
-  if (control == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
+int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_speed_rpm,
+                                 const MotorSpeedPidTune_t *pid_tune, bool enabled,
+                                 float control_period_s) {
+  if (control == NULL || pid_tune == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
   MotorSpeedControlFeedback_t *feedback = &control->feedback;
   feedback->enabled = enabled;
   feedback->requested_speed_rpm = requested_speed_rpm;
   feedback->current_command_a = 0.0F;
-  const bool pid_tune_valid = MotorSpeedControl_ApplyPidTune(control);
+  const bool pid_tune_valid = MotorSpeedControl_ApplyPidTune(control, pid_tune);
   feedback->pid_kp = control->pid_param.p;
   feedback->pid_ki = control->pid_param.i;
   feedback->pid_kd = control->pid_param.d;
@@ -185,15 +183,18 @@ static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz) {
 }
 
 /**
- * @brief 校验并应用 Ozone 中的速度 PID 在线参数
+ * @brief 校验并应用本周期速度 PID 参数
  *
  * @param[in,out] control 速度环主结构体
+ * @param[in] pid_tune 待应用的速度 PID 参数
  * @return 参数合法并成功应用时返回 true，否则返回 false
  */
-static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control) {
-  const float kp = g_motor_speed_pid_tune.kp;
-  const float ki = g_motor_speed_pid_tune.ki;
-  const float kd = g_motor_speed_pid_tune.kd;
+static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control,
+                                           const MotorSpeedPidTune_t *pid_tune) {
+  if (control == NULL || pid_tune == NULL) return false;
+  const float kp = pid_tune->kp;
+  const float ki = pid_tune->ki;
+  const float kd = pid_tune->kd;
   if (!isfinite(kp) || kp < 0.0F || !isfinite(ki) || ki < 0.0F || !isfinite(kd) || kd < 0.0F) return false;
   control->pid_param.p = kp;
   control->pid_param.i = ki;

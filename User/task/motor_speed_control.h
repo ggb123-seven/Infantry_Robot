@@ -26,10 +26,10 @@ extern "C" {
  * - MOTOR_SPEED_PID_D_CUTOFF_HZ：反馈微分低通截止频率，单位 Hz。
  * - MOTOR_SPEED_PID_INTEGRAL_LIMIT：积分状态限幅，单位 rpm*s。
  * - MOTOR_SPEED_CURRENT_LIMIT_A：PID 输出的转子侧电流指令限幅，单位 A。
- * 默认目标为 0 rpm；其余参数是保守初值，最终值需依据上板波形整定。
+ * 默认目标为 100 rpm；PID 参数为上板整定结果，其余参数按实车测试需要配置。
  */
 #ifndef MOTOR_SPEED_TARGET_RPM
-#define MOTOR_SPEED_TARGET_RPM (0.0F)
+#define MOTOR_SPEED_TARGET_RPM (100.0F)
 #endif
 
 #ifndef MOTOR_SPEED_LIMIT_RPM
@@ -41,11 +41,11 @@ extern "C" {
 #endif
 
 #ifndef MOTOR_SPEED_PID_KP
-#define MOTOR_SPEED_PID_KP (0.02F)
+#define MOTOR_SPEED_PID_KP (0.5F)
 #endif
 
 #ifndef MOTOR_SPEED_PID_KI
-#define MOTOR_SPEED_PID_KI (0.20F)
+#define MOTOR_SPEED_PID_KI (0.14F)
 #endif
 
 #ifndef MOTOR_SPEED_PID_KD
@@ -64,16 +64,13 @@ extern "C" {
 #define MOTOR_SPEED_CURRENT_LIMIT_A (4.0F)
 #endif
 
-/**
- * @brief Ozone 速度 PID 在线调参结构体
- *
- * 字段说明：
+/*
+ * 速度 PID 在线参数：
  * - kp：速度环比例增益，单位 A/rpm。
  * - ki：速度环积分增益，单位 A/(rpm*s)。
  * - kd：速度环反馈微分增益，默认值为 0。
- *
- * 三个字段位于 RAM，可在 Ozone 中监视和修改。速度环每周期校验参数，
- * 任一字段为非有限值或负数时清除 PID 状态并输出零电流指令。
+ * 参数由任务层从 Ozone 监视结构体传入，任一字段为非有限值或负数时，
+ * 速度环清除 PID 状态并输出零电流指令。
  */
 typedef struct {
   float kp;
@@ -141,8 +138,6 @@ typedef struct {
   bool was_enabled;
 } MotorSpeedControl_t;
 
-extern volatile MotorSpeedPidTune_t g_motor_speed_pid_tune;
-
 /**
  * @brief 初始化速度环模块
  *
@@ -168,13 +163,15 @@ int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control,
  *
  * @param[in,out] control 速度环主结构体
  * @param[in] requested_speed_rpm 原始目标速度，单位为输出轴 rpm
+ * @param[in] pid_tune 本周期速度 PID 参数
  * @param[in] enabled 是否允许速度环产生非零电流指令
  * @param[in] control_period_s 本周期控制间隔，单位 s，必须大于 0
  * @return 本周期速度环状态，取值见 MotorSpeedControlStatus_t
  */
 int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control,
-                                 float requested_speed_rpm, bool enabled,
-                                 float control_period_s);
+                                 float requested_speed_rpm,
+                                 const MotorSpeedPidTune_t *pid_tune,
+                                 bool enabled, float control_period_s);
 
 /**
  * @brief 导出速度环电流指令
