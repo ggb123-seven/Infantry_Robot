@@ -1,12 +1,13 @@
 #pragma once
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 /* Includes ----------------------------------------------------------------- */
-#include <cmsis_os2.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include <cmsis_os2.h>
 
 /* USER INCLUDE BEGIN */
 
@@ -24,43 +25,50 @@ extern "C" {
 /* Exported types ----------------------------------------------------------- */
 
 /* 任务运行时结构体 */
-typedef struct {
-    /* 各任务，也可以叫做线程 */
-    struct {
-        osThreadId_t motor_chassis;
-    } thread;
+typedef struct
+{
+  /* 各任务，也可以叫做线程 */
+  struct
+  {
+    osThreadId_t motor_chassis;
+  } thread;
 
-    /* USER MESSAGE BEGIN */
-    struct {
-        osMessageQueueId_t user_msg; /* 用户自定义任务消息队列 */
-    } msgq;
-    /* USER MESSAGE END */
+  /* USER MESSAGE BEGIN */
+  struct
+  {
+    osMessageQueueId_t user_msg; /* 用户自定义任务消息队列 */
+  } msgq;
+  /* USER MESSAGE END */
 
-    /* 机器人状态 */
-    struct {
-        float battery; /* 电池电量百分比 */
-        float vbat; /* 电池电压 */
-        float cpu_temp; /* CPU温度 */
-    } status;
+  /* 机器人状态 */
+  struct
+  {
+    float battery;  /* 电池电量百分比 */
+    float vbat;     /* 电池电压 */
+    float cpu_temp; /* CPU温度 */
+  } status;
 
-    /* USER CONFIG BEGIN */
+  /* USER CONFIG BEGIN */
 
-    /* USER CONFIG END */
+  /* USER CONFIG END */
 
-    /* 各任务的stack使用 */
-    struct {
-        UBaseType_t motor_chassis;
-    } stack_water_mark;
+  /* 各任务的stack使用 */
+  struct
+  {
+    UBaseType_t motor_chassis;
+  } stack_water_mark;
 
-    /* 各任务运行频率 */
-    struct {
-        float motor_chassis;
-    } freq;
+  /* 各任务运行频率 */
+  struct
+  {
+    float motor_chassis;
+  } freq;
 
-    /* 任务最近运行时间 */
-    struct {
-        float motor_chassis;
-    } last_up_time;
+  /* 任务最近运行时间 */
+  struct
+  {
+    float motor_chassis;
+  } last_up_time;
 
 } Task_Runtime_t;
 

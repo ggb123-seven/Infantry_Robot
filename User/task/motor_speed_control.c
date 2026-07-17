@@ -6,8 +6,7 @@
 static float MotorSpeedControl_Clamp(float value, float absolute_limit);
 static float MotorSpeedControl_ApplyRamp(float current, float target, float maximum_step);
 static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz);
-static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control,
-                                           const MotorSpeedPidTune_t *pid_tune);
+static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control, const MotorSpeedPidTune_t *pid_tune);
 static void MotorSpeedControl_Reset(MotorSpeedControl_t *control);
 static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control);
 
@@ -18,33 +17,40 @@ static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control);
  * @param[in] sample_frequency_hz 速度环采样频率，单位 Hz，必须大于 0
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，失败返回对应状态码
  */
-int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequency_hz) {
-  if (control == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
-  const MotorSpeedPidTune_t default_pid_tune = {
-      .kp = MOTOR_SPEED_PID_KP,
-      .ki = MOTOR_SPEED_PID_KI,
-      .kd = MOTOR_SPEED_PID_KD,
+int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequency_hz)
+{
+  if (control == NULL)
+    return MOTOR_SPEED_CONTROL_NULL_ERROR;
+  const MotorSpeedPidTune_t default_pid_tune =
+  {
+    .kp = MOTOR_SPEED_PID_KP,
+    .ki = MOTOR_SPEED_PID_KI,
+    .kd = MOTOR_SPEED_PID_KD,
   };
-  *control = (MotorSpeedControl_t){0};
-  control->pid_param = (KPID_Params_t){
-      .k = 1.0F,
-      .p = MOTOR_SPEED_PID_KP,
-      .i = MOTOR_SPEED_PID_KI,
-      .d = MOTOR_SPEED_PID_KD,
-      .i_limit = MOTOR_SPEED_PID_INTEGRAL_LIMIT,
-      .out_limit = MOTOR_SPEED_CURRENT_LIMIT_A,
-      .d_cutoff_freq = MOTOR_SPEED_PID_D_CUTOFF_HZ,
-      .range = 0.0F,
+  *control = (MotorSpeedControl_t)
+  {
+    0
+  };
+  control->pid_param = (KPID_Params_t)
+  {
+    .k = 1.0F,
+    .p = MOTOR_SPEED_PID_KP,
+    .i = MOTOR_SPEED_PID_KI,
+    .d = MOTOR_SPEED_PID_KD,
+    .i_limit = MOTOR_SPEED_PID_INTEGRAL_LIMIT,
+    .out_limit = MOTOR_SPEED_CURRENT_LIMIT_A,
+    .d_cutoff_freq = MOTOR_SPEED_PID_D_CUTOFF_HZ,
+    .range = 0.0F,
   };
   if (!MotorSpeedControl_IsConfigurationValid(sample_frequency_hz) ||
-      !MotorSpeedControl_ApplyPidTune(control, &default_pid_tune)) {
+      !MotorSpeedControl_ApplyPidTune(control, &default_pid_tune))
+  {
     control->feedback.status = MOTOR_SPEED_CONTROL_CONFIG_ERROR;
     return control->feedback.status;
   }
-  control->feedback.status =
-      PID_Init(&control->pid, KPID_MODE_CALC_D, sample_frequency_hz, &control->pid_param) == 0
-          ? MOTOR_SPEED_CONTROL_OK
-          : MOTOR_SPEED_CONTROL_INIT_ERROR;
+  control->feedback.status = PID_Init(&control->pid, KPID_MODE_CALC_D, sample_frequency_hz, &control->pid_param) == 0
+                                 ? MOTOR_SPEED_CONTROL_OK
+                                 : MOTOR_SPEED_CONTROL_INIT_ERROR;
   control->feedback.initialized = control->feedback.status == MOTOR_SPEED_CONTROL_OK;
   return control->feedback.status;
 }
@@ -56,8 +62,10 @@ int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequen
  * @param[in] actual_speed_rpm 真实速度，单位为输出轴 rpm
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，失败返回对应状态码
  */
-int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control, float actual_speed_rpm) {
-  if (control == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
+int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control, float actual_speed_rpm)
+{
+  if (control == NULL)
+    return MOTOR_SPEED_CONTROL_NULL_ERROR;
   control->feedback.actual_speed_rpm = actual_speed_rpm;
   return isfinite(actual_speed_rpm) ? MOTOR_SPEED_CONTROL_OK : MOTOR_SPEED_CONTROL_INVALID_VALUE;
 }
@@ -73,9 +81,10 @@ int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control, float actu
  * @return 本周期速度环状态，取值见 MotorSpeedControlStatus_t
  */
 int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_speed_rpm,
-                                 const MotorSpeedPidTune_t *pid_tune, bool enabled,
-                                 float control_period_s) {
-  if (control == NULL || pid_tune == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
+                                 const MotorSpeedPidTune_t *pid_tune, bool enabled, float control_period_s)
+{
+  if (control == NULL || pid_tune == NULL)
+    return MOTOR_SPEED_CONTROL_NULL_ERROR;
   MotorSpeedControlFeedback_t *feedback = &control->feedback;
   feedback->enabled = enabled;
   feedback->requested_speed_rpm = requested_speed_rpm;
@@ -85,43 +94,53 @@ int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_s
   feedback->pid_ki = control->pid_param.i;
   feedback->pid_kd = control->pid_param.d;
   feedback->limited_target_speed_rpm =
-      isfinite(requested_speed_rpm)
-          ? MotorSpeedControl_Clamp(requested_speed_rpm, MOTOR_SPEED_LIMIT_RPM)
-          : 0.0F;
+      isfinite(requested_speed_rpm) ? MotorSpeedControl_Clamp(requested_speed_rpm, MOTOR_SPEED_LIMIT_RPM) : 0.0F;
 
-  if (!feedback->initialized) {
+  if (!feedback->initialized)
+  {
     feedback->status = MOTOR_SPEED_CONTROL_INIT_ERROR;
     MotorSpeedControl_Reset(control);
-  } else if (!pid_tune_valid) {
+  }
+  else if (!pid_tune_valid)
+  {
     feedback->status = MOTOR_SPEED_CONTROL_CONFIG_ERROR;
     MotorSpeedControl_Reset(control);
-  } else if (!isfinite(requested_speed_rpm) || !isfinite(feedback->actual_speed_rpm) ||
-             !isfinite(control_period_s) || control_period_s <= 0.0F) {
+  }
+  else if (!isfinite(requested_speed_rpm) || !isfinite(feedback->actual_speed_rpm) || !isfinite(control_period_s) ||
+           control_period_s <= 0.0F)
+  {
     feedback->status = MOTOR_SPEED_CONTROL_INVALID_VALUE;
     MotorSpeedControl_Reset(control);
-  } else if (!enabled) {
+  }
+  else if (!enabled)
+  {
     feedback->status = MOTOR_SPEED_CONTROL_DISABLED;
     MotorSpeedControl_Reset(control);
-  } else {
-    if (!control->was_enabled) MotorSpeedControl_PrimeFeedback(control);
+  }
+  else
+  {
+    if (!control->was_enabled)
+      MotorSpeedControl_PrimeFeedback(control);
     control->ramped_target_speed_rpm =
-        MotorSpeedControl_ApplyRamp(control->ramped_target_speed_rpm,
-                                    feedback->limited_target_speed_rpm,
+        MotorSpeedControl_ApplyRamp(control->ramped_target_speed_rpm, feedback->limited_target_speed_rpm,
                                     MOTOR_SPEED_RAMP_RATE_RPM_S * control_period_s);
     feedback->current_command_a =
-        PID_Calc(&control->pid, control->ramped_target_speed_rpm,
-                 feedback->actual_speed_rpm, 0.0F, control_period_s);
-    if (!isfinite(feedback->current_command_a)) {
+        PID_Calc(&control->pid, control->ramped_target_speed_rpm, feedback->actual_speed_rpm, 0.0F, control_period_s);
+    if (!isfinite(feedback->current_command_a))
+    {
       feedback->status = MOTOR_SPEED_CONTROL_INVALID_VALUE;
       MotorSpeedControl_Reset(control);
-    } else {
+    }
+    else
+    {
       feedback->current_command_a = MotorSpeedControl_Clamp(feedback->current_command_a, MOTOR_SPEED_CURRENT_LIMIT_A);
       feedback->status = MOTOR_SPEED_CONTROL_OK;
     }
   }
 
   feedback->target_speed_rpm = control->ramped_target_speed_rpm;
-  feedback->speed_error_rpm = feedback->status == MOTOR_SPEED_CONTROL_OK ? feedback->target_speed_rpm - feedback->actual_speed_rpm : 0.0F;
+  feedback->speed_error_rpm =
+      feedback->status == MOTOR_SPEED_CONTROL_OK ? feedback->target_speed_rpm - feedback->actual_speed_rpm : 0.0F;
   return feedback->status;
 }
 
@@ -132,8 +151,10 @@ int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_s
  * @param[out] current_command_a 转子侧电流指令，单位 A
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，参数为空时返回 MOTOR_SPEED_CONTROL_NULL_ERROR
  */
-int8_t MotorSpeedControl_DumpOutput(const MotorSpeedControl_t *control, float *current_command_a) {
-  if (control == NULL || current_command_a == NULL) return MOTOR_SPEED_CONTROL_NULL_ERROR;
+int8_t MotorSpeedControl_DumpOutput(const MotorSpeedControl_t *control, float *current_command_a)
+{
+  if (control == NULL || current_command_a == NULL)
+    return MOTOR_SPEED_CONTROL_NULL_ERROR;
   *current_command_a = control->feedback.current_command_a;
   return MOTOR_SPEED_CONTROL_OK;
 }
@@ -145,9 +166,12 @@ int8_t MotorSpeedControl_DumpOutput(const MotorSpeedControl_t *control, float *c
  * @param[in] absolute_limit 正数形式的绝对值上限
  * @return 限幅后的数值
  */
-static float MotorSpeedControl_Clamp(float value, float absolute_limit) {
-  if (value > absolute_limit) return absolute_limit;
-  if (value < -absolute_limit) return -absolute_limit;
+static float MotorSpeedControl_Clamp(float value, float absolute_limit)
+{
+  if (value > absolute_limit)
+    return absolute_limit;
+  if (value < -absolute_limit)
+    return -absolute_limit;
   return value;
 }
 
@@ -159,10 +183,13 @@ static float MotorSpeedControl_Clamp(float value, float absolute_limit) {
  * @param[in] maximum_step 单周期允许的最大变化量
  * @return 本周期更新后的数值
  */
-static float MotorSpeedControl_ApplyRamp(float current, float target, float maximum_step) {
+static float MotorSpeedControl_ApplyRamp(float current, float target, float maximum_step)
+{
   const float difference = target - current;
-  if (difference > maximum_step) return current + maximum_step;
-  if (difference < -maximum_step) return current - maximum_step;
+  if (difference > maximum_step)
+    return current + maximum_step;
+  if (difference < -maximum_step)
+    return current - maximum_step;
   return target;
 }
 
@@ -172,14 +199,14 @@ static float MotorSpeedControl_ApplyRamp(float current, float target, float maxi
  * @param[in] sample_frequency_hz 速度环采样频率，单位 Hz
  * @return 所有参数合法时返回 true，否则返回 false
  */
-static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz) {
-  return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F &&
-         isfinite(MOTOR_SPEED_LIMIT_RPM) && MOTOR_SPEED_LIMIT_RPM > 0.0F &&
-         isfinite(MOTOR_SPEED_RAMP_RATE_RPM_S) && MOTOR_SPEED_RAMP_RATE_RPM_S > 0.0F &&
+static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz)
+{
+  return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(MOTOR_SPEED_LIMIT_RPM) &&
+         MOTOR_SPEED_LIMIT_RPM > 0.0F && isfinite(MOTOR_SPEED_RAMP_RATE_RPM_S) && MOTOR_SPEED_RAMP_RATE_RPM_S > 0.0F &&
          isfinite(MOTOR_SPEED_PID_D_CUTOFF_HZ) && MOTOR_SPEED_PID_D_CUTOFF_HZ > 0.0F &&
-         MOTOR_SPEED_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
-         isfinite(MOTOR_SPEED_PID_INTEGRAL_LIMIT) && MOTOR_SPEED_PID_INTEGRAL_LIMIT >= 0.0F &&
-         isfinite(MOTOR_SPEED_CURRENT_LIMIT_A) && MOTOR_SPEED_CURRENT_LIMIT_A > 0.0F;
+         MOTOR_SPEED_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F && isfinite(MOTOR_SPEED_PID_INTEGRAL_LIMIT) &&
+         MOTOR_SPEED_PID_INTEGRAL_LIMIT >= 0.0F && isfinite(MOTOR_SPEED_CURRENT_LIMIT_A) &&
+         MOTOR_SPEED_CURRENT_LIMIT_A > 0.0F;
 }
 
 /**
@@ -189,13 +216,15 @@ static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz) {
  * @param[in] pid_tune 待应用的速度 PID 参数
  * @return 参数合法并成功应用时返回 true，否则返回 false
  */
-static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control,
-                                           const MotorSpeedPidTune_t *pid_tune) {
-  if (control == NULL || pid_tune == NULL) return false;
+static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control, const MotorSpeedPidTune_t *pid_tune)
+{
+  if (control == NULL || pid_tune == NULL)
+    return false;
   const float kp = pid_tune->kp;
   const float ki = pid_tune->ki;
   const float kd = pid_tune->kd;
-  if (!isfinite(kp) || kp < 0.0F || !isfinite(ki) || ki < 0.0F || !isfinite(kd) || kd < 0.0F) return false;
+  if (!isfinite(kp) || kp < 0.0F || !isfinite(ki) || ki < 0.0F || !isfinite(kd) || kd < 0.0F)
+    return false;
   control->pid_param.p = kp;
   control->pid_param.i = ki;
   control->pid_param.d = kd;
@@ -208,11 +237,13 @@ static bool MotorSpeedControl_ApplyPidTune(MotorSpeedControl_t *control,
  * @param[in,out] control 速度环主结构体
  * @return 无返回值
  */
-static void MotorSpeedControl_Reset(MotorSpeedControl_t *control) {
+static void MotorSpeedControl_Reset(MotorSpeedControl_t *control)
+{
   control->ramped_target_speed_rpm = 0.0F;
   control->was_enabled = false;
   control->feedback.current_command_a = 0.0F;
-  if (control->feedback.initialized) PID_Reset(&control->pid);
+  if (control->feedback.initialized)
+    PID_Reset(&control->pid);
 }
 
 /**
@@ -221,7 +252,8 @@ static void MotorSpeedControl_Reset(MotorSpeedControl_t *control) {
  * @param[in,out] control 速度环主结构体
  * @return 无返回值
  */
-static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control) {
+static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control)
+{
   PID_Reset(&control->pid);
   const float scaled_feedback = control->pid_param.k * control->feedback.actual_speed_rpm;
   LowPassFilter2p_Reset(&control->pid.dfilter, scaled_feedback);

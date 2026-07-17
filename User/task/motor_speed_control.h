@@ -1,7 +1,8 @@
 #pragma once
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdbool.h>
@@ -72,7 +73,8 @@ extern "C" {
  * 参数由任务层从 Ozone 监视结构体传入，任一字段为非有限值或负数时，
  * 速度环清除 PID 状态并输出零电流指令。
  */
-typedef struct {
+typedef struct
+{
   float kp;
   float ki;
   float kd;
@@ -81,7 +83,8 @@ typedef struct {
 /**
  * @brief 速度环运行状态
  */
-typedef enum {
+typedef enum
+{
   MOTOR_SPEED_CONTROL_OK = 0,
   MOTOR_SPEED_CONTROL_INIT_ERROR = -1,
   MOTOR_SPEED_CONTROL_DISABLED = -2,
@@ -107,7 +110,8 @@ typedef enum {
  * - pid_ki：本周期实际应用的积分增益，单位 A/(rpm*s)。
  * - pid_kd：本周期实际应用的反馈微分增益。
  */
-typedef struct {
+typedef struct
+{
   bool initialized;
   bool enabled;
   int8_t status;
@@ -130,7 +134,8 @@ typedef struct {
  * - ramped_target_speed_rpm：缓启动内部状态，单位为输出轴 rpm。
  * - was_enabled：上一周期使能状态，用于恢复时预置反馈微分。
  */
-typedef struct {
+typedef struct
+{
   KPID_Params_t pid_param;
   KPID_t pid;
   MotorSpeedControlFeedback_t feedback;
@@ -145,8 +150,7 @@ typedef struct {
  * @param[in] sample_frequency_hz 速度环采样频率，单位 Hz，必须大于 0
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，失败返回对应状态码
  */
-int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control,
-                              float sample_frequency_hz);
+int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequency_hz);
 
 /**
  * @brief 更新速度环真实速度反馈
@@ -155,8 +159,7 @@ int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control,
  * @param[in] actual_speed_rpm 真实速度，单位为输出轴 rpm
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，失败返回对应状态码
  */
-int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control,
-                                        float actual_speed_rpm);
+int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control, float actual_speed_rpm);
 
 /**
  * @brief 执行一次速度环控制计算
@@ -168,10 +171,8 @@ int8_t MotorSpeedControl_UpdateFeedback(MotorSpeedControl_t *control,
  * @param[in] control_period_s 本周期控制间隔，单位 s，必须大于 0
  * @return 本周期速度环状态，取值见 MotorSpeedControlStatus_t
  */
-int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control,
-                                 float requested_speed_rpm,
-                                 const MotorSpeedPidTune_t *pid_tune,
-                                 bool enabled, float control_period_s);
+int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_speed_rpm,
+                                 const MotorSpeedPidTune_t *pid_tune, bool enabled, float control_period_s);
 
 /**
  * @brief 导出速度环电流指令
@@ -181,8 +182,7 @@ int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control,
  * @return 成功返回 MOTOR_SPEED_CONTROL_OK，参数为空时返回
  * MOTOR_SPEED_CONTROL_NULL_ERROR
  */
-int8_t MotorSpeedControl_DumpOutput(const MotorSpeedControl_t *control,
-                                    float *current_command_a);
+int8_t MotorSpeedControl_DumpOutput(const MotorSpeedControl_t *control, float *current_command_a);
 
 #ifdef __cplusplus
 }

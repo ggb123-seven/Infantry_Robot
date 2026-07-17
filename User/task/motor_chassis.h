@@ -35,7 +35,8 @@ extern "C"
  * - raw_current：C620 反馈的原始电流编码值。
  * - temperature_c：C620 反馈的电机温度，单位摄氏度。
  */
-typedef struct {
+typedef struct
+{
   float requested_speed_rpm;
   float pid_kp;
   float pid_ki;
