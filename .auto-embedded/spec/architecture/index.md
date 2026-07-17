@@ -48,3 +48,4 @@
 - [约定] motor_chassis 作为当前单电机主运行文件时直接调用现有 RM 驱动 API；仅被该任务使用的一对一 getter/setter 不再包装成公共函数，只有多调用者共享或需要统一策略时才增加封装。
 - [可复用模式] RTOS 业务任务的 while 循环只保留周期推进、module/driver API 调用和等待；算法细节放入 module，实现中不为一对一设备调用增加 task 内 static 步骤函数。
 - [可复用模式] 参考工程采用 task/module/component 三层：task 只负责消息或设备 I/O、调用顺序和周期调度；module 用一个主结构体集中保存 parameter/setpoint/feedback/PID/output，并提供 Init/UpdateFeedback/Control/DumpOutput 业务 API；component 只提供通用 PID、滤波等算法。禁止用 task 文件内的 static 步骤函数替代 module 边界。
+- [约定] osKernelLock() 只锁定 RTOS 任务调度，不会屏蔽硬件中断；ISR 与任务共享的数据仍须按访问模型使用 volatile、原子操作、RTOS 通知或最小临界区保护，禁止把调度锁描述或使用为中断锁。
