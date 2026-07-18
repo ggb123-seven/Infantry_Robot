@@ -46,7 +46,7 @@ extern "C" {
 #endif
 
 #ifndef MOTOR_SPEED_PID_KP
-#define MOTOR_SPEED_PID_KP (0.5F)
+#define MOTOR_SPEED_PID_KP (0.23F)
 #endif
 
 #ifndef MOTOR_SPEED_PID_KI
