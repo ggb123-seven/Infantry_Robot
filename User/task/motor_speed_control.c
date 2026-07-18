@@ -51,6 +51,8 @@ int8_t MotorSpeedControl_Init(MotorSpeedControl_t *control, float sample_frequen
   control->feedback.status = PID_Init(&control->pid, KPID_MODE_CALC_D, sample_frequency_hz, &control->pid_param) == 0
                                  ? MOTOR_SPEED_CONTROL_OK
                                  : MOTOR_SPEED_CONTROL_INIT_ERROR;
+  LowPassFilter2p_Init(&control->feedback_filter, sample_frequency_hz, MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ);
+  LowPassFilter2p_Init(&control->current_filter, sample_frequency_hz, MOTOR_SPEED_CURRENT_LPF_CUTOFF_HZ);
   control->feedback.initialized = control->feedback.status == MOTOR_SPEED_CONTROL_OK;
   return control->feedback.status;
 }
@@ -124,8 +126,10 @@ int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_s
     control->ramped_target_speed_rpm =
         MotorSpeedControl_ApplyRamp(control->ramped_target_speed_rpm, feedback->limited_target_speed_rpm,
                                     MOTOR_SPEED_RAMP_RATE_RPM_S * control_period_s);
-    feedback->current_command_a =
-        PID_Calc(&control->pid, control->ramped_target_speed_rpm, feedback->actual_speed_rpm, 0.0F, control_period_s);
+    feedback->filtered_speed_rpm = LowPassFilter2p_Apply(&control->feedback_filter, feedback->actual_speed_rpm);
+    const float pid_current_command_a =
+        PID_Calc(&control->pid, control->ramped_target_speed_rpm, feedback->filtered_speed_rpm, 0.0F, control_period_s);
+    feedback->current_command_a = LowPassFilter2p_Apply(&control->current_filter, pid_current_command_a);
     if (!isfinite(feedback->current_command_a))
     {
       feedback->status = MOTOR_SPEED_CONTROL_INVALID_VALUE;
@@ -140,7 +144,7 @@ int8_t MotorSpeedControl_Control(MotorSpeedControl_t *control, float requested_s
 
   feedback->target_speed_rpm = control->ramped_target_speed_rpm;
   feedback->speed_error_rpm =
-      feedback->status == MOTOR_SPEED_CONTROL_OK ? feedback->target_speed_rpm - feedback->actual_speed_rpm : 0.0F;
+      feedback->status == MOTOR_SPEED_CONTROL_OK ? feedback->target_speed_rpm - feedback->filtered_speed_rpm : 0.0F;
   return feedback->status;
 }
 
@@ -203,8 +207,11 @@ static bool MotorSpeedControl_IsConfigurationValid(float sample_frequency_hz)
 {
   return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(MOTOR_SPEED_LIMIT_RPM) &&
          MOTOR_SPEED_LIMIT_RPM > 0.0F && isfinite(MOTOR_SPEED_RAMP_RATE_RPM_S) && MOTOR_SPEED_RAMP_RATE_RPM_S > 0.0F &&
-         isfinite(MOTOR_SPEED_PID_D_CUTOFF_HZ) && MOTOR_SPEED_PID_D_CUTOFF_HZ > 0.0F &&
-         MOTOR_SPEED_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F && isfinite(MOTOR_SPEED_PID_INTEGRAL_LIMIT) &&
+         isfinite(MOTOR_SPEED_PID_D_CUTOFF_HZ) &&
+         MOTOR_SPEED_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F && isfinite(MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ) &&
+         MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
+         isfinite(MOTOR_SPEED_CURRENT_LPF_CUTOFF_HZ) &&
+         MOTOR_SPEED_CURRENT_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F && isfinite(MOTOR_SPEED_PID_INTEGRAL_LIMIT) &&
          MOTOR_SPEED_PID_INTEGRAL_LIMIT >= 0.0F && isfinite(MOTOR_SPEED_CURRENT_LIMIT_A) &&
          MOTOR_SPEED_CURRENT_LIMIT_A > 0.0F;
 }
@@ -241,9 +248,14 @@ static void MotorSpeedControl_Reset(MotorSpeedControl_t *control)
 {
   control->ramped_target_speed_rpm = 0.0F;
   control->was_enabled = false;
+  control->feedback.filtered_speed_rpm = 0.0F;
   control->feedback.current_command_a = 0.0F;
   if (control->feedback.initialized)
+  {
     PID_Reset(&control->pid);
+    LowPassFilter2p_Reset(&control->feedback_filter, 0.0F);
+    LowPassFilter2p_Reset(&control->current_filter, 0.0F);
+  }
 }
 
 /**
@@ -255,7 +267,10 @@ static void MotorSpeedControl_Reset(MotorSpeedControl_t *control)
 static void MotorSpeedControl_PrimeFeedback(MotorSpeedControl_t *control)
 {
   PID_Reset(&control->pid);
-  const float scaled_feedback = control->pid_param.k * control->feedback.actual_speed_rpm;
+  control->feedback.filtered_speed_rpm =
+      LowPassFilter2p_Reset(&control->feedback_filter, control->feedback.actual_speed_rpm);
+  LowPassFilter2p_Reset(&control->current_filter, 0.0F);
+  const float scaled_feedback = control->pid_param.k * control->feedback.filtered_speed_rpm;
   LowPassFilter2p_Reset(&control->pid.dfilter, scaled_feedback);
   control->pid.last.k_fb = scaled_feedback;
   control->was_enabled = true;
