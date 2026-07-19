@@ -77,7 +77,9 @@ extern "C" {
 #define MOTOR_SPEED_CURRENT_LIMIT_A (4.0F)
 #endif
 
-/*
+/**
+ * @brief 速度 PID 在线调节参数
+ *
  * 速度 PID 在线参数：
  * - kp：速度环比例增益，单位 A/rpm。
  * - ki：速度环积分增益，单位 A/(rpm*s)。
@@ -138,7 +140,9 @@ typedef struct {
   float pid_kd;
 } MotorSpeedControlFeedback_t;
 
-/*
+/**
+ * @brief 单个 M3508 输出轴速度环的完整运行上下文
+ *
  * 速度环主结构体：
  * - pid_param：PID 参数，默认值在初始化时写入，运行中由 Ozone 调参值更新。
  * - pid：现有 PID 库的运行状态。

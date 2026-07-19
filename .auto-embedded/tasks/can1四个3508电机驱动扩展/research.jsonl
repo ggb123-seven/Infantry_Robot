@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "确认任务层与设备层边界"}
+{"file": "spec/conventions/index.md", "reason": "确认RM电机ID和组帧约定"}
+{"file": "spec/hardware/index.md", "reason": "确认CAN1硬件资源"}

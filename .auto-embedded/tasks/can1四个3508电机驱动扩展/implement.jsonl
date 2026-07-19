@@ -1,0 +1,2 @@
+{"file": "spec/architecture/index.md", "reason": "保持task到device依赖方向"}
+{"file": "spec/conventions/index.md", "reason": "遵循多电机统一组帧和代码规范"}
