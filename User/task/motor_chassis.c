@@ -2,7 +2,7 @@
 
 #include "bsp/can.h"
 #include "device/motor_rm.h"
-#include "module/motor_speed_control.h"
+#include "module/chassis.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
@@ -12,6 +12,8 @@
  * - MOTOR_DEBUG_STOP_CONFIRM_CYCLES：关闭调试使能后，连续成功提交四电机零电流帧的控制周期数。
  */
 #define MOTOR_DEBUG_STOP_CONFIRM_CYCLES (5U)
+
+_Static_assert(MOTOR_CHASSIS_MOTOR_COUNT == CHASSIS_MOTOR_COUNT, "Chassis 电机数量必须与任务设备数量一致");
 
 /*
  * 四个 M3508 电机参数：
@@ -131,6 +133,7 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         DEVICE_ERR_NO_DEV,
         DEVICE_ERR_NO_DEV,
     },
+    .chassis_status = CHASSIS_INIT_ERROR,
     .control_status =
     {
         MOTOR_SPEED_CONTROL_INIT_ERROR,
@@ -171,26 +174,27 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
 };
 
 /*
- * 四电机任务私有状态：
+ * 四电机任务私有设备与模块状态：
  * - motor_3508[0~3]：注册后的 M3508 设备实例，注册失败时对应元素为 NULL。
- * - motor_speed_control[0~3]：各电机独立的速度控制上下文。
- * - motor_current_command_a[0~3]：本周期转子侧电流指令，单位 A。
+ * - chassis：组合四路单电机速度控制器的 Chassis 模块上下文。
+ * - chassis_output：Chassis 模块本周期发布的四路一致输出快照。
  * - debug_stop_zero_tx_count：关闭调试使能后连续成功提交零电流帧的周期数。
  */
 #ifdef DEBUG
 MOTOR_RM_t *motor_3508[MOTOR_CHASSIS_MOTOR_COUNT];
-MotorSpeedControl_t motor_speed_control[MOTOR_CHASSIS_MOTOR_COUNT];
-float motor_current_command_a[MOTOR_CHASSIS_MOTOR_COUNT];
+Chassis_t chassis;
+Chassis_Output_t chassis_output;
 #else
 static MOTOR_RM_t *motor_3508[MOTOR_CHASSIS_MOTOR_COUNT];
-static MotorSpeedControl_t motor_speed_control[MOTOR_CHASSIS_MOTOR_COUNT];
-static float motor_current_command_a[MOTOR_CHASSIS_MOTOR_COUNT];
+static Chassis_t chassis;
+static Chassis_Output_t chassis_output;
 #endif
 static uint32_t debug_stop_zero_tx_count;
 
 static void MotorChassis_UpdateOzoneData(const int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT],
                                          const int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT],
-                                         int8_t can_tx_status, bool motor_debug_enable);
+                                         const Chassis_Output_t *output, int8_t can_tx_status,
+                                         bool motor_debug_enable);
 
 /**
  * @brief 初始化并周期运行四个 M3508 的速度控制链
@@ -220,7 +224,7 @@ void Task_motor_chassis(void *argument)
         return;
     }
 
-    // 注册四个电机并分别初始化速度控制上下文
+    // 注册四个电机设备，任务只保存后续设备 I/O 所需实例
     for (uint32_t motor_index = 0U; motor_index < MOTOR_CHASSIS_MOTOR_COUNT; motor_index++)
     {
         const int8_t register_status = MOTOR_RM_Register(&motor_3508_param[motor_index]);
@@ -231,9 +235,13 @@ void Task_motor_chassis(void *argument)
         {
             g_motor_chassis_monitor.register_status[motor_index] = DEVICE_ERR_NO_DEV;
         }
+    }
 
-        g_motor_chassis_monitor.control_init_status[motor_index] =
-            MotorSpeedControl_Init(&motor_speed_control[motor_index], (float)MOTOR_CHASSIS_FREQ);
+    // 由 Chassis 模块统一创建四个相互独立的速度控制器
+    g_motor_chassis_monitor.chassis_status = Chassis_Init(&chassis, (float)MOTOR_CHASSIS_FREQ);
+    for (uint32_t motor_index = 0U; motor_index < MOTOR_CHASSIS_MOTOR_COUNT; motor_index++)
+    {
+        g_motor_chassis_monitor.control_init_status[motor_index] = chassis.init_status[motor_index];
     }
 
     // 建立绝对周期基准，避免控制周期累计漂移
@@ -242,26 +250,27 @@ void Task_motor_chassis(void *argument)
     {
         int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT];
         int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT];
-        float requested_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-        const bool motor_debug_enable = g_motor_chassis_tune.motor_debug_enable;
-        const MotorSpeedPidTune_t pid_tune =
+        Chassis_Input_t chassis_input =
         {
-            .kp = g_motor_chassis_tune.pid_kp,
-            .ki = g_motor_chassis_tune.pid_ki,
-            .kd = g_motor_chassis_tune.pid_kd,
+            .enabled = g_motor_chassis_tune.motor_debug_enable,
+            .pid_tune =
+            {
+                .kp = g_motor_chassis_tune.pid_kp,
+                .ki = g_motor_chassis_tune.pid_ki,
+                .kd = g_motor_chassis_tune.pid_kd,
+            },
+            .control_period_s = control_period_s,
         };
+        const bool motor_debug_enable = chassis_input.enabled;
 
-        // 在控制计算前复制完整目标数组，避免同一周期混用不同时刻的调参值
+        // 采集四路目标与设备反馈，建立本周期 Chassis 一致输入快照
         for (uint32_t motor_index = 0U; motor_index < MOTOR_CHASSIS_MOTOR_COUNT; motor_index++)
         {
-            requested_speed_rpm[motor_index] = g_motor_chassis_tune.requested_speed_rpm[motor_index];
-        }
-
-        for (uint32_t motor_index = 0U; motor_index < MOTOR_CHASSIS_MOTOR_COUNT; motor_index++)
-        {
+            chassis_input.requested_speed_rpm[motor_index] = g_motor_chassis_tune.requested_speed_rpm[motor_index];
+            chassis_input.actual_speed_rpm[motor_index] = 0.0F;
+            chassis_input.motor_online[motor_index] = false;
             feedback_update_status[motor_index] = DEVICE_ERR_NO_DEV;
             current_set_status[motor_index] = DEVICE_ERR_NO_DEV;
-            motor_current_command_a[motor_index] = 0.0F;
 
             // 从 CAN 接收缓存刷新本电机设备反馈
             if (motor_3508[motor_index] != NULL)
@@ -269,43 +278,27 @@ void Task_motor_chassis(void *argument)
                 feedback_update_status[motor_index] = MOTOR_RM_Update(&motor_3508_param[motor_index]);
             }
 
-            const float actual_speed_rpm = motor_3508[motor_index] != NULL &&
-                                                   feedback_update_status[motor_index] == DEVICE_OK
-                                               ? motor_3508[motor_index]->feedback.rotor_speed
-                                               : 0.0F;
-
-            // 将本周期合法设备转速提交给对应速度控制上下文
-            const int8_t module_feedback_status =
-                MotorSpeedControl_UpdateFeedback(&motor_speed_control[motor_index], actual_speed_rpm);
-            const bool speed_control_enabled =
-                motor_debug_enable && motor_3508[motor_index] != NULL &&
-                feedback_update_status[motor_index] == DEVICE_OK &&
-                module_feedback_status == MOTOR_SPEED_CONTROL_OK &&
-                g_motor_chassis_monitor.control_init_status[motor_index] == MOTOR_SPEED_CONTROL_OK &&
-                motor_3508[motor_index]->motor.header.online;
-
-            // 根据本周期调参快照、目标转速和设备反馈计算安全电流指令
-            const int8_t module_control_status =
-                MotorSpeedControl_Control(&motor_speed_control[motor_index], requested_speed_rpm[motor_index],
-                                          &pid_tune, speed_control_enabled, control_period_s);
-            const int8_t module_output_status =
-                MotorSpeedControl_DumpOutput(&motor_speed_control[motor_index],
-                                             &motor_current_command_a[motor_index]);
-            if (module_control_status != MOTOR_SPEED_CONTROL_OK ||
-                module_output_status != MOTOR_SPEED_CONTROL_OK)
+            if (motor_3508[motor_index] != NULL && feedback_update_status[motor_index] == DEVICE_OK)
             {
-                motor_current_command_a[motor_index] = 0.0F;
+                chassis_input.actual_speed_rpm[motor_index] = motor_3508[motor_index]->feedback.rotor_speed;
+                chassis_input.motor_online[motor_index] = motor_3508[motor_index]->motor.header.online;
             }
+        }
 
-            // 将经过全部安全检查的电流指令写入对应发送槽位
+        // Chassis 模块一次性计算四路速度控制，任一路异常只清零对应输出
+        g_motor_chassis_monitor.chassis_status = Chassis_Control(&chassis, &chassis_input, &chassis_output);
+
+        // 将四路 Chassis 安全电流输出写入对应设备发送槽位
+        for (uint32_t motor_index = 0U; motor_index < MOTOR_CHASSIS_MOTOR_COUNT; motor_index++)
+        {
             if (motor_3508[motor_index] != NULL)
             {
                 current_set_status[motor_index] =
                     MOTOR_RM_SetTorqueCurrent(&motor_3508_param[motor_index],
-                                              motor_current_command_a[motor_index]);
+                                              chassis_output.current_command_a[motor_index]);
                 if (current_set_status[motor_index] != DEVICE_OK)
                 {
-                    motor_current_command_a[motor_index] = 0.0F;
+                    chassis_output.current_command_a[motor_index] = 0.0F;
 
                     // 写入失败时立即用零电流覆盖旧槽位，原失败状态继续用于诊断
                     const int8_t zero_set_status =
@@ -320,7 +313,8 @@ void Task_motor_chassis(void *argument)
 
         // 四个槽位更新完成后统一发送控制帧并发布本周期诊断快照
         const int8_t can_tx_status = MOTOR_RM_FlushGroup(&motor_3508_param[0]);
-        MotorChassis_UpdateOzoneData(feedback_update_status, current_set_status, can_tx_status, motor_debug_enable);
+        MotorChassis_UpdateOzoneData(feedback_update_status, current_set_status, &chassis_output, can_tx_status,
+                                     motor_debug_enable);
 
         tick += delay_tick;
         // 等待至下一个绝对任务周期，保持稳定控制频率
@@ -336,13 +330,15 @@ void Task_motor_chassis(void *argument)
  *
  * @param[in] feedback_update_status 本周期四电机反馈更新结果
  * @param[in] current_set_status 本周期四电机电流指令写入结果
+ * @param[in] output Chassis 模块本周期四路输出快照
  * @param[in] can_tx_status 本周期 CAN 控制帧发送结果
  * @param[in] motor_debug_enable 本周期采用的四电机全局调试使能状态
  * @return 无返回值
  */
 static void MotorChassis_UpdateOzoneData(const int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT],
                                          const int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT],
-                                         int8_t can_tx_status, bool motor_debug_enable)
+                                         const Chassis_Output_t *output, int8_t can_tx_status,
+                                         bool motor_debug_enable)
 {
     bool all_zero_current_set = !motor_debug_enable && can_tx_status == DEVICE_OK;
 
@@ -350,27 +346,22 @@ static void MotorChassis_UpdateOzoneData(const int8_t feedback_update_status[MOT
     {
         const bool motor_online =
             motor_3508[motor_index] != NULL && motor_3508[motor_index]->motor.header.online;
-        if (motor_current_command_a[motor_index] != 0.0F ||
-            current_set_status[motor_index] != DEVICE_OK)
+        if (output->current_command_a[motor_index] != 0.0F || current_set_status[motor_index] != DEVICE_OK)
         {
             all_zero_current_set = false;
         }
 
         g_motor_chassis_monitor.motor_online[motor_index] = motor_online;
         g_motor_chassis_monitor.current_saturated[motor_index] =
-            motor_current_command_a[motor_index] >= MOTOR_SPEED_CURRENT_LIMIT_A ||
-            motor_current_command_a[motor_index] <= -MOTOR_SPEED_CURRENT_LIMIT_A;
+            output->current_command_a[motor_index] >= MOTOR_SPEED_CURRENT_LIMIT_A ||
+            output->current_command_a[motor_index] <= -MOTOR_SPEED_CURRENT_LIMIT_A;
         g_motor_chassis_monitor.feedback_update_status[motor_index] = feedback_update_status[motor_index];
         g_motor_chassis_monitor.current_set_status[motor_index] = current_set_status[motor_index];
-        g_motor_chassis_monitor.control_status[motor_index] =
-            motor_speed_control[motor_index].feedback.status;
-        g_motor_chassis_monitor.limited_target_speed_rpm[motor_index] =
-            motor_speed_control[motor_index].feedback.limited_target_speed_rpm;
-        g_motor_chassis_monitor.ramped_target_speed_rpm[motor_index] =
-            motor_speed_control[motor_index].feedback.target_speed_rpm;
-        g_motor_chassis_tune.actual_speed_rpm[motor_index] =
-            motor_speed_control[motor_index].feedback.actual_speed_rpm;
-        g_motor_chassis_monitor.current_command_a[motor_index] = motor_current_command_a[motor_index];
+        g_motor_chassis_monitor.control_status[motor_index] = output->control_status[motor_index];
+        g_motor_chassis_monitor.limited_target_speed_rpm[motor_index] = output->limited_target_speed_rpm[motor_index];
+        g_motor_chassis_monitor.ramped_target_speed_rpm[motor_index] = output->ramped_target_speed_rpm[motor_index];
+        g_motor_chassis_tune.actual_speed_rpm[motor_index] = output->actual_speed_rpm[motor_index];
+        g_motor_chassis_monitor.current_command_a[motor_index] = output->current_command_a[motor_index];
         g_motor_chassis_monitor.temperature_c[motor_index] =
             motor_3508[motor_index] != NULL ? motor_3508[motor_index]->feedback.temp : 0.0F;
     }

@@ -65,11 +65,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/device/motor.c
     User/device/motor_rm.c
 
+    # User/module 源文件
+    User/module/chassis.c
+    User/module/motor_speed_control.c
+
     # User/task 源文件
     User/task/dr16_task.c
     User/task/init.c
     User/task/motor_chassis.c
-    User/module/motor_speed_control.c
     User/task/user_task.c
 
     # 现有 LED 任务

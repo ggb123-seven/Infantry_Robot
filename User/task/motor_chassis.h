@@ -21,12 +21,12 @@ extern "C"
  */
 typedef struct
 {
-  bool motor_debug_enable;
-  float requested_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-  float pid_kp;
-  float pid_ki;
-  float pid_kd;
-  float actual_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    bool motor_debug_enable;
+    float requested_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    float pid_kp;
+    float pid_ki;
+    float pid_kd;
+    float actual_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
 } MotorChassisTune_t;
 
 /**
@@ -40,6 +40,7 @@ typedef struct
  * - control_init_status[0~3]：对应速度环初始化结果，0 表示成功。
  * - feedback_update_status[0~3]：本周期对应电机反馈更新结果，0 表示成功。
  * - current_set_status[0~3]：本周期对应电流指令写入结果，0 表示成功。
+ * - chassis_status：本周期 Chassis 四路组合控制结果，0 表示全部活动控制器正常。
  * - control_status[0~3]：本周期对应速度环状态，0 表示正常，-2 表示使能关闭或反馈离线。
  * - can_tx_status：本周期 CAN 控制帧发送结果，0 表示成功。
  * - debug_stop_zero_tx_count：关闭调试使能后连续成功提交的零电流帧周期数。
@@ -50,20 +51,21 @@ typedef struct
  */
 typedef struct
 {
-  bool motor_online[MOTOR_CHASSIS_MOTOR_COUNT];
-  bool current_saturated[MOTOR_CHASSIS_MOTOR_COUNT];
-  bool debug_stop_ready;
-  int8_t register_status[MOTOR_CHASSIS_MOTOR_COUNT];
-  int8_t control_init_status[MOTOR_CHASSIS_MOTOR_COUNT];
-  int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT];
-  int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT];
-  int8_t control_status[MOTOR_CHASSIS_MOTOR_COUNT];
-  int8_t can_tx_status;
-  uint32_t debug_stop_zero_tx_count;
-  float limited_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-  float ramped_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-  float current_command_a[MOTOR_CHASSIS_MOTOR_COUNT];
-  float temperature_c[MOTOR_CHASSIS_MOTOR_COUNT];
+    bool motor_online[MOTOR_CHASSIS_MOTOR_COUNT];
+    bool current_saturated[MOTOR_CHASSIS_MOTOR_COUNT];
+    bool debug_stop_ready;
+    int8_t register_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t control_init_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t chassis_status;
+    int8_t control_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t can_tx_status;
+    uint32_t debug_stop_zero_tx_count;
+    float limited_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    float ramped_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    float current_command_a[MOTOR_CHASSIS_MOTOR_COUNT];
+    float temperature_c[MOTOR_CHASSIS_MOTOR_COUNT];
 } MotorChassisMonitor_t;
 
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
