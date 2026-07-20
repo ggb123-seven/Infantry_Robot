@@ -1,21 +1,14 @@
-/*
-    Init Task
-    任务初始化，创建各个线程任务和消息队列
-*/
-
-/* Includes ----------------------------------------------------------------- */
 #include "task/user_task.h"
 
-/* USER INCLUDE BEGIN */
+#include "device/dr16.h"
+#include "task/dr16_task.h"
+#include "task/motor_chassis.h"
 
-/* USER INCLUDE END */
+#include <stdbool.h>
+#include <stddef.h>
 
-/* Private typedef ---------------------------------------------------------- */
-/* Private define ----------------------------------------------------------- */
-/* Private macro ------------------------------------------------------------ */
-/* Private variables -------------------------------------------------------- */
-/* Private function --------------------------------------------------------- */
-/* Exported functions ------------------------------------------------------- */
+static bool Task_InitCreateObjects(void);
+static bool Task_InitReleaseObjects(void);
 
 /**
  * @brief 创建业务任务和消息队列
@@ -25,23 +18,104 @@
  */
 void Task_Init(void *argument)
 {
-  // 标记任务参数未使用
-  (void)argument;
-  /* USER CODE INIT BEGIN */
+    (void)argument;
+    task_runtime.init_status = TASK_INIT_NOT_STARTED;
 
-  /* USER CODE INIT END */
-  osKernelLock(); /* 锁定内核，防止任务切换 */
+    // 锁定任务调度，确保所有业务对象创建并检查完成前没有业务任务运行
+    if (osKernelLock() < 0)
+    {
+        task_runtime.init_status = TASK_INIT_KERNEL_LOCK_FAILED;
+        osThreadExit();
+    }
 
-  /* 创建任务线程 */
-  task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
+    // 集中创建 DR16 邮箱和业务任务，任一失败时删除已创建对象
+    if (!Task_InitCreateObjects())
+    {
+        if (!Task_InitReleaseObjects())
+        {
+            task_runtime.init_status = TASK_INIT_CLEANUP_FAILED;
+        }
 
-  // 创建消息队列
-  /* USER MESSAGE BEGIN */
-  task_runtime.msgq.user_msg = osMessageQueueNew(2u, 10, NULL);
-  /* USER MESSAGE END */
+        // 清理完成后恢复调度，避免任何残留的部分业务系统继续启动
+        if (osKernelUnlock() < 0)
+        {
+            task_runtime.init_status = TASK_INIT_KERNEL_UNLOCK_FAILED;
+        }
+        osThreadExit();
+    }
 
-  // 解锁内核并允许已创建任务参与调度
-  osKernelUnlock();
-  // 任务创建完成后结束初始化任务
-  osThreadTerminate(osThreadGetId());
+    task_runtime.init_status = TASK_INIT_OK;
+
+    // 所有对象就绪后恢复调度，让业务任务从一致的运行时状态开始执行
+    if (osKernelUnlock() < 0)
+    {
+        task_runtime.init_status = TASK_INIT_KERNEL_UNLOCK_FAILED;
+    }
+    osThreadExit();
+}
+
+/**
+ * @brief 按依赖顺序创建 DR16 邮箱和两个业务任务
+ *
+ * @return 全部对象创建成功时返回 true，否则返回 false
+ */
+static bool Task_InitCreateObjects(void)
+{
+    // 先创建 DR16 状态邮箱，保证 DR16 任务开始运行时发布目标已经存在
+    task_runtime.init_status = TASK_INIT_DR16_MAILBOX_FAILED;
+    task_runtime.msgq.dr16_state = osMessageQueueNew(1U, sizeof(DR16_State_t), NULL);
+    if (task_runtime.msgq.dr16_state == NULL)
+    {
+        return false;
+    }
+
+    // 创建底盘任务并检查句柄，当前 DR16 状态不会连接到底盘控制
+    task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
+    task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
+    if (task_runtime.thread.motor_chassis == NULL)
+    {
+        return false;
+    }
+
+    // 最后创建 DR16 接收任务，全部对象成功后才由调用方恢复调度
+    task_runtime.init_status = TASK_INIT_DR16_THREAD_FAILED;
+    task_runtime.thread.dr16 = osThreadNew(Task_dr16, NULL, &attr_dr16);
+    return task_runtime.thread.dr16 != NULL;
+}
+
+/**
+ * @brief 删除初始化失败前已经创建的全部业务 RTOS 对象
+ *
+ * @return 所有存在的对象均删除成功时返回 true，否则返回 false
+ */
+static bool Task_InitReleaseObjects(void)
+{
+    bool success = true;
+
+    // 先终止尚未获得调度机会的业务任务，再删除它们依赖的状态邮箱
+    if (task_runtime.thread.dr16 != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.dr16) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.dr16 = NULL;
+    }
+    if (task_runtime.thread.motor_chassis != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.motor_chassis) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.motor_chassis = NULL;
+    }
+    if (task_runtime.msgq.dr16_state != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.dr16_state) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.dr16_state = NULL;
+    }
+    return success;
 }

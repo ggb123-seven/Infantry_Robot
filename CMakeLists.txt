@@ -45,11 +45,15 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    # LwRB v3.2.0 第三方源码
+    Middlewares/Third_Party/RingBuffer/src/ringbuffer/ringbuffer.c
+
     # User/bsp 源文件
     User/bsp/can.c
     User/bsp/gpio.c
     User/bsp/mm.c
     User/bsp/time.c
+    User/bsp/uart.c
 
     # User/component 源文件
     User/component/filter.c
@@ -57,10 +61,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/component/user_math.c
 
     # User/device 源文件
+    User/device/dr16.c
     User/device/motor.c
     User/device/motor_rm.c
 
     # User/task 源文件
+    User/task/dr16_task.c
     User/task/init.c
     User/task/motor_chassis.c
     User/task/motor_speed_control.c
@@ -75,6 +81,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Middlewares/Third_Party/RingBuffer/src/include
     User
     applications
 )

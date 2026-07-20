@@ -4,84 +4,66 @@
 extern "C"
 {
 #endif
-/* Includes ----------------------------------------------------------------- */
-#include "FreeRTOS.h"
-#include "task.h"
+
 #include <cmsis_os2.h>
 
-/* USER INCLUDE BEGIN */
-
-/* USER INCLUDE END */
-/* Exported constants ------------------------------------------------------- */
-/* 任务运行频率 */
+/*
+ * 底盘任务运行参数：
+ * - MOTOR_CHASSIS_FREQ：底盘控制频率，单位赫兹。
+ * - MOTOR_CHASSIS_INIT_DELAY：底盘任务启动延时，单位内核节拍。
+ */
 #define MOTOR_CHASSIS_FREQ (500U)
+#define MOTOR_CHASSIS_INIT_DELAY (0U)
 
-/* 任务初始化延时ms */
-#define TASK_INIT_DELAY (100u)
-#define MOTOR_CHASSIS_INIT_DELAY (0)
+/**
+ * @brief 业务对象初始化结果
+ */
+typedef enum
+{
+    TASK_INIT_NOT_STARTED = 0,
+    TASK_INIT_OK,
+    TASK_INIT_KERNEL_LOCK_FAILED,
+    TASK_INIT_DR16_MAILBOX_FAILED,
+    TASK_INIT_MOTOR_THREAD_FAILED,
+    TASK_INIT_DR16_THREAD_FAILED,
+    TASK_INIT_CLEANUP_FAILED,
+    TASK_INIT_KERNEL_UNLOCK_FAILED,
+} Task_InitStatus_t;
 
-/* Exported defines --------------------------------------------------------- */
-/* Exported macro ----------------------------------------------------------- */
-/* Exported types ----------------------------------------------------------- */
-
-/* 任务运行时结构体 */
+/*
+ * 任务运行时对象：
+ * - thread.motor_chassis：底盘周期控制任务句柄。
+ * - thread.dr16：DR16 字节流接收和状态发布任务句柄。
+ * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入。
+ * - init_status：业务 RTOS 对象创建、清理和内核解锁的最终结果。
+ */
 typedef struct
 {
-  /* 各任务，也可以叫做线程 */
-  struct
-  {
-    osThreadId_t motor_chassis;
-  } thread;
-
-  /* USER MESSAGE BEGIN */
-  struct
-  {
-    osMessageQueueId_t user_msg; /* 用户自定义任务消息队列 */
-  } msgq;
-  /* USER MESSAGE END */
-
-  /* 机器人状态 */
-  struct
-  {
-    float battery;  /* 电池电量百分比 */
-    float vbat;     /* 电池电压 */
-    float cpu_temp; /* CPU温度 */
-  } status;
-
-  /* USER CONFIG BEGIN */
-
-  /* USER CONFIG END */
-
-  /* 各任务的stack使用 */
-  struct
-  {
-    UBaseType_t motor_chassis;
-  } stack_water_mark;
-
-  /* 各任务运行频率 */
-  struct
-  {
-    float motor_chassis;
-  } freq;
-
-  /* 任务最近运行时间 */
-  struct
-  {
-    float motor_chassis;
-  } last_up_time;
-
+    struct
+    {
+        osThreadId_t motor_chassis;
+        osThreadId_t dr16;
+    } thread;
+    struct
+    {
+        osMessageQueueId_t dr16_state;
+    } msgq;
+    volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;
 
-/* 任务运行时结构体 */
 extern Task_Runtime_t task_runtime;
 
-/* 初始化任务句柄 */
 extern const osThreadAttr_t attr_init;
 extern const osThreadAttr_t attr_motor_chassis;
+extern const osThreadAttr_t attr_dr16;
 
-/* 任务函数声明 */
+/**
+ * @brief 创建业务任务和消息队列
+ *
+ * @param[in] argument 任务参数，本任务不使用
+ * @return 本任务不会返回
+ */
 void Task_Init(void *argument);
-void Task_motor_chassis(void *argument);
 
 #ifdef __cplusplus
 }
