@@ -16,3 +16,4 @@
 | `CMakeLists.txt` | 加入 DR16 链路所需源文件 | CMake clean build 通过，Keil 工程保持不变 | DR16-TASK-03 Debug clean build 通过，未修改 Keil，用户已确认 | 本地快照 |
 | `tests/dr16_task_test.c`、`tests/mocks/cmsis_os2.h` | 覆盖逐字节重同步、100 ms 离线和两类错误恢复 | 实际任务代码主机测试全部通过 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
 | `tests/init_task_test.c` | 覆盖邮箱和任务创建成功、各创建失败与清理路径 | 所有 RTOS 对象创建结果均被检查 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
+| `build/Debug/Infantry_Robot.elf`、`.map`、`.su` | 软件终检、内存与静态栈帧分析 | 主机回归、clang-tidy、Debug clean build、check.py 全通过 | DR16-SOFTWARE-VERIFY-05：Flash 76312 B；普通 SRAM 含链接器预留 40668 B；DR16/底盘可见项目函数链约 260/416 B，板上 high-water mark 待测 | 本地快照 |
