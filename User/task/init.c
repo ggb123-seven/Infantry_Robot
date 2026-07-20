@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 static bool Task_InitCreateObjects(void);
+static bool Task_InitModules(void);
 static bool Task_InitReleaseObjects(void);
 
 /**
@@ -21,6 +22,12 @@ void Task_Init(void *argument)
     (void)argument;
     task_runtime.init_status = TASK_INIT_NOT_STARTED;
 
+    // 在锁定调度器前初始化需要使用 RTOS 同步对象的业务模块，避免锁定期间发生阻塞等待
+    if (!Task_InitModules())
+    {
+        osThreadExit();
+    }
+
     // 锁定任务调度，确保所有业务对象创建并检查完成前没有业务任务运行
     if (osKernelLock() < 0)
     {
@@ -28,7 +35,7 @@ void Task_Init(void *argument)
         osThreadExit();
     }
 
-    // 集中创建 DR16 邮箱和业务任务，任一失败时删除已创建对象
+    // 集中创建 RTOS 对象，任一失败时删除已创建对象
     if (!Task_InitCreateObjects())
     {
         if (!Task_InitReleaseObjects())
@@ -55,7 +62,7 @@ void Task_Init(void *argument)
 }
 
 /**
- * @brief 按依赖顺序创建 DR16 邮箱和两个业务任务
+ * @brief 按依赖顺序创建 RTOS 对象
  *
  * @return 全部对象创建成功时返回 true，否则返回 false
  */
@@ -81,6 +88,18 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_DR16_THREAD_FAILED;
     task_runtime.thread.dr16 = osThreadNew(Task_dr16, NULL, &attr_dr16);
     return task_runtime.thread.dr16 != NULL;
+}
+
+/**
+ * @brief 按任务依赖顺序初始化业务模块
+ *
+ * @return 全部业务模块初始化成功时返回 true，否则返回 false
+ */
+static bool Task_InitModules(void)
+{
+    // 初始化底盘私有控制链，失败时禁止底盘及其他业务任务进入运行态
+    task_runtime.init_status = TASK_INIT_MOTOR_CHASSIS_FAILED;
+    return Task_motor_chassis_Init();
 }
 
 /**

@@ -1,3 +1,4 @@
+#include "device/dr16.h"
 #include "task/dr16_task.h"
 #include "task/motor_chassis.h"
 #include "task/user_task.h"
@@ -17,8 +18,13 @@ static uint32_t mock_queue_create_count;
 static uint32_t mock_queue_delete_count;
 static uint32_t mock_thread_create_count;
 static uint32_t mock_thread_terminate_count;
+static uint32_t mock_motor_chassis_init_count;
+static uint32_t mock_call_sequence;
+static uint32_t mock_kernel_lock_sequence;
+static uint32_t mock_motor_chassis_init_sequence;
 static uint32_t mock_failed_thread_create_index;
 static bool mock_queue_create_fails;
+static bool mock_motor_chassis_init_result;
 
 static void InitTaskTest_ResetMocks(void);
 static void InitTaskTest_Run(void);
@@ -26,6 +32,7 @@ static void InitTaskTest_CreatesAllObjects(void);
 static void InitTaskTest_StopsWhenQueueCreationFails(void);
 static void InitTaskTest_CleansUpAfterMotorCreationFails(void);
 static void InitTaskTest_CleansUpAfterDr16CreationFails(void);
+static void InitTaskTest_StopsWhenMotorChassisInitializationFails(void);
 static void InitTaskTest_StopsWhenKernelLockFails(void);
 
 /**
@@ -39,6 +46,7 @@ int main(void)
     InitTaskTest_StopsWhenQueueCreationFails();
     InitTaskTest_CleansUpAfterMotorCreationFails();
     InitTaskTest_CleansUpAfterDr16CreationFails();
+    InitTaskTest_StopsWhenMotorChassisInitializationFails();
     InitTaskTest_StopsWhenKernelLockFails();
 
     puts("Init task tests passed");
@@ -52,6 +60,7 @@ int main(void)
  */
 int32_t osKernelLock(void)
 {
+    mock_kernel_lock_sequence = ++mock_call_sequence;
     return mock_kernel_lock_result;
 }
 
@@ -159,6 +168,18 @@ void Task_motor_chassis(void *argument)
 }
 
 /**
+ * @brief 提供底盘任务私有控制链初始化模拟结果
+ *
+ * @return 当前测试配置的初始化结果
+ */
+bool Task_motor_chassis_Init(void)
+{
+    mock_motor_chassis_init_count++;
+    mock_motor_chassis_init_sequence = ++mock_call_sequence;
+    return mock_motor_chassis_init_result;
+}
+
+/**
  * @brief 提供链接所需的空 DR16 任务入口
  *
  * @param[in] argument 任务参数
@@ -183,8 +204,13 @@ static void InitTaskTest_ResetMocks(void)
     mock_queue_delete_count = 0U;
     mock_thread_create_count = 0U;
     mock_thread_terminate_count = 0U;
+    mock_motor_chassis_init_count = 0U;
+    mock_call_sequence = 0U;
+    mock_kernel_lock_sequence = 0U;
+    mock_motor_chassis_init_sequence = 0U;
     mock_failed_thread_create_index = 0U;
     mock_queue_create_fails = false;
+    mock_motor_chassis_init_result = true;
 }
 
 /**
@@ -217,6 +243,8 @@ static void InitTaskTest_CreatesAllObjects(void)
     assert(task_runtime.thread.dr16 == &mock_dr16_thread_token);
     assert(mock_queue_create_count == 1U);
     assert(mock_thread_create_count == 2U);
+    assert(mock_motor_chassis_init_count == 1U);
+    assert(mock_motor_chassis_init_sequence < mock_kernel_lock_sequence);
     assert(mock_queue_delete_count == 0U);
     assert(mock_thread_terminate_count == 0U);
 }
@@ -235,6 +263,7 @@ static void InitTaskTest_StopsWhenQueueCreationFails(void)
     assert(task_runtime.init_status == TASK_INIT_DR16_MAILBOX_FAILED);
     assert(mock_queue_create_count == 1U);
     assert(mock_thread_create_count == 0U);
+    assert(mock_motor_chassis_init_count == 1U);
     assert(mock_queue_delete_count == 0U);
     assert(mock_thread_terminate_count == 0U);
 }
@@ -254,6 +283,7 @@ static void InitTaskTest_CleansUpAfterMotorCreationFails(void)
     assert(task_runtime.msgq.dr16_state == NULL);
     assert(mock_queue_delete_count == 1U);
     assert(mock_thread_terminate_count == 0U);
+    assert(mock_motor_chassis_init_count == 1U);
 }
 
 /**
@@ -272,6 +302,26 @@ static void InitTaskTest_CleansUpAfterDr16CreationFails(void)
     assert(task_runtime.msgq.dr16_state == NULL);
     assert(mock_queue_delete_count == 1U);
     assert(mock_thread_terminate_count == 1U);
+    assert(mock_motor_chassis_init_count == 1U);
+}
+
+/**
+ * @brief 验证底盘控制链初始化失败后不创建任何业务对象
+ *
+ * @return 无返回值
+ */
+static void InitTaskTest_StopsWhenMotorChassisInitializationFails(void)
+{
+    InitTaskTest_ResetMocks();
+    mock_motor_chassis_init_result = false;
+    InitTaskTest_Run();
+
+    assert(task_runtime.init_status == TASK_INIT_MOTOR_CHASSIS_FAILED);
+    assert(mock_motor_chassis_init_count == 1U);
+    assert(mock_queue_create_count == 0U);
+    assert(mock_thread_create_count == 0U);
+    assert(mock_queue_delete_count == 0U);
+    assert(mock_thread_terminate_count == 0U);
 }
 
 /**
@@ -288,4 +338,5 @@ static void InitTaskTest_StopsWhenKernelLockFails(void)
     assert(task_runtime.init_status == TASK_INIT_KERNEL_LOCK_FAILED);
     assert(mock_queue_create_count == 0U);
     assert(mock_thread_create_count == 0U);
+    assert(mock_motor_chassis_init_count == 1U);
 }

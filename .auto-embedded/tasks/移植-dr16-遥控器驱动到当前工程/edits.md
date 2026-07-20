@@ -27,3 +27,4 @@
 | `build/Debug/Infantry_Robot.elf`、`.map`、`.su` | 软件终检、内存与静态栈帧分析 | 主机回归、clang-tidy、Debug clean build、check.py 全通过 | DR16-SOFTWARE-VERIFY-05：Flash 76312 B；普通 SRAM 含链接器预留 40668 B；DR16/底盘可见项目函数链约 260/416 B，板上 high-water mark 待测 | 本地快照 |
 | `User/task/ozone_debug.c/.h`、`dr16_task.c/.h`、`motor_chassis.c/.h`、`tests/dr16_task_test.c`、`CMakeLists.txt` | 集中保存 DR16 与底盘的 Ozone 调试结构、全局实例和初值 | 调试结构与符号归属唯一，任务行为和构建结果不变 | OZONE-DEBUG-09 主机测试、Debug clean build、check.py 与 ELF 符号归属检查通过，用户已确认 | 本地快照 |
 | `User/task/ozone_debug.c` | 上电默认开启四路 M3508 速度控制并将目标转速统一设为 100 rpm | 控制输入快照为 enabled=true，四路 requested_speed_rpm 均为 100.0F；主机回归、Debug clean build、ELF 初值核对和 check.py 通过 | MOTOR-SPEED-100-01 已验证 | 本地快照 |
+| `User/task/init.c`、`tests/init_task_test.c` | 将底盘模块初始化移到调度器锁定前，避免 CAN 注册在锁定期间执行带超时的互斥锁等待 | 初始化顺序测试覆盖模块初始化早于 `osKernelLock()`，失败路径不创建业务对象；独立 ARM Debug 构建通过 | DR16-MOTOR-FIX-01 主机测试通过；FLASH 78728 B，RAM 40808 B | 本地快照 |
