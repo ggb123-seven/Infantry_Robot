@@ -12,7 +12,7 @@
 | `tests/dr16_decode_test.c` | 覆盖合法帧、边界值、非法长度、非法通道、非法拨杆和状态复位 | 失败路径不污染旧输出 | DR16-DECODE-01 全部主机测试通过，用户已确认 | 本地快照 |
 | `User/task/dr16_task.c/.h` | 新增 RingBuffer、重同步、离线与发布任务 | 错位恢复、100 ms 离线、邮箱快照通过 | DR16-TASK-03 主机测试、clang-tidy 与 ARM 构建通过，用户已确认 | 本地快照 |
 | `User/task/user_task.c/.h`、`User/task/init.c` | 增加任务句柄、属性和最新状态邮箱 | 所有 RTOS 对象创建并检查成功 | DR16-TASK-03 创建与失败回滚测试通过，用户已确认 | 本地快照 |
-| `User/device/device.h` | 移除旧 DR16 线程标志 | 设备层无任务通知定义 | 待授权执行 | - |
+| `User/device/device.h` | 移除旧 DR16 线程标志 | 设备层无任务通知定义 | DR16-SIGNAL-CLEANUP-04 零引用、主机测试与 Debug clean build 通过，用户已确认 | 本地快照 |
 | `CMakeLists.txt` | 加入 DR16 链路所需源文件 | CMake clean build 通过，Keil 工程保持不变 | DR16-TASK-03 Debug clean build 通过，未修改 Keil，用户已确认 | 本地快照 |
 | `tests/dr16_task_test.c`、`tests/mocks/cmsis_os2.h` | 覆盖逐字节重同步、100 ms 离线和两类错误恢复 | 实际任务代码主机测试全部通过 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
 | `tests/init_task_test.c` | 覆盖邮箱和任务创建成功、各创建失败与清理路径 | 所有 RTOS 对象创建结果均被检查 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
