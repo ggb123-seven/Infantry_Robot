@@ -5,7 +5,14 @@ extern "C"
 {
 #endif
 
-#define MOTOR_CHASSIS_MOTOR_COUNT (4U)
+#include <stdbool.h>
+
+/**
+ * @brief 初始化底盘任务私有控制链
+ *
+ * @return 底盘控制链可运行时返回 true，否则返回 false
+ */
+bool Task_motor_chassis_Init(void);
 
 /**
  * @brief 运行四个 M3508 电机速度控制任务

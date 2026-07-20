@@ -26,6 +26,7 @@ typedef enum
     TASK_INIT_DR16_MAILBOX_FAILED,
     TASK_INIT_MOTOR_THREAD_FAILED,
     TASK_INIT_DR16_THREAD_FAILED,
+    TASK_INIT_MOTOR_CHASSIS_FAILED,
     TASK_INIT_CLEANUP_FAILED,
     TASK_INIT_KERNEL_UNLOCK_FAILED,
 } Task_InitStatus_t;
@@ -35,7 +36,7 @@ typedef enum
  * - thread.motor_chassis：底盘周期控制任务句柄。
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄。
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入。
- * - init_status：业务 RTOS 对象创建、清理和内核解锁的最终结果。
+ * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果。
  */
 typedef struct
 {

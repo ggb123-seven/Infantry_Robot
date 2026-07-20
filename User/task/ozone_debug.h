@@ -9,7 +9,15 @@ extern "C"
 #include <stdint.h>
 
 #include "device/dr16.h"
-#include "task/motor_chassis.h"
+
+/*
+ * Ozone 底盘调试参数：
+ * - OZONE_MOTOR_CHASSIS_COUNT：在线调试与监控的 M3508 电机数量，必须与底盘控制链一致。
+ */
+#define OZONE_MOTOR_CHASSIS_COUNT (4U)
+
+struct Chassis_Input;
+struct Chassis_Snapshot;
 
 /*
  * DR16 Ozone 诊断数据：
@@ -54,11 +62,11 @@ typedef struct
 typedef struct
 {
     bool motor_debug_enable;
-    float requested_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float pid_kp;
     float pid_ki;
     float pid_kd;
-    float actual_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
+    float actual_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
 } MotorChassisTune_t;
 
 /*
@@ -81,26 +89,52 @@ typedef struct
  */
 typedef struct
 {
-    bool motor_online[MOTOR_CHASSIS_MOTOR_COUNT];
-    bool current_saturated[MOTOR_CHASSIS_MOTOR_COUNT];
+    bool motor_online[OZONE_MOTOR_CHASSIS_COUNT];
+    bool current_saturated[OZONE_MOTOR_CHASSIS_COUNT];
     bool debug_stop_ready;
-    int8_t register_status[MOTOR_CHASSIS_MOTOR_COUNT];
-    int8_t control_init_status[MOTOR_CHASSIS_MOTOR_COUNT];
-    int8_t feedback_update_status[MOTOR_CHASSIS_MOTOR_COUNT];
-    int8_t current_set_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t register_status[OZONE_MOTOR_CHASSIS_COUNT];
+    int8_t control_init_status[OZONE_MOTOR_CHASSIS_COUNT];
+    int8_t feedback_update_status[OZONE_MOTOR_CHASSIS_COUNT];
+    int8_t current_set_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t chassis_status;
-    int8_t control_status[MOTOR_CHASSIS_MOTOR_COUNT];
+    int8_t control_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t can_tx_status;
     uint32_t debug_stop_zero_tx_count;
-    float limited_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-    float ramped_target_speed_rpm[MOTOR_CHASSIS_MOTOR_COUNT];
-    float current_command_a[MOTOR_CHASSIS_MOTOR_COUNT];
-    float temperature_c[MOTOR_CHASSIS_MOTOR_COUNT];
+    float limited_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
+    float ramped_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
+    float current_command_a[OZONE_MOTOR_CHASSIS_COUNT];
+    float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
 } MotorChassisMonitor_t;
 
 extern volatile DR16_Monitor_t g_dr16_monitor;
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
+
+/**
+ * @brief 将底盘模块初始化结果发布到 Ozone 监控区
+ *
+ * @param[in] snapshot 底盘初始化结果快照
+ * @return 无返回值
+ */
+void OzoneDebug_UpdateMotorChassisInit(const struct Chassis_Snapshot *snapshot);
+
+/**
+ * @brief 从 Ozone 在线参数生成本周期底盘控制输入快照
+ *
+ * @param[out] input 待写入的底盘控制输入快照
+ * @param[in] control_period_s 控制周期，单位 s，必须大于 0
+ * @return 无返回值
+ */
+void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
+
+/**
+ * @brief 将底盘模块单周期结果发布到 Ozone 监控区
+ *
+ * @param[in] input 本周期实际采用的底盘控制输入快照
+ * @param[in] snapshot 本周期底盘模块结果快照
+ * @return 无返回值
+ */
+void OzoneDebug_UpdateMotorChassis(const struct Chassis_Input *input, const struct Chassis_Snapshot *snapshot);
 
 #ifdef __cplusplus
 }

@@ -22,6 +22,8 @@ extern "C"
  * - MOTOR_SPEED_CURRENT_LPF_CUTOFF_HZ：电流指令二阶低通截止频率，单位 Hz；小于等于 0 时直通。
  * - MOTOR_SPEED_PID_INTEGRAL_LIMIT：积分状态限幅，单位 rpm*s。
  * - MOTOR_SPEED_CURRENT_LIMIT_A：转子侧电流指令正负对称限幅，单位 A。
+ * 当前固化的上板整定结果为 Kp=0.23、Ki=0.14、Kd=0，PID 微分滤波截止频率为 20 Hz。
+ * 速度反馈二阶低通截止频率为 45 Hz，电流输出二阶滤波保持直通。
  */
 #ifndef MOTOR_SPEED_LIMIT_RPM
 #define MOTOR_SPEED_LIMIT_RPM (300.0F)
@@ -48,7 +50,7 @@ extern "C"
 #endif
 
 #ifndef MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ
-#define MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ (40.0F)
+#define MOTOR_SPEED_FEEDBACK_LPF_CUTOFF_HZ (45.0F)
 #endif
 
 #ifndef MOTOR_SPEED_CURRENT_LPF_CUTOFF_HZ
