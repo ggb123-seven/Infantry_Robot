@@ -618,7 +618,7 @@
             <File>
               <FileName>motor_speed_control.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\task\motor_speed_control.c</FilePath>
+              <FilePath>..\User\module\motor_speed_control.c</FilePath>
             </File>
             <File>
               <FileName>user_task.c</FileName>

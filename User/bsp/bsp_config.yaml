@@ -1,7 +1,7 @@
 can:
   devices:
   - instance: CAN1
-    name: BSP_CAN_MOTOR_3508
+    name: '1'
   enabled: true
 gpio:
   configs:
@@ -24,4 +24,9 @@ gpio:
 mm:
   enabled: true
 time:
+  enabled: true
+uart:
+  devices:
+  - instance: USART3
+    name: DR16
   enabled: true

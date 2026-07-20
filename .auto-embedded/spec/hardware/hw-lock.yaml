@@ -14,9 +14,11 @@ pins:
   - {id: PD1, func: CAN1_TX, owner: cubemx_can1}
   - {id: PA11, func: USB_OTG_FS_DM, owner: cubemx_usb_device_cdc}
   - {id: PA12, func: USB_OTG_FS_DP, owner: cubemx_usb_device_cdc}
+  - {id: PC10, func: USART3_TX, owner: cubemx_dr16_uart}
+  - {id: PC11, func: USART3_RX, owner: cubemx_dr16_uart}
 
 dma:
-  # - {stream: DMA1_CH4, peripheral: USART1_TX, owner: drv_uart_dma}
+  - {stream: DMA1_Stream1_CH4, peripheral: USART3_RX, owner: cubemx_dr16_uart}
 
 irq:
   - {irqn: PendSV_IRQn, priority_preempt: 15, priority_sub: 0, owner: freertos}
@@ -24,6 +26,8 @@ irq:
   - {irqn: CAN1_RX0_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_can1}
   - {irqn: TIM6_DAC_IRQn, priority_preempt: 15, priority_sub: 0, owner: cubemx_hal_tick}
   - {irqn: OTG_FS_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_usb_device_cdc}
+  - {irqn: DMA1_Stream1_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_dr16_uart}
+  - {irqn: USART3_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_dr16_uart}
 
 timers:
   - {id: TIM6, func: HAL_1MS_TICK, owner: cubemx_hal_tick}

@@ -5,7 +5,7 @@
 | 硬件基线 | `Infantry_Robot.ioc:15-26,213-218`、`spec/hardware/hw-lock.yaml` | USART3 已配置为 100000 baud、9-bit word length、Even parity、RX-only；USART3_RX 使用 DMA1 Stream1 Channel 4、Circular、High priority；DMA 与 USART3 IRQ 均为 5/0。 | 高 | 已验证 |
 | 生成代码链路 | `Src/usart.c`、`Src/dma.c`、`Src/stm32f4xx_it.c:171-205` | DMA、USART3、DMA IRQ 和 USART3 IRQ 已生成；IRQ 分别进入 `HAL_DMA_IRQHandler()` 与 `HAL_UART_IRQHandler()`，本任务不需要修改生成 ISR。 | 高 | 已验证 |
 | HAL 能力 | `stm32f4xx_hal_uart.h:758-780`、`stm32f4xx_hal_uart.c:1781-1861,3060-3170` | 当前 HAL 提供 `HAL_UARTEx_ReceiveToIdle_DMA()`、`HAL_UARTEx_RxEventCallback()` 和事件类型查询；Circular DMA 下 HT、TC、IDLE 均不会停止接收。 | 高 | 已验证 |
-| 待迁移文件状态 | `git status --short`、`CMakeLists.txt`、`MDK-ARM/Infantry_Robot.uvprojx` | `User/bsp/uart.*` 与 `User/device/dr16.*` 是未跟踪文件，当前 CMake/Keil 均未纳入这些业务源文件；CMake 已包含生成的 USART/DMA/HAL UART 源。 | 高 | 已验证 |
+| 待迁移文件状态 | `git status --short`、`CMakeLists.txt` | `User/bsp/uart.*` 与 `User/device/dr16.*` 原本未纳入 CMake；CMake 已包含生成的 USART/DMA/HAL UART 源。用户明确要求本任务不修改 Keil 工程。 | 高 | 已确认 |
 | 旧接收模型冲突 | `User/device/dr16.c:75-106`、`User/bsp/uart.c` | 旧实现每次启动固定长度 DMA 并等待完成标志，设备层直接调用 HAL；这与当前 Circular DMA + RingBuffer 的冻结方案及分层约束不一致。 | 高 | 待重构 |
 | 原始帧布局 | ARM GCC 静态断言探针、`User/device/dr16.h` | 当前 ARM GCC 下 `sizeof(DR16_RawData_t) == 18`，但协议解析依赖 packed bitfield 的编译器布局；迁移后应改为对 18 字节数组显式移位解码。 | 高 | 待重构 |
 | 协议与安全要求 | `全向轮底盘学习章节.md:1142-1410` | DR16 帧长 18 字节，四通道典型原始范围 364~1684、中心 1024；非法帧不得污染输出，100 ms 可作为首版离线阈值，恢复后不得自动沿用旧使能。 | 高 | 已确认 |

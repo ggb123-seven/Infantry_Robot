@@ -21,7 +21,9 @@ extern "C" {
 #define BSP_CAN_DEFAULT_QUEUE_SIZE      10
 #define BSP_CAN_TIMEOUT_IMMEDIATE       0
 #define BSP_CAN_TIMEOUT_FOREVER         osWaitForever
-#define BSP_CAN_TX_QUEUE_SIZE           32    /* 发送队列大小 */
+
+/* CAN 发送队列最多缓存 32 帧完整消息。 */
+#define BSP_CAN_TX_QUEUE_SIZE           32
 
 /* USER DEFINE BEGIN */
 
@@ -108,13 +110,6 @@ typedef struct {
     CAN_TxHeaderTypeDef header;         /* 发送头 */
     uint8_t data[BSP_CAN_MAX_DLC];      /* 数据 */
 } BSP_CAN_TxMessage_t;
-
-/* 无锁环形队列结构体 */
-typedef struct {
-    BSP_CAN_TxMessage_t buffer[BSP_CAN_TX_QUEUE_SIZE];  /* 缓冲区 */
-    volatile uint32_t head;             /* 队列头 */
-    volatile uint32_t tail;             /* 队列尾 */
-} BSP_CAN_TxQueue_t;
 
 /* USER STRUCT BEGIN */
 
@@ -213,8 +208,6 @@ int8_t BSP_CAN_RegisterId(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size);
  * @return BSP_OK 表示成功，其他值表示失败
  */
 int8_t BSP_CAN_RegisterLatestId(BSP_CAN_t can, uint32_t can_id);
-
-
 
 /**
  * @brief 获取 CAN 消息

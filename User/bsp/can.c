@@ -5,6 +5,7 @@
 #include <cmsis_os2.h>
 #include <string.h>
 #include "FreeRTOS.h"
+#include "ringbuffer/ringbuffer.h"
 #include "task.h"
 
 /* USER INCLUDE BEGIN */
@@ -15,12 +16,21 @@
 #define CAN_QUEUE_MUTEX_TIMEOUT         100   /* 队列互斥锁超时时间(ms) */
 #define CAN_TX_MAILBOX_NUM              3     /* CAN发送邮箱数量 */
 
+/* LwRB 会保留一个字节区分空队列与满队列，因此存储区额外增加一个字节。 */
+#define BSP_CAN_TX_QUEUE_STORAGE_SIZE   ((BSP_CAN_TX_QUEUE_SIZE * sizeof(BSP_CAN_TxMessage_t)) + 1U)
+
 /* USER DEFINE BEGIN */
 
 /* USER DEFINE END */
 
 /* Private macro ------------------------------------------------------------ */
 /* Private typedef ---------------------------------------------------------- */
+typedef struct
+{
+    lwrb_t ring_buffer;
+    uint8_t storage[BSP_CAN_TX_QUEUE_STORAGE_SIZE];
+} BSP_CAN_TxQueue_t;
+
 typedef struct BSP_CAN_QueueNode {
     BSP_CAN_t can;         /* CAN通道 */
     uint32_t can_id; /* 解析后的CAN ID */
@@ -46,15 +56,14 @@ static BSP_CAN_TxQueue_t tx_queues[BSP_CAN_NUM]; /* 每个CAN的发送队列 */
 static BSP_CAN_t CAN_Get(CAN_HandleTypeDef *hcan);
 static BSP_CAN_QueueNode_t *BSP_CAN_FindQueueNode(BSP_CAN_t can, uint32_t can_id);
 static osMessageQueueId_t BSP_CAN_FindQueue(BSP_CAN_t can, uint32_t can_id);
-static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size,
-                                    bool latest_only);
+static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size, bool latest_only);
 static void BSP_CAN_PushRxMessage(BSP_CAN_QueueNode_t *node, const BSP_CAN_Message_t *msg);
 static void BSP_CAN_RxFifo0Callback(void);
 static void BSP_CAN_TxCompleteCallback(void);
 static BSP_CAN_FrameType_t BSP_CAN_GetFrameType(CAN_RxHeaderTypeDef *header);
 static uint32_t BSP_CAN_DefaultIdParser(uint32_t original_id, BSP_CAN_FrameType_t frame_type);
-static void BSP_CAN_TxQueueInit(BSP_CAN_t can);
-static bool BSP_CAN_TxQueuePush(BSP_CAN_t can, BSP_CAN_TxMessage_t *msg);
+static bool BSP_CAN_TxQueueInit(BSP_CAN_t can);
+static bool BSP_CAN_TxQueuePush(BSP_CAN_t can, const BSP_CAN_TxMessage_t *msg);
 static bool BSP_CAN_TxQueuePop(BSP_CAN_t can, BSP_CAN_TxMessage_t *msg);
 static bool BSP_CAN_TxQueueIsEmpty(BSP_CAN_t can);
 
@@ -82,10 +91,13 @@ static BSP_CAN_t CAN_Get(CAN_HandleTypeDef *hcan) {
  * @param[in] can_id 解析后的 CAN ID
  * @return 找到时返回节点指针，否则返回 NULL
  */
-static BSP_CAN_QueueNode_t *BSP_CAN_FindQueueNode(BSP_CAN_t can, uint32_t can_id) {
+static BSP_CAN_QueueNode_t *BSP_CAN_FindQueueNode(BSP_CAN_t can, uint32_t can_id)
+{
     BSP_CAN_QueueNode_t *node = queue_list;
-    while (node != NULL) {
-        if (node->can == can && node->can_id == can_id) {
+    while (node != NULL)
+    {
+        if (node->can == can && node->can_id == can_id)
+        {
             return node;
         }
         node = node->next;
@@ -100,38 +112,50 @@ static BSP_CAN_QueueNode_t *BSP_CAN_FindQueueNode(BSP_CAN_t can, uint32_t can_id
  * @param[in] can_id 解析后的 CAN ID
  * @return 找到时返回消息队列句柄，否则返回 NULL
  */
-static osMessageQueueId_t BSP_CAN_FindQueue(BSP_CAN_t can, uint32_t can_id) {
+static osMessageQueueId_t BSP_CAN_FindQueue(BSP_CAN_t can, uint32_t can_id)
+{
     BSP_CAN_QueueNode_t *node = BSP_CAN_FindQueueNode(can, can_id);
     return node == NULL ? NULL : node->queue;
 }
 
 /**
- * @brief 创建指定CAN ID的消息队列
- * @note 内部函数，已包含互斥锁保护
+ * @brief 创建指定 CAN ID 的消息队列
+ *
+ * @param[in] can CAN 总线
+ * @param[in] can_id 解析后的 CAN ID
+ * @param[in] queue_size 消息队列容量，传入 0 时使用默认容量
+ * @param[in] latest_only 是否在队列满时丢弃旧帧并保留最新帧
+ * @return BSP_OK 表示成功，其他值表示失败
  */
-static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size,
-                                    bool latest_only) {
-    if (queue_size == 0) {
+static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size, bool latest_only)
+{
+    if (queue_size == 0)
+    {
         queue_size = BSP_CAN_DEFAULT_QUEUE_SIZE;
     }
-    if (osMutexAcquire(queue_mutex, CAN_QUEUE_MUTEX_TIMEOUT) != osOK) {
+    if (osMutexAcquire(queue_mutex, CAN_QUEUE_MUTEX_TIMEOUT) != osOK)
+    {
         return BSP_ERR_TIMEOUT;
     }
     BSP_CAN_QueueNode_t *node = queue_list;
-    while (node != NULL) {
-        if (node->can == can && node->can_id == can_id) {
+    while (node != NULL)
+    {
+        if (node->can == can && node->can_id == can_id)
+        {
             osMutexRelease(queue_mutex);
-            return BSP_ERR;  // 已存在
+            return BSP_ERR;
         }
         node = node->next;
     }
     BSP_CAN_QueueNode_t *new_node = (BSP_CAN_QueueNode_t *)BSP_Malloc(sizeof(BSP_CAN_QueueNode_t));
-    if (new_node == NULL) {
+    if (new_node == NULL)
+    {
         osMutexRelease(queue_mutex);
         return BSP_ERR_NULL;
     }
     new_node->queue = osMessageQueueNew(queue_size, sizeof(BSP_CAN_Message_t), NULL);
-    if (new_node->queue == NULL) {
+    if (new_node->queue == NULL)
+    {
         BSP_Free(new_node);
         osMutexRelease(queue_mutex);
         return BSP_ERR;
@@ -141,7 +165,7 @@ static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queu
     new_node->queue_size = queue_size;
     new_node->latest_only = latest_only;
 
-    // 节点完全初始化后再原子发布，避免接收中断遍历到半初始化节点。
+    // 节点完全初始化后再发布，避免接收中断遍历到半初始化节点
     taskENTER_CRITICAL();
     new_node->next = queue_list;
     queue_list = new_node;
@@ -157,13 +181,24 @@ static int8_t BSP_CAN_CreateIdQueue(BSP_CAN_t can, uint32_t can_id, uint8_t queu
  * @param[in] msg 待写入的 CAN 消息
  * @return 无
  */
-static void BSP_CAN_PushRxMessage(BSP_CAN_QueueNode_t *node, const BSP_CAN_Message_t *msg) {
-    if (node == NULL || msg == NULL) return;
-    if (osMessageQueuePut(node->queue, msg, 0, BSP_CAN_TIMEOUT_IMMEDIATE) == osOK) return;
-    if (!node->latest_only) return;
+static void BSP_CAN_PushRxMessage(BSP_CAN_QueueNode_t *node, const BSP_CAN_Message_t *msg)
+{
+    if (node == NULL || msg == NULL)
+    {
+        return;
+    }
+    if (osMessageQueuePut(node->queue, msg, 0, BSP_CAN_TIMEOUT_IMMEDIATE) == osOK)
+    {
+        return;
+    }
+    if (!node->latest_only)
+    {
+        return;
+    }
 
     BSP_CAN_Message_t discarded;
-    if (osMessageQueueGet(node->queue, &discarded, NULL, BSP_CAN_TIMEOUT_IMMEDIATE) == osOK) {
+    if (osMessageQueueGet(node->queue, &discarded, NULL, BSP_CAN_TIMEOUT_IMMEDIATE) == osOK)
+    {
         (void)osMessageQueuePut(node->queue, msg, 0, BSP_CAN_TIMEOUT_IMMEDIATE);
     }
 }
@@ -189,68 +224,70 @@ static uint32_t BSP_CAN_DefaultIdParser(uint32_t original_id, BSP_CAN_FrameType_
 }
 
 /**
- * @brief 初始化发送队列
+ * @brief 初始化指定 CAN 总线的发送队列
+ *
+ * @param[in] can CAN 总线
+ * @return true 表示初始化成功，false 表示参数无效或初始化失败
  */
-static void BSP_CAN_TxQueueInit(BSP_CAN_t can) {
-    if (can >= BSP_CAN_NUM) return;
-    
-    tx_queues[can].head = 0;
-    tx_queues[can].tail = 0;
-}
-
-/**
- * @brief 向发送队列添加消息（无锁）
- */
-static bool BSP_CAN_TxQueuePush(BSP_CAN_t can, BSP_CAN_TxMessage_t *msg) {
-    if (can >= BSP_CAN_NUM || msg == NULL) return false;
-    
-    BSP_CAN_TxQueue_t *queue = &tx_queues[can];
-    uint32_t next_head = (queue->head + 1) % BSP_CAN_TX_QUEUE_SIZE;
-    
-    // 队列满
-    if (next_head == queue->tail) {
+static bool BSP_CAN_TxQueueInit(BSP_CAN_t can)
+{
+    if (can >= BSP_CAN_NUM)
+    {
         return false;
     }
-    
-    // 复制消息
-    queue->buffer[queue->head] = *msg;
-    
-    // 更新头指针（原子操作）
-    queue->head = next_head;
-    
-    return true;
+
+    BSP_CAN_TxQueue_t *queue = &tx_queues[can];
+    return lwrb_init(&queue->ring_buffer, queue->storage, sizeof(queue->storage)) != 0U;
 }
 
-
 /**
- * @brief 从发送队列取出消息（无锁）
+ * @brief 向指定 CAN 总线的发送队列写入一帧完整消息
+ *
+ * @param[in] can CAN 总线
+ * @param[in] msg 待写入的完整 CAN 消息
+ * @return true 表示整帧写入成功，false 表示参数无效或队列空间不足
  */
-static bool BSP_CAN_TxQueuePop(BSP_CAN_t can, BSP_CAN_TxMessage_t *msg) {
-    if (can >= BSP_CAN_NUM || msg == NULL) return false;
-    
-    BSP_CAN_TxQueue_t *queue = &tx_queues[can];
-    
-    // 队列空
-    if (queue->head == queue->tail) {
+static bool BSP_CAN_TxQueuePush(BSP_CAN_t can, const BSP_CAN_TxMessage_t *msg)
+{
+    if (can >= BSP_CAN_NUM || msg == NULL)
+    {
         return false;
     }
-    
-    // 复制消息
-    *msg = queue->buffer[queue->tail];
-    
-    // 更新尾指针（原子操作）
-    queue->tail = (queue->tail + 1) % BSP_CAN_TX_QUEUE_SIZE;
-    
-    return true;
+
+    return lwrb_write_ex(&tx_queues[can].ring_buffer, msg, sizeof(*msg), NULL, LWRB_FLAG_WRITE_ALL) != 0U;
 }
 
 /**
- * @brief 检查发送队列是否为空
+ * @brief 从指定 CAN 总线的发送队列读取一帧完整消息
+ *
+ * @param[in] can CAN 总线
+ * @param[out] msg 接收完整 CAN 消息的缓存
+ * @return true 表示整帧读取成功，false 表示参数无效或队列中没有完整消息
  */
-static bool BSP_CAN_TxQueueIsEmpty(BSP_CAN_t can) {
-    if (can >= BSP_CAN_NUM) return true;
-    
-    return tx_queues[can].head == tx_queues[can].tail;
+static bool BSP_CAN_TxQueuePop(BSP_CAN_t can, BSP_CAN_TxMessage_t *msg)
+{
+    if (can >= BSP_CAN_NUM || msg == NULL)
+    {
+        return false;
+    }
+
+    return lwrb_read_ex(&tx_queues[can].ring_buffer, msg, sizeof(*msg), NULL, LWRB_FLAG_READ_ALL) != 0U;
+}
+
+/**
+ * @brief 检查指定 CAN 总线的发送队列是否为空
+ *
+ * @param[in] can CAN 总线
+ * @return true 表示队列为空或参数无效，false 表示队列中存在完整消息
+ */
+static bool BSP_CAN_TxQueueIsEmpty(BSP_CAN_t can)
+{
+    if (can >= BSP_CAN_NUM)
+    {
+        return true;
+    }
+
+    return lwrb_get_full(&tx_queues[can].ring_buffer) == 0U;
 }
 
 /**
@@ -304,8 +341,7 @@ static void BSP_CAN_RxFifo0Callback(void) {
                 uint32_t parsed_id = BSP_CAN_ParseId(original_id, frame_type);
                 BSP_CAN_QueueNode_t *node = BSP_CAN_FindQueueNode((BSP_CAN_t)can_idx, parsed_id);
                 if (node != NULL) {
-                    BSP_CAN_Message_t msg;
-                    memset(&msg, 0, sizeof(msg));
+                    BSP_CAN_Message_t msg = {0};
                     msg.frame_type = frame_type;
                     msg.original_id = original_id;
                     msg.parsed_id = parsed_id;
@@ -443,8 +479,12 @@ int8_t BSP_CAN_Init(void) {
     memset(CAN_Callback, 0, sizeof(CAN_Callback));
         
     // 初始化发送队列
-    for (int i = 0; i < BSP_CAN_NUM; i++) {
-        BSP_CAN_TxQueueInit((BSP_CAN_t)i);
+    for (int i = 0; i < BSP_CAN_NUM; i++)
+    {
+        if (!BSP_CAN_TxQueueInit((BSP_CAN_t)i))
+        {
+            return BSP_ERR;
+        }
     }
 
     // 初始化ID解析器为默认解析器
@@ -471,31 +511,17 @@ int8_t BSP_CAN_Init(void) {
     can1_filter.FilterActivation = ENABLE;
     can1_filter.SlaveStartFilterBank = 14;
     can1_filter.FilterFIFOAssignment = CAN_RX_FIFO0;
-    if (HAL_CAN_ConfigFilter(&hcan1, &can1_filter) != HAL_OK ||
-        HAL_CAN_Start(&hcan1) != HAL_OK) {
-        inited = false;
-        return BSP_ERR;
-    }
+    HAL_CAN_ConfigFilter(&hcan1, &can1_filter);
+    HAL_CAN_Start(&hcan1);
 
     // 自动注册CAN1接收回调函数
-    if (BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_RX_FIFO0_MSG_PENDING_CB,
-                                 BSP_CAN_RxFifo0Callback) != BSP_OK ||
-        BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX0_CPLT_CB,
-                                 BSP_CAN_TxCompleteCallback) != BSP_OK ||
-        BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX1_CPLT_CB,
-                                 BSP_CAN_TxCompleteCallback) != BSP_OK ||
-        BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX2_CPLT_CB,
-                                 BSP_CAN_TxCompleteCallback) != BSP_OK) {
-        inited = false;
-        return BSP_ERR;
-    }
+    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_RX_FIFO0_MSG_PENDING_CB, BSP_CAN_RxFifo0Callback);
+    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX0_CPLT_CB, BSP_CAN_TxCompleteCallback);
+    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX1_CPLT_CB, BSP_CAN_TxCompleteCallback);
+    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX2_CPLT_CB, BSP_CAN_TxCompleteCallback);
 
     // 激活CAN1中断
-    if (HAL_CAN_ActivateNotification(&hcan1,
-                                     CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY) != HAL_OK) {
-        inited = false;
-        return BSP_ERR;
-    }
+    HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY);
 
     
     inited = true;
@@ -591,14 +617,17 @@ int8_t BSP_CAN_Transmit(BSP_CAN_t can, BSP_CAN_Format_t format,
         memcpy(tx_msg.data, data, dlc);
     }
     
-    // 保证任务与发送完成中断不会同时操作邮箱，并保持排队帧的发送顺序。
+    // 保证任务与发送完成中断不会同时操作邮箱，并保持排队帧的发送顺序
     uint32_t mailbox;
     int8_t result = BSP_ERR;
     taskENTER_CRITICAL();
     if (BSP_CAN_TxQueueIsEmpty(can) && HAL_CAN_GetTxMailboxesFreeLevel(hcan) > 0 &&
-        HAL_CAN_AddTxMessage(hcan, &tx_msg.header, tx_msg.data, &mailbox) == HAL_OK) {
+        HAL_CAN_AddTxMessage(hcan, &tx_msg.header, tx_msg.data, &mailbox) == HAL_OK)
+    {
         result = BSP_OK;
-    } else if (BSP_CAN_TxQueuePush(can, &tx_msg)) {
+    }
+    else if (BSP_CAN_TxQueuePush(can, &tx_msg))
+    {
         result = BSP_OK;
     }
     taskEXIT_CRITICAL();
@@ -627,6 +656,33 @@ int8_t BSP_CAN_TransmitRemoteFrame(BSP_CAN_t can, BSP_CAN_RemoteFrame_t *frame) 
     return BSP_CAN_Transmit(can, format, frame->id, NULL, frame->dlc);
 }
 
+int32_t BSP_CAN_GetTxQueueCount(BSP_CAN_t can)
+{
+    if (!inited || can >= BSP_CAN_NUM)
+    {
+        return -1;
+    }
+
+    return (int32_t)(lwrb_get_full(&tx_queues[can].ring_buffer) / sizeof(BSP_CAN_TxMessage_t));
+}
+
+int8_t BSP_CAN_FlushTxQueue(BSP_CAN_t can)
+{
+    if (!inited)
+    {
+        return BSP_ERR_INITED;
+    }
+    if (can >= BSP_CAN_NUM)
+    {
+        return BSP_ERR;
+    }
+
+    taskENTER_CRITICAL();
+    lwrb_reset(&tx_queues[can].ring_buffer);
+    taskEXIT_CRITICAL();
+    return BSP_OK;
+}
+
 int8_t BSP_CAN_RegisterId(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size) {
     if (!inited) {
         return BSP_ERR_INITED;
@@ -634,8 +690,10 @@ int8_t BSP_CAN_RegisterId(BSP_CAN_t can, uint32_t can_id, uint8_t queue_size) {
     return BSP_CAN_CreateIdQueue(can, can_id, queue_size, false);
 }
 
-int8_t BSP_CAN_RegisterLatestId(BSP_CAN_t can, uint32_t can_id) {
-    if (!inited) {
+int8_t BSP_CAN_RegisterLatestId(BSP_CAN_t can, uint32_t can_id)
+{
+    if (!inited)
+    {
         return BSP_ERR_INITED;
     }
     return BSP_CAN_CreateIdQueue(can, can_id, 1, true);
@@ -661,7 +719,8 @@ int8_t BSP_CAN_GetMessage(BSP_CAN_t can, uint32_t can_id, BSP_CAN_Message_t *msg
     return (result == osOK) ? BSP_OK : BSP_ERR;
 }
 
-int8_t BSP_CAN_GetLatestMessage(BSP_CAN_t can, uint32_t can_id, BSP_CAN_Message_t *msg) {
+int8_t BSP_CAN_GetLatestMessage(BSP_CAN_t can, uint32_t can_id, BSP_CAN_Message_t *msg)
+{
     return BSP_CAN_GetMessage(can, can_id, msg, BSP_CAN_TIMEOUT_IMMEDIATE);
 }
 

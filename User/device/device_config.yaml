@@ -1,3 +1,6 @@
+dr16:
+  bsp_config: {}
+  enabled: true
 motor:
   bsp_config: {}
   enabled: true

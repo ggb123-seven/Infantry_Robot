@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "DR16 UART BSP、设备解码与任务消息流分层约束"}
+{"file": "spec/conventions/index.md", "reason": "ISR、volatile、临界区、Allman 与验证约定"}
+{"file": "spec/hardware/index.md", "reason": "USART3、DMA1 Stream1 Channel 4 与 DR16 8E1 硬件基线"}

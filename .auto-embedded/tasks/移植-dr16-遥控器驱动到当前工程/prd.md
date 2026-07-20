@@ -17,7 +17,7 @@
 - `lwrb_reset()` 仅在暂停 UART 接收或最小临界区内执行，避免 ISR 写入与任务复位并发。
 - 新增或修改注释使用简体中文和 UTF-8，C/C++ 代码使用 Allman 风格，单行不超过 120 列。
 - 项目自研源码必须统一格式；第三方 RingBuffer 保持上游源码排版和许可证注释，不进行项目风格重排。
-- 实施阶段修改 `User/bsp/uart.c/.h` 以统一拥有 HAL UART 回调和字节流状态，不修改现有 CAN BSP；此外将修改 `User/device`、`User/task`、`User/module`、CMake 和 Keil 配置。
+- 实施阶段修改 `User/bsp/uart.c/.h` 以统一拥有 HAL UART 回调和字节流状态，不修改现有 CAN BSP；此外将修改 `User/device`、`User/task`、`User/module` 和 CMake 配置，明确不修改 Keil 工程。
 
 ## 数据流与所有权
 
@@ -143,7 +143,7 @@ static void DR16_TaskUartErrorCallback(uint32_t error_code);
 | `User/task/motor_chassis.c/.h` | L6 App | 只保留周期调度、设备 I/O 和 module 编排，修复安全默认值 | `true` |
 | `User/task/user_task.c/.h`、`User/task/init.c` | L6 App | 任务属性、运行时句柄和 RTOS 对象创建 | `false` |
 | `tests/dr16_decode_test.c` | Host Test | 纯解码、非法帧和错位恢复测试 | `false` |
-| `CMakeLists.txt`、`MDK-ARM/Infantry_Robot.uvprojx` | Build | 两套构建入口接入 | `false` |
+| `CMakeLists.txt` | Build | 接入 DR16 链路所需源文件 | `false` |
 
 ## 待确认决策
 
@@ -166,7 +166,7 @@ static void DR16_TaskUartErrorCallback(uint32_t error_code);
 6. 新增 `User/task/dr16_task.h/.c`：拥有 RingBuffer、DMA 事件通知、逐字节重同步、100 ms 离线检测、错误恢复和调试统计。
 7. 更新 `User/task/user_task.h/.c` 与 `init.c`：集中声明和创建 DR16 任务、线程标志及长度 1 状态邮箱，检查所有 RTOS 对象创建结果后再运行任务。
 8. 清理 `User/device/device.h` 中旧的 `SIGNAL_DR16_RAW_REDY` 及拼写问题，线程标志归属任务层。
-9. 更新根 `CMakeLists.txt`；Keil 工程同步加入 module、USART/DMA/HAL UART、UART Stream BSP、DR16 device 和 DR16 task。
+9. 更新根 `CMakeLists.txt`，加入 module、USART/DMA/HAL UART、UART BSP、DR16 device 和 DR16 task；不修改 Keil 工程。
 10. 增加主机测试：中心/端点通道、拨杆、键鼠、第五通道、非法长度、非法通道、非法拨杆、输出不污染、前置噪声与错位重同步。
 11. 执行项目规则扫描、clang-tidy、clean build、`check.py`、ELF 产物与内存占用检查；板上观察有效帧率、非法帧、重同步、溢出、UART 错误、最后更新时间和在线状态。
 
@@ -194,3 +194,4 @@ BSP 保持性验证标准：
 - 不把 DR16 数据直接映射到底盘电流或电机使能。
 - 不实现底盘模式状态机、速度命令映射、斜坡或断线恢复后的重新解锁逻辑。
 - 不改 CubeMX 引脚、DMA stream、UART 参数、中断优先级或 `.ioc`。
+- 不修改 `MDK-ARM/Infantry_Robot.uvprojx` 或其他 Keil 配置。

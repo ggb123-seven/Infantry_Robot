@@ -1,0 +1,2 @@
+{"file": "spec/hardware/index.md", "reason": "复核 DR16 UART、DMA、IRQ 和 C 板接口证据"}
+{"file": "spec/architecture/index.md", "reason": "研究阶段约束目标分层和数据所有权"}

@@ -1,0 +1,3 @@
+{"file": "spec/architecture/index.md", "reason": "验证 UART/DR16/Task 依赖方向和 ISR 门禁"}
+{"file": "spec/conventions/index.md", "reason": "验证整帧提交、并发、错误恢复和代码格式"}
+{"file": "spec/hardware/index.md", "reason": "核对 USART3/DMA/IRQ 与 hw-lock 一致性"}
