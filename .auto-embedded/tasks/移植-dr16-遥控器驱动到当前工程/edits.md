@@ -12,6 +12,10 @@
 | `User/task/motor_chassis.c/.h` | 使用单个 Chassis 上下文和一致输入/输出快照 | task 不再直接持有或调用 MotorSpeedControl | CHASSIS-MODULE-06 直接引用为 0；CAN 设备 I/O 边界留待下一改动点，用户已确认 | 本地快照 |
 | `tests/chassis_test.c` | 覆盖四控制器独立性、离线隔离、全局禁用和非法反馈 | Chassis 真实实现主机测试全部通过 | CHASSIS-MODULE-06 通过，用户已确认 | 本地快照 |
 | `CMakeLists.txt` | 接入 Chassis 模块并集中 module 源文件分组 | Debug clean build 包含 chassis.c | CHASSIS-MODULE-06 通过，用户已确认 | 本地快照 |
+| `User/module/chassis_can.c/.h` | 建立四个 M3508 的唯一 CAN 设备边界，统一注册、反馈、电流写槽和单次组发送 | 单路失败隔离，非法电流零覆盖，四路后只 Flush 一次 | CHASSIS-CAN-BOUNDARY-07 主机测试、clang-tidy 与 Debug clean build 通过，用户已确认 | 本地快照 |
+| `User/task/motor_chassis.c` | 移除 CAN BSP、RM device、设备参数和实例，改为编排 ChassisCAN 与 Chassis 快照 | task 直接 BSP_CAN/MOTOR_RM 引用为 0，失败输出归零 | CHASSIS-CAN-BOUNDARY-07 分层扫描与回归测试通过，用户已确认 | 本地快照 |
+| `tests/chassis_can_test.c`、`tests/mocks/bsp/can.h`、`tests/mocks/device/motor_rm.h` | 覆盖固定注册、注册/反馈隔离、四槽单发、失败零覆盖、非法值和初始化失败 | 主机测试使用真实 chassis_can.c 且全部断言通过 | CHASSIS-CAN-BOUNDARY-07 通过，用户已确认 | 本地快照 |
+| `CMakeLists.txt` | 仅接入 `User/module/chassis_can.c`，不修改 Keil 配置 | Debug clean build 编译 chassis_can.c | CHASSIS-CAN-BOUNDARY-07 通过，用户已确认 | 本地快照 |
 | `User/device/dr16.c/.h` | 改为显式 18 字节纯解码与校验 | 主机协议测试全部通过 | DR16-DECODE-01 编译与分层扫描通过，用户已确认 | 本地快照 |
 | `tests/dr16_decode_test.c` | 覆盖合法帧、边界值、非法长度、非法通道、非法拨杆和状态复位 | 失败路径不污染旧输出 | DR16-DECODE-01 全部主机测试通过，用户已确认 | 本地快照 |
 | `User/task/dr16_task.c/.h` | 新增 RingBuffer、重同步、离线与发布任务 | 错位恢复、100 ms 离线、邮箱快照通过 | DR16-TASK-03 主机测试、clang-tidy 与 ARM 构建通过，用户已确认 | 本地快照 |
