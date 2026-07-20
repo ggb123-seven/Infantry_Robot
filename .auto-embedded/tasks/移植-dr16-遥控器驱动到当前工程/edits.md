@@ -25,3 +25,4 @@
 | `tests/dr16_task_test.c`、`tests/mocks/cmsis_os2.h` | 覆盖逐字节重同步、100 ms 离线和两类错误恢复 | 实际任务代码主机测试全部通过 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
 | `tests/init_task_test.c` | 覆盖邮箱和任务创建成功、各创建失败与清理路径 | 所有 RTOS 对象创建结果均被检查 | DR16-TASK-03 通过，用户已确认 | 本地快照 |
 | `build/Debug/Infantry_Robot.elf`、`.map`、`.su` | 软件终检、内存与静态栈帧分析 | 主机回归、clang-tidy、Debug clean build、check.py 全通过 | DR16-SOFTWARE-VERIFY-05：Flash 76312 B；普通 SRAM 含链接器预留 40668 B；DR16/底盘可见项目函数链约 260/416 B，板上 high-water mark 待测 | 本地快照 |
+| `User/task/ozone_debug.c/.h`、`dr16_task.c/.h`、`motor_chassis.c/.h`、`tests/dr16_task_test.c`、`CMakeLists.txt` | 集中保存 DR16 与底盘的 Ozone 调试结构、全局实例和初值 | 调试结构与符号归属唯一，任务行为和构建结果不变 | OZONE-DEBUG-09 主机测试、Debug clean build、check.py 与 ELF 符号归属检查通过，用户已确认 | 本地快照 |

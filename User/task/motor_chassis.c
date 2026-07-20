@@ -2,6 +2,7 @@
 
 #include "module/chassis.h"
 #include "module/chassis_can.h"
+#include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 /*
@@ -13,123 +14,6 @@
 _Static_assert(MOTOR_CHASSIS_MOTOR_COUNT == CHASSIS_MOTOR_COUNT, "Chassis 电机数量必须与任务设备数量一致");
 _Static_assert(MOTOR_CHASSIS_MOTOR_COUNT == CHASSIS_CAN_MOTOR_COUNT,
                "Chassis CAN 电机数量必须与任务设备数量一致");
-
-/**
- * @brief 四个 M3508 的在线调试参数初值
- *
- * 上电后关闭调试使能并将全部目标转速清零，只有调试器明确写入目标并开启使能后才允许非零输出。
- */
-volatile MotorChassisTune_t g_motor_chassis_tune =
-{
-    .motor_debug_enable = false,
-    .requested_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-    .pid_kp = MOTOR_SPEED_PID_KP,
-    .pid_ki = MOTOR_SPEED_PID_KI,
-    .pid_kd = MOTOR_SPEED_PID_KD,
-    .actual_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-};
-
-/**
- * @brief 四个 M3508 的运行监视数据初值
- *
- * 任务启动前所有设备和速度控制均视为不可用，数值反馈清零，避免把尚未运行的状态误认为有效数据。
- */
-volatile MotorChassisMonitor_t g_motor_chassis_monitor =
-{
-    .motor_online =
-    {
-        false,
-        false,
-        false,
-        false,
-    },
-    .current_saturated =
-    {
-        false,
-        false,
-        false,
-        false,
-    },
-    .debug_stop_ready = false,
-    .register_status =
-    {
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-    },
-    .control_init_status =
-    {
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-    },
-    .feedback_update_status =
-    {
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-    },
-    .current_set_status =
-    {
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-        CHASSIS_CAN_DEVICE_UNAVAILABLE,
-    },
-    .chassis_status = CHASSIS_INIT_ERROR,
-    .control_status =
-    {
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-    },
-    .can_tx_status = CHASSIS_CAN_DEVICE_UNAVAILABLE,
-    .debug_stop_zero_tx_count = 0U,
-    .limited_target_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-    .ramped_target_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-    .current_command_a =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-    .temperature_c =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
-};
 
 /*
  * 四电机任务私有边界与模块状态：

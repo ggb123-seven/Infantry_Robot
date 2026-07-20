@@ -3,6 +3,7 @@
 #include "bsp/time.h"
 #include "bsp/uart.h"
 #include "ringbuffer/ringbuffer.h"
+#include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 #include <limits.h>
@@ -20,8 +21,6 @@
 #define DR16_TASK_WAIT_INTERVAL_MS (10U)
 #define DR16_TASK_EVENT_FLAGS                                                                                       \
     (DR16_TASK_FLAG_RX_DATA | DR16_TASK_FLAG_UART_ERROR | DR16_TASK_FLAG_RING_BUFFER_OVERFLOW)
-
-volatile DR16_Monitor_t g_dr16_monitor;
 
 static lwrb_t dr16_ring_buffer;
 static uint8_t dr16_ring_buffer_storage[DR16_TASK_RING_BUFFER_SIZE];

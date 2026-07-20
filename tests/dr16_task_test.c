@@ -1,5 +1,6 @@
 #include "bsp/uart.h"
 #include "task/dr16_task.h"
+#include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 #include <assert.h>
