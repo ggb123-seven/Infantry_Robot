@@ -10,6 +10,7 @@ extern "C"
 
 #include "device/can_devices.h"
 #include "device/dr16.h"
+#include "module/fault_detect.h"
 
 /*
  * Ozone 底盘调试参数：
@@ -108,6 +109,7 @@ typedef struct
 } MotorChassisMonitor_t;
 
 extern volatile DR16_Monitor_t g_dr16_monitor;
+extern volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
 
@@ -126,6 +128,14 @@ void OzoneDebug_UpdateCANDevicesInit(const CANDevices_Snapshot_t *can_snapshot);
  * @return 无返回值
  */
 void OzoneDebug_UpdateChassisInit(const struct Chassis_Snapshot *chassis_snapshot);
+
+/**
+ * @brief 将独立故障检测结果发布到 Ozone 监控区
+ *
+ * @param[in] fault_snapshot 本周期故障检测结果快照
+ * @return 无返回值
+ */
+void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot);
 
 /**
  * @brief 从 Ozone 在线参数生成本周期底盘控制输入快照

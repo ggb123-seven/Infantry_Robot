@@ -2,6 +2,7 @@
 
 #include "device/can_devices.h"
 #include "module/chassis.h"
+#include "module/fault_detect.h"
 #include "task/ozone_debug.h"
 #include "task/user_task.h"
 
@@ -15,11 +16,13 @@ _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘�
  * - chassis_feedback：保存从 CAN 设备快照映射出的本周期底盘控制反馈。
  * - chassis_output：保存底盘模块本周期计算得到的四路电流命令。
  * - chassis_snapshot：保存底盘速度控制器初始化和本周期控制结果。
+ * - fault_detect_snapshot：保存本周期独立故障检测结果。
  */
 static CANDevices_Snapshot_t can_devices_snapshot;
 static Chassis_Feedback_t chassis_feedback;
 static Chassis_Output_t chassis_output;
 static Chassis_Snapshot_t chassis_snapshot;
+static FaultDetect_Snapshot_t fault_detect_snapshot;
 
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_PublishCommand(void);
@@ -55,7 +58,12 @@ void Task_motor_chassis(void *argument)
         Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
         MotorChassis_PublishCommand();
 
-        // 将设备与控制结果集中发布到独立 Ozone 调试区，不在任务内维护诊断字段
+        // 独立汇总本周期设备和控制故障，再发布给 Ozone 调试区
+        FaultDetect_UpdateMotorChassis(feedback_received ? &can_devices_snapshot : NULL, &chassis_snapshot,
+                                       &fault_detect_snapshot);
+        OzoneDebug_UpdateFaultDetect(&fault_detect_snapshot);
+
+        // 将设备与控制结果集中发布到独立 Ozone 调试区，不在任务内维护故障判定
         OzoneDebug_UpdateMotorChassis(&chassis_input, feedback_received ? &can_devices_snapshot : NULL,
                                       &chassis_snapshot);
 
@@ -75,6 +83,10 @@ bool Task_motor_chassis_Init(void)
     // 初始化四路底盘速度控制器，CAN 设备集合由独立通信任务负责初始化
     Chassis_Init((float)MOTOR_CHASSIS_FREQ, &chassis_snapshot);
     OzoneDebug_UpdateChassisInit(&chassis_snapshot);
+
+    // 发布初始化阶段诊断快照，帮助调试器区分未诊断和启动故障
+    FaultDetect_UpdateMotorChassis(NULL, &chassis_snapshot, &fault_detect_snapshot);
+    OzoneDebug_UpdateFaultDetect(&fault_detect_snapshot);
     return chassis_snapshot.initialized;
 }
 

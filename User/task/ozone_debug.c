@@ -12,8 +12,16 @@
 
 _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == CHASSIS_MOTOR_COUNT,
                "Ozone 底盘调试电机数量必须与底盘控制链一致");
+_Static_assert(OZONE_MOTOR_CHASSIS_COUNT == FAULT_DETECT_MOTOR_COUNT,
+               "Ozone 底盘调试电机数量必须与故障检测链一致");
 
 volatile DR16_Monitor_t g_dr16_monitor;
+
+/*
+ * 独立故障检测 Ozone 监视数据初值：
+ * - 任务首次发布前 evaluated 为 false，避免调试器把尚未诊断的零值误读为无故障。
+ */
+volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 
 /*
  * 四个 M3508 的 Ozone 在线调试参数初值：
@@ -178,6 +186,23 @@ void OzoneDebug_UpdateChassisInit(const Chassis_Snapshot_t *chassis_snapshot)
     debug_stop_zero_tx_count = 0U;
     g_motor_chassis_monitor.debug_stop_ready = false;
     g_motor_chassis_monitor.debug_stop_zero_tx_count = 0U;
+}
+
+/**
+ * @brief 将独立故障检测结果发布到 Ozone 监控区
+ *
+ * @param[in] fault_snapshot 本周期故障检测结果快照
+ * @return 无返回值
+ */
+void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot)
+{
+    if (fault_snapshot == NULL)
+    {
+        return;
+    }
+
+    // 以完整快照发布诊断结果，避免调试器读取到跨周期混合字段
+    g_fault_detect_monitor = *fault_snapshot;
 }
 
 /**

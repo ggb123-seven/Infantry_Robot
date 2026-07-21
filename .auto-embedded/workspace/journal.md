@@ -13,3 +13,9 @@
 
 ## #5  task=移植-dr16-遥控器驱动到当前工程  phase=REVIEW
 CHASSIS-MERGE-CONTROL-05 已经用户确认并提交本地快照 ebcd75e；当前任务已进入 REVIEW，软件门禁通过：check.py、Debug 构建、DR16/UART/init/chassis CAN 主机回归通过。剩余缺口是 C 板 + DR16 板上实测，包括有效帧率、非法帧、重同步、溢出、UART 错误、最后更新时间、在线状态和任务栈水位。
+
+## #6  task=独立故障检测模块  phase=REVIEW
+新增 User/task/fault_detect 独立诊断模块，消费 CANDevices_Snapshot_t 与 Chassis_Snapshot_t 汇总系统级和逐电机故障位，并通过 Ozone g_fault_detect_monitor 发布；CMake Debug 构建、格式扫描、ARCH/HW/SPEC 门禁已通过。
+
+## #7  task=迁移故障检测模块到-user-module  phase=REVIEW
+按用户确认将故障检测从 User/task 迁移到 User/module，task 层仅保留 FaultDetect_UpdateMotorChassis 调用和 Ozone 发布；CMake Debug 构建、格式扫描和 check.py 全部门禁通过。
