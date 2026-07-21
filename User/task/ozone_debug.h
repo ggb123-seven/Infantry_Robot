@@ -8,6 +8,7 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "device/can_devices.h"
 #include "device/dr16.h"
 
 /*
@@ -111,12 +112,14 @@ extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
 
 /**
- * @brief 将底盘模块初始化结果发布到 Ozone 监控区
+ * @brief 将 CAN 设备集合和底盘模块初始化结果发布到 Ozone 监控区
  *
- * @param[in] snapshot 底盘初始化结果快照
+ * @param[in] can_snapshot CAN 设备集合初始化结果快照
+ * @param[in] chassis_snapshot 底盘速度控制器初始化结果快照
  * @return 无返回值
  */
-void OzoneDebug_UpdateMotorChassisInit(const struct Chassis_Snapshot *snapshot);
+void OzoneDebug_UpdateMotorChassisInit(const CANDevices_Snapshot_t *can_snapshot,
+                                       const struct Chassis_Snapshot *chassis_snapshot);
 
 /**
  * @brief 从 Ozone 在线参数生成本周期底盘控制输入快照
@@ -128,13 +131,15 @@ void OzoneDebug_UpdateMotorChassisInit(const struct Chassis_Snapshot *snapshot);
 void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
 
 /**
- * @brief 将底盘模块单周期结果发布到 Ozone 监控区
+ * @brief 将 CAN 设备集合和底盘模块单周期结果发布到 Ozone 监控区
  *
  * @param[in] input 本周期实际采用的底盘控制输入快照
- * @param[in] snapshot 本周期底盘模块结果快照
+ * @param[in] can_snapshot 本周期 CAN 设备反馈与输出结果快照
+ * @param[in] chassis_snapshot 本周期底盘速度控制结果快照
  * @return 无返回值
  */
-void OzoneDebug_UpdateMotorChassis(const struct Chassis_Input *input, const struct Chassis_Snapshot *snapshot);
+void OzoneDebug_UpdateMotorChassis(const struct Chassis_Input *input, const CANDevices_Snapshot_t *can_snapshot,
+                                   const struct Chassis_Snapshot *chassis_snapshot);
 
 #ifdef __cplusplus
 }
