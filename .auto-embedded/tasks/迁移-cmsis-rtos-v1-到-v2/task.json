@@ -3,5 +3,5 @@
   "title": "迁移 CMSIS-RTOS V1 到 V2",
   "phase": "REVIEW",
   "trace_id": "T-迁移-cmsis-rtos-v1-到-v2",
-  "status": "active"
+  "status": "archived"
 }
