@@ -1,5 +1,12 @@
 # 修改记录
 
+## CMAKE-PATH-20260721-01
+
+- 目标：修正 VS Code CMake Tools 对不存在的 `cube-cmake` 的引用。
+- 配置改动：将 `.vscode/settings.json` 中的 `cmake.cmakePath` 指向系统 CMake 3.31.4，并移除错误的 `CMAKE_COMMAND=cube-cmake` 配置参数。
+- 验证：JSON 解析通过且配置中已无 `cube-cmake`；系统 CMake 3.31.4 完成 `Debug` 预设配置，增量构建返回 `ninja: no work to do.`。
+- 状态：已完成。
+
 ## MOTOR-FEEDBACK-DIAG-02
 
 - 目标：修复 `Task_Init` 初始化任务栈不足。
