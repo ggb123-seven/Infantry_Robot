@@ -8,9 +8,9 @@ extern "C"
 #include <stdbool.h>
 
 /**
- * @brief 初始化底盘任务私有控制链
+ * @brief 初始化底盘任务私有速度控制器
  *
- * @return 底盘控制链可运行时返回 true，否则返回 false
+ * @return 四路速度控制器可运行时返回 true，否则返回 false
  */
 bool Task_motor_chassis_Init(void);
 

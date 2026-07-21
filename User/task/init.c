@@ -1,6 +1,8 @@
 #include "task/user_task.h"
 
+#include "device/can_devices.h"
 #include "device/dr16.h"
+#include "task/can_task.h"
 #include "task/dr16_task.h"
 #include "task/motor_chassis.h"
 
@@ -76,6 +78,30 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 创建 CAN 反馈邮箱，保证 CAN task 启动后已有明确发布目标
+    task_runtime.init_status = TASK_INIT_CAN_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.can_feedback = osMessageQueueNew(1U, sizeof(CANDevices_Snapshot_t), NULL);
+    if (task_runtime.msgq.can_feedback == NULL)
+    {
+        return false;
+    }
+
+    // 创建 CAN 命令邮箱，保证底盘 task 启动后已有明确发布目标
+    task_runtime.init_status = TASK_INIT_CAN_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.can_command = osMessageQueueNew(1U, sizeof(CANDevices_Command_t), NULL);
+    if (task_runtime.msgq.can_command == NULL)
+    {
+        return false;
+    }
+
+    // 先创建 CAN 通信任务，使其优先发布底盘控制所需的设备反馈
+    task_runtime.init_status = TASK_INIT_CAN_THREAD_FAILED;
+    task_runtime.thread.can = osThreadNew(Task_can, NULL, &attr_can);
+    if (task_runtime.thread.can == NULL)
+    {
+        return false;
+    }
+
     // 创建底盘任务并检查句柄，当前 DR16 状态不会连接到底盘控制
     task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
     task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
@@ -97,7 +123,14 @@ static bool Task_InitCreateObjects(void)
  */
 static bool Task_InitModules(void)
 {
-    // 初始化底盘私有控制链，失败时禁止底盘及其他业务任务进入运行态
+    // 先初始化 CAN 设备集合，失败时禁止任何依赖设备反馈的业务任务启动
+    task_runtime.init_status = TASK_INIT_CAN_DEVICES_FAILED;
+    if (!Task_can_Init())
+    {
+        return false;
+    }
+
+    // CAN 总线可运行后初始化底盘速度控制器，失败时不创建业务任务
     task_runtime.init_status = TASK_INIT_MOTOR_CHASSIS_FAILED;
     return Task_motor_chassis_Init();
 }
@@ -127,6 +160,30 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.thread.motor_chassis = NULL;
+    }
+    if (task_runtime.thread.can != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.can) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.can = NULL;
+    }
+    if (task_runtime.msgq.can_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.can_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.can_command = NULL;
+    }
+    if (task_runtime.msgq.can_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.can_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.can_feedback = NULL;
     }
     if (task_runtime.msgq.dr16_state != NULL)
     {

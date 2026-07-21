@@ -71,6 +71,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/module/motor_speed_control.c
 
     # User/task 源文件
+    User/task/can_task.c
     User/task/dr16_task.c
     User/task/init.c
     User/task/motor_chassis.c

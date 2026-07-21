@@ -177,6 +177,22 @@ BSP 保持性验证标准：
 - `dr16_task.c` 不直接包含 HAL 或生成代码头文件，HAL 回调只存在于 L2 BSP。
 - 新增或修改的函数注释包含中文 `@brief`、完整 `@param` 和 `@return`。
 
+## CAN 设备聚合延续改造
+
+- MVP 只纳管当前实际存在的四个底盘 M3508，不提前加入云台、射击或超级电容字段。
+- `User/device/can_devices.c/.h` 负责固定设备参数、注册、反馈更新、电流写入和统一组发送；
+  `motor_rm.c/.h` 继续负责 RM 电机协议、反馈解码和分组发送。
+- `User/task/can_task.c/.h` 是 `CANDevices_Init()`、`CANDevices_UpdateFeedback()` 和
+  `CANDevices_ApplyCurrent()` 的唯一 task 层调用者。
+- CAN task 与底盘 task 使用两个容量为 1 的最新状态邮箱：CAN task 发布 `CANDevices_Snapshot_t`，
+  底盘 task 发布 `CANDevices_Command_t`。
+- CAN task 每周期只消费最新电流命令；没有新命令、邮箱异常或命令非法时必须提交四路零电流，禁止保持旧非零命令。
+- 底盘 task 每周期只消费最新 CAN 快照；没有新反馈时四路 `Chassis_Feedback_t.valid` 均为 false，
+  由 Chassis 产生安全零输出。
+- CAN task 负责总线周期，底盘 task 只负责控制周期和消息路由；两者均使用 `osDelayUntil()` 保持稳定周期。
+- 两个邮箱必须先于 CAN 和底盘任务创建，任一对象创建失败时按依赖逆序终止任务并删除邮箱。
+- 本延续改造为 `review:true`：独立 CAN task、双邮箱和底盘 task 改造完成并通过验证后，等待用户确认再提交。
+
 ## 每次编码后的强制复核门
 
 每完成一个实现项，必须在进入下一项前执行：
