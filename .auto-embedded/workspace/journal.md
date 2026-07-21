@@ -10,3 +10,6 @@
 
 ## #4  task=can1四个3508电机驱动扩展  phase=REVIEW
 已将 CAN1 上的 M3508 从单电机扩展为 C620 ID 1~4：每台独立反馈、目标转速、速度环和 Ozone 监视，四路电流缓存后统一发送 0x200。当前调试固件上电默认开启速度环，暂停 Ozone 前必须先关闭调试使能并等待停机就绪。Debug CMake 构建与 arch/hw/spec 门禁通过；尚未烧录实测，下一步需核对四个物理 ID、安装方向与反馈在线状态。
+
+## #5  task=移植-dr16-遥控器驱动到当前工程  phase=REVIEW
+CHASSIS-MERGE-CONTROL-05 已经用户确认并提交本地快照 ebcd75e；当前任务已进入 REVIEW，软件门禁通过：check.py、Debug 构建、DR16/UART/init/chassis CAN 主机回归通过。剩余缺口是 C 板 + DR16 板上实测，包括有效帧率、非法帧、重同步、溢出、UART 错误、最后更新时间、在线状态和任务栈水位。
