@@ -74,10 +74,10 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
     },
     .control_init_status =
     {
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
     },
     .feedback_update_status =
     {
@@ -96,10 +96,10 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
     .chassis_status = CHASSIS_NOT_INITIALIZED,
     .control_status =
     {
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
-        MOTOR_SPEED_CONTROL_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
+        CHASSIS_MOTOR_INIT_ERROR,
     },
     .can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     .debug_stop_zero_tx_count = 0U,

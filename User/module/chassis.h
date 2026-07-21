@@ -25,6 +25,20 @@ typedef enum
     CHASSIS_CONFIG_ERROR = -6,
 } Chassis_Status_t;
 
+/**
+ * @brief 底盘单路速度控制器状态
+ */
+typedef enum
+{
+    CHASSIS_MOTOR_OK = 0,
+    CHASSIS_MOTOR_INIT_ERROR = -1,
+    CHASSIS_MOTOR_DISABLED = -2,
+    CHASSIS_MOTOR_INVALID_VALUE = -3,
+    CHASSIS_MOTOR_CONFIG_ERROR = -4,
+    CHASSIS_MOTOR_NULL_ERROR = -5,
+    CHASSIS_MOTOR_UNKNOWN_ERROR = -6,
+} Chassis_MotorStatus_t;
+
 /*
  * 底盘单周期输入：
  * - enabled：四路速度控制统一使能，false 时所有电流输出清零。
@@ -67,7 +81,8 @@ typedef struct
  * - initialized：四路速度控制器均可运行时为 true。
  * - control_init_status：四路速度控制器的聚合初始化结果。
  * - chassis_status：本周期四路速度控制的聚合结果。
- * - motor_init_status[0~3]、control_status[0~3]：四路速度控制器的初始化和本周期运行结果。
+ * - motor_init_status[0~3]、control_status[0~3]：四路速度控制器的初始化和本周期运行结果，
+ *   取值见 Chassis_MotorStatus_t。
  * - motor_enabled[0~3]：本周期对应速度控制器实际使能状态。
  * - limited_target_speed_rpm[0~3]、ramped_target_speed_rpm[0~3]：限幅和缓启动后的目标转速，单位 rpm。
  * - actual_speed_rpm[0~3]：本周期参与速度控制的输出轴实际转速，单位 rpm。
@@ -78,8 +93,8 @@ typedef struct Chassis_Snapshot
     bool initialized;
     int8_t control_init_status;
     int8_t chassis_status;
-    int8_t motor_init_status[CHASSIS_MOTOR_COUNT];
-    int8_t control_status[CHASSIS_MOTOR_COUNT];
+    Chassis_MotorStatus_t motor_init_status[CHASSIS_MOTOR_COUNT];
+    Chassis_MotorStatus_t control_status[CHASSIS_MOTOR_COUNT];
     bool motor_enabled[CHASSIS_MOTOR_COUNT];
     float actual_speed_rpm[CHASSIS_MOTOR_COUNT];
     float limited_target_speed_rpm[CHASSIS_MOTOR_COUNT];

@@ -14,7 +14,7 @@ typedef struct
 {
     bool initialized;
     int8_t control_init_status;
-    int8_t motor_init_status[CHASSIS_MOTOR_COUNT];
+    Chassis_MotorStatus_t motor_init_status[CHASSIS_MOTOR_COUNT];
     MotorSpeedControl_t speed_control[CHASSIS_MOTOR_COUNT];
 } Chassis_State_t;
 
@@ -25,6 +25,7 @@ static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot);
 static int8_t Chassis_InitControllers(float sample_frequency_hz);
 static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback,
                                 Chassis_Output_t *output, Chassis_Snapshot_t *snapshot);
+static Chassis_MotorStatus_t Chassis_MapMotorStatus(int8_t motor_status);
 
 /**
  * @brief 初始化四个相互独立的 M3508 速度控制器
@@ -48,7 +49,7 @@ int8_t Chassis_Init(float sample_frequency_hz, Chassis_Snapshot_t *snapshot)
         chassis_state.control_init_status = CHASSIS_CONFIG_ERROR;
         for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
         {
-            chassis_state.motor_init_status[motor_index] = MOTOR_SPEED_CONTROL_CONFIG_ERROR;
+            chassis_state.motor_init_status[motor_index] = CHASSIS_MOTOR_CONFIG_ERROR;
         }
         Chassis_ResetSnapshot(snapshot);
         return CHASSIS_CONFIG_ERROR;
@@ -122,7 +123,7 @@ static void Chassis_ResetState(void)
     chassis_state.control_init_status = CHASSIS_NOT_INITIALIZED;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        chassis_state.motor_init_status[motor_index] = MOTOR_SPEED_CONTROL_INIT_ERROR;
+        chassis_state.motor_init_status[motor_index] = CHASSIS_MOTOR_INIT_ERROR;
     }
 }
 
@@ -144,7 +145,7 @@ static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot)
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
         snapshot->motor_init_status[motor_index] = chassis_state.motor_init_status[motor_index];
-        snapshot->control_status[motor_index] = MOTOR_SPEED_CONTROL_INIT_ERROR;
+        snapshot->control_status[motor_index] = CHASSIS_MOTOR_INIT_ERROR;
     }
 }
 
@@ -159,9 +160,10 @@ static int8_t Chassis_InitControllers(float sample_frequency_hz)
     bool all_initialized = true;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        chassis_state.motor_init_status[motor_index] =
+        const int8_t motor_status =
             MotorSpeedControl_Init(&chassis_state.speed_control[motor_index], sample_frequency_hz);
-        if (chassis_state.motor_init_status[motor_index] != MOTOR_SPEED_CONTROL_OK)
+        chassis_state.motor_init_status[motor_index] = Chassis_MapMotorStatus(motor_status);
+        if (chassis_state.motor_init_status[motor_index] != CHASSIS_MOTOR_OK)
         {
             all_initialized = false;
         }
@@ -219,7 +221,7 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         }
 
         // 保存统一结果快照，调用方不再读取控制器内部状态
-        snapshot->control_status[motor_index] = published_status;
+        snapshot->control_status[motor_index] = Chassis_MapMotorStatus(published_status);
         snapshot->motor_enabled[motor_index] = speed_control->feedback.enabled;
         snapshot->limited_target_speed_rpm[motor_index] = speed_control->feedback.limited_target_speed_rpm;
         snapshot->ramped_target_speed_rpm[motor_index] = speed_control->feedback.target_speed_rpm;
@@ -228,4 +230,31 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         output->current_command_a[motor_index] = current_command_a;
     }
     return all_control_valid ? CHASSIS_OK : CHASSIS_ERROR;
+}
+
+/**
+ * @brief 将内部单电机速度控制状态转换为 Chassis 公开状态
+ *
+ * @param[in] motor_status 内部 MotorSpeedControlStatus_t 状态值
+ * @return 对应的 Chassis_MotorStatus_t，未知值返回 CHASSIS_MOTOR_UNKNOWN_ERROR
+ */
+static Chassis_MotorStatus_t Chassis_MapMotorStatus(int8_t motor_status)
+{
+    switch (motor_status)
+    {
+        case MOTOR_SPEED_CONTROL_OK:
+            return CHASSIS_MOTOR_OK;
+        case MOTOR_SPEED_CONTROL_INIT_ERROR:
+            return CHASSIS_MOTOR_INIT_ERROR;
+        case MOTOR_SPEED_CONTROL_DISABLED:
+            return CHASSIS_MOTOR_DISABLED;
+        case MOTOR_SPEED_CONTROL_INVALID_VALUE:
+            return CHASSIS_MOTOR_INVALID_VALUE;
+        case MOTOR_SPEED_CONTROL_CONFIG_ERROR:
+            return CHASSIS_MOTOR_CONFIG_ERROR;
+        case MOTOR_SPEED_CONTROL_NULL_ERROR:
+            return CHASSIS_MOTOR_NULL_ERROR;
+        default:
+            return CHASSIS_MOTOR_UNKNOWN_ERROR;
+    }
 }
