@@ -68,7 +68,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/module 源文件
     User/module/chassis.c
-    User/module/motor_speed_control.c
 
     # User/task 源文件
     User/task/can_task.c

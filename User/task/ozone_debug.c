@@ -1,7 +1,6 @@
 #include "task/ozone_debug.h"
 
 #include "module/chassis.h"
-#include "module/motor_speed_control.h"
 
 #include <stddef.h>
 
@@ -31,9 +30,9 @@ volatile MotorChassisTune_t g_motor_chassis_tune =
         100.0F,
         100.0F,
     },
-    .pid_kp = MOTOR_SPEED_PID_KP,
-    .pid_ki = MOTOR_SPEED_PID_KI,
-    .pid_kd = MOTOR_SPEED_PID_KD,
+    .pid_kp = CHASSIS_PID_KP,
+    .pid_ki = CHASSIS_PID_KI,
+    .pid_kd = CHASSIS_PID_KD,
     .actual_speed_rpm =
     {
         0.0F,
@@ -245,8 +244,8 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
 
             g_motor_chassis_monitor.motor_online[motor_index] = can_snapshot->motor_online[motor_index];
             g_motor_chassis_monitor.current_saturated[motor_index] =
-                can_snapshot->applied_current_a[motor_index] >= MOTOR_SPEED_CURRENT_LIMIT_A ||
-                can_snapshot->applied_current_a[motor_index] <= -MOTOR_SPEED_CURRENT_LIMIT_A;
+                can_snapshot->applied_current_a[motor_index] >= CHASSIS_CURRENT_LIMIT_A ||
+                can_snapshot->applied_current_a[motor_index] <= -CHASSIS_CURRENT_LIMIT_A;
             g_motor_chassis_monitor.feedback_update_status[motor_index] =
                 can_snapshot->feedback_update_status[motor_index];
             g_motor_chassis_monitor.current_set_status[motor_index] = can_snapshot->current_set_status[motor_index];

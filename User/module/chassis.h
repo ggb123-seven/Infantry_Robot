@@ -8,9 +8,60 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "module/motor_speed_control.h"
-
 #define CHASSIS_MOTOR_COUNT (4U)
+
+/*
+ * 底盘速度控制参数：
+ * - CHASSIS_SPEED_LIMIT_RPM：输出轴目标转速的正负对称限幅，单位 rpm。
+ * - CHASSIS_RAMP_RATE_RPM_S：目标转速最大变化斜率，单位 rpm/s。
+ * - CHASSIS_PID_KP、CHASSIS_PID_KI、CHASSIS_PID_KD：速度 PID 默认参数。
+ * - CHASSIS_PID_D_CUTOFF_HZ：反馈微分低通截止频率，单位 Hz；小于等于 0 时直通。
+ * - CHASSIS_FEEDBACK_LPF_CUTOFF_HZ：速度反馈二阶低通截止频率，单位 Hz；小于等于 0 时直通。
+ * - CHASSIS_CURRENT_LPF_CUTOFF_HZ：电流指令二阶低通截止频率，单位 Hz；小于等于 0 时直通。
+ * - CHASSIS_PID_INTEGRAL_LIMIT：积分状态限幅，单位 rpm*s。
+ * - CHASSIS_CURRENT_LIMIT_A：转子侧电流指令正负对称限幅，单位 A。
+ * 当前固化的上板整定结果为 Kp=0.23、Ki=0.14、Kd=0，PID 微分滤波截止频率为 20 Hz。
+ * 速度反馈二阶低通截止频率为 45 Hz，电流输出二阶滤波保持直通。
+ */
+#ifndef CHASSIS_SPEED_LIMIT_RPM
+#define CHASSIS_SPEED_LIMIT_RPM (300.0F)
+#endif
+
+#ifndef CHASSIS_RAMP_RATE_RPM_S
+#define CHASSIS_RAMP_RATE_RPM_S (150.0F)
+#endif
+
+#ifndef CHASSIS_PID_KP
+#define CHASSIS_PID_KP (0.23F)
+#endif
+
+#ifndef CHASSIS_PID_KI
+#define CHASSIS_PID_KI (0.14F)
+#endif
+
+#ifndef CHASSIS_PID_KD
+#define CHASSIS_PID_KD (0.0F)
+#endif
+
+#ifndef CHASSIS_PID_D_CUTOFF_HZ
+#define CHASSIS_PID_D_CUTOFF_HZ (20.0F)
+#endif
+
+#ifndef CHASSIS_FEEDBACK_LPF_CUTOFF_HZ
+#define CHASSIS_FEEDBACK_LPF_CUTOFF_HZ (45.0F)
+#endif
+
+#ifndef CHASSIS_CURRENT_LPF_CUTOFF_HZ
+#define CHASSIS_CURRENT_LPF_CUTOFF_HZ (-1.0F)
+#endif
+
+#ifndef CHASSIS_PID_INTEGRAL_LIMIT
+#define CHASSIS_PID_INTEGRAL_LIMIT (20.0F)
+#endif
+
+#ifndef CHASSIS_CURRENT_LIMIT_A
+#define CHASSIS_CURRENT_LIMIT_A (4.0F)
+#endif
 
 /**
  * @brief 底盘完整控制链状态
@@ -40,6 +91,19 @@ typedef enum
 } Chassis_MotorStatus_t;
 
 /*
+ * 底盘速度 PID 在线参数：
+ * - kp：速度环比例增益，单位 A/rpm。
+ * - ki：速度环积分增益，单位 A/(rpm*s)。
+ * - kd：速度环反馈微分增益。
+ */
+typedef struct
+{
+    float kp;
+    float ki;
+    float kd;
+} Chassis_PidTune_t;
+
+/*
  * 底盘单周期输入：
  * - enabled：四路速度控制统一使能，false 时所有电流输出清零。
  * - requested_speed_rpm[0~3]：四个输出轴目标转速，单位 rpm。
@@ -50,7 +114,7 @@ typedef struct Chassis_Input
 {
     bool enabled;
     float requested_speed_rpm[CHASSIS_MOTOR_COUNT];
-    MotorSpeedPidTune_t pid_tune;
+    Chassis_PidTune_t pid_tune;
     float control_period_s;
 } Chassis_Input_t;
 
