@@ -45,7 +45,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    # LwRB v3.2.0 第三方源码
+    # LwRB v3.2.0 手动移植第三方源码，非 STM32CubeMX/HAL 生成代码
     Middlewares/Third_Party/RingBuffer/src/ringbuffer/ringbuffer.c
 
     # User/bsp 源文件

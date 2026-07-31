@@ -1,5 +1,11 @@
 # RingBuffer 移植说明
 
+## 来源标记
+
+本目录中的 RingBuffer 是手动移植到当前工程的 LwRB 第三方轻量环形缓冲库，不是 STM32CubeMX、
+STM32 HAL、CMSIS 或 FreeRTOS 自动生成的源码。保留在 `Middlewares/Third_Party` 是为了标明其上游来源、
+许可证和版本边界，便于后续升级与审计。
+
 - 上游仓库：https://github.com/MaJerle/lwrb
 - 发布版本：`v3.2.0`
 - 提交：`77b2bdbecf60cd80e449f5c61bde72ec195efac4`

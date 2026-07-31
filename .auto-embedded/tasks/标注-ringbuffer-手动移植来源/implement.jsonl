@@ -1,0 +1,2 @@
+{"file":"CMakeLists.txt","reason":"补充手动移植且非生成代码的构建注释"}
+{"file":"Middlewares/Third_Party/RingBuffer/PORTING.md","reason":"补充第三方源码来源与目录边界说明"}
