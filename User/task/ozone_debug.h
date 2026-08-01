@@ -113,10 +113,30 @@ typedef struct
     float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
 } MotorChassisMonitor_t;
 
+/*
+ * GM6020 Ozone 运行状态与反馈数据：
+ * - register_status：CAN1 上 GM6020 的注册结果，0 表示成功
+ * - feedback_update_status：本周期 0x209 反馈更新结果，0 表示成功
+ * - online：最近 100 ms 内收到 GM6020 反馈时为 true
+ * - angle_rad：转子单圈角度，范围 [0, 2π)，单位 rad
+ * - speed_rpm、torque_current_a、temperature_c：转速、转矩电流和温度，单位分别为 rpm、A 和摄氏度
+ */
+typedef struct
+{
+    int8_t register_status;
+    int8_t feedback_update_status;
+    bool online;
+    float angle_rad;
+    float speed_rpm;
+    float torque_current_a;
+    float temperature_c;
+} MotorGM6020Monitor_t;
+
 extern volatile DR16_Monitor_t g_dr16_monitor;
 extern volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
+extern volatile MotorGM6020Monitor_t g_motor_gm6020_monitor;
 
 /**
  * @brief 将 CAN 设备集合初始化结果发布到 Ozone 监控区
@@ -152,7 +172,7 @@ void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot);
 void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
 
 /**
- * @brief 将 CAN 设备集合和底盘模块单周期结果发布到 Ozone 监控区
+ * @brief 将 CAN 设备集合、GM6020 和底盘模块单周期结果发布到 Ozone 监控区
  *
  * @param[in] input 本周期实际采用的底盘控制输入快照
  * @param[in] can_snapshot 本周期 CAN 设备反馈与输出结果快照，允许为 NULL

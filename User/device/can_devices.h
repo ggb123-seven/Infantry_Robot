@@ -26,8 +26,8 @@ typedef enum
 
 /*
  * 四个底盘 M3508 的本周期电流命令：
- * - sequence：命令快照序号，用于后续任务邮箱诊断，不参与电机协议计算。
- * - current_a[0~3]：依次对应 C620 电调 ID 1~4 的转子侧电流命令，单位 A。
+ * - sequence：命令快照序号，用于后续任务邮箱诊断，不参与电机协议计算
+ * - current_a[0~3]：依次对应 C620 电调 ID 1~4 的转子侧电流命令，单位 A
  */
 typedef struct
 {
@@ -37,18 +37,24 @@ typedef struct
 
 /*
  * 整车 CAN 设备集合快照：
- * - initialized：CAN1 可运行时为 true，允许单个电机注册失败后隔离运行。
- * - init_status：CAN1 初始化与四路注册的聚合结果。
- * - feedback_status、output_status：本周期反馈更新和电流提交的聚合结果。
- * - tx_status：四路槽位处理完成后的统一组发送结果。
- * - register_status[0~3]：四个 M3508 的注册结果。
- * - feedback_update_status[0~3]：四个 M3508 的本周期反馈更新结果。
- * - current_set_status[0~3]：四路电流命令的校验与缓存写入结果。
- * - motor_online[0~3]：对应电机最近 100 ms 内收到反馈时为 true。
- * - actual_speed_rpm[0~3]、temperature_c[0~3]：输出轴转速和电机温度，单位分别为 rpm 和摄氏度。
- * - applied_current_a[0~3]：经过在线校验和故障归零后实际写入缓存的转子侧电流，单位 A。
- * - sequence：设备反馈周期序号，每次反馈更新调用递增。
- * - applied_command_sequence：最近一次电流提交采用的命令快照序号。
+ * - initialized：CAN1 可运行时为 true，允许单个电机注册失败后隔离运行
+ * - init_status：CAN1 初始化、四路 M3508 和一路 GM6020 注册的聚合结果
+ * - feedback_status：四路 M3508 和一路 GM6020 本周期反馈更新的聚合结果
+ * - output_status：四路 M3508 本周期电流提交的聚合结果
+ * - tx_status：四路 M3508 槽位处理完成后的 0x200 控制帧发送结果
+ * - register_status[0~3]：四个 M3508 的注册结果
+ * - feedback_update_status[0~3]：四个 M3508 的本周期反馈更新结果
+ * - current_set_status[0~3]：四路 M3508 电流命令的校验与缓存写入结果
+ * - motor_online[0~3]：对应 M3508 最近 100 ms 内收到反馈时为 true
+ * - actual_speed_rpm[0~3]、temperature_c[0~3]：M3508 输出轴转速和温度，单位分别为 rpm 和摄氏度
+ * - applied_current_a[0~3]：经过在线校验和故障归零后写入的 M3508 转子侧电流，单位 A
+ * - gm6020_register_status、gm6020_feedback_update_status：GM6020 的注册和本周期反馈更新结果
+ * - gm6020_online：GM6020 最近 100 ms 内收到反馈时为 true
+ * - gm6020_angle_rad：GM6020 转子单圈角度，范围 [0, 2π)，单位 rad
+ * - gm6020_speed_rpm、gm6020_torque_current_a、gm6020_temperature_c：GM6020 转速、转矩电流和温度
+ *   单位分别为 rpm、A 和摄氏度
+ * - sequence：设备反馈周期序号，每次反馈更新调用递增
+ * - applied_command_sequence：最近一次电流提交采用的命令快照序号
  */
 typedef struct
 {
@@ -64,14 +70,21 @@ typedef struct
     float actual_speed_rpm[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     float temperature_c[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     float applied_current_a[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
+    int8_t gm6020_register_status;
+    int8_t gm6020_feedback_update_status;
+    bool gm6020_online;
+    float gm6020_angle_rad;
+    float gm6020_speed_rpm;
+    float gm6020_torque_current_a;
+    float gm6020_temperature_c;
     uint32_t sequence;
     uint32_t applied_command_sequence;
 } CANDevices_Snapshot_t;
 
 /**
- * @brief 初始化 CAN1 并注册当前实际存在的四个底盘 M3508
+ * @brief 初始化 CAN1 并注册四个底盘 M3508 和一个 GM6020
  *
- * 单个电机注册失败时保留其他电机运行能力，并在快照中记录对应注册状态。
+ * 单个电机注册失败时保留其他电机运行能力，并在快照中记录对应注册状态
  *
  * @param[out] snapshot CAN 设备集合初始化结果快照
  * @return 全部设备注册成功返回 CAN_DEVICES_OK，部分失败或总线不可用时返回对应状态码
@@ -79,17 +92,17 @@ typedef struct
 int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot);
 
 /**
- * @brief 更新四个底盘 M3508 的最新反馈
+ * @brief 更新四个底盘 M3508 和一个 GM6020 的最新反馈
  *
  * @param[out] snapshot 本周期 CAN 设备反馈快照
- * @return 四路均取得新反馈返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
+ * @return 五路均取得新反馈返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
 int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot);
 
 /**
  * @brief 校验并写入四路电流后统一发送一次 RM 控制帧
  *
- * 非法电流、反馈未更新或电机离线时对应槽位写零；命令为空时四路全部按零电流处理。
+ * 非法电流、反馈未更新或电机离线时对应槽位写零；命令为空时四路全部按零电流处理
  *
  * @param[in] command 本周期四路电流命令快照，允许为 NULL
  * @param[in,out] snapshot 本周期 CAN 设备反馈与输出结果快照

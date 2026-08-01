@@ -9,9 +9,9 @@
 
 /*
  * 四个 M3508 的固定 CAN 设备参数：
- * - 全部使用 CAN1，C620 电调 ID 依次为 1~4，对应反馈标准帧 ID 0x201~0x204。
- * - 电机型号均为 M3508，启用 3591/187 减速箱换算，当前安装方向均不反向。
- * - 最终安装方向仍需通过低速板上测试确认。
+ * - 全部使用 CAN1，C620 电调 ID 依次为 1~4，对应反馈标准帧 ID 0x201~0x204
+ * - 电机型号均为 M3508，启用 3591/187 减速箱换算，当前安装方向均不反向
+ * - 最终安装方向仍需通过低速板上测试确认
  * @datasheet RoboMaster C620 用户手册“CAN 通信协议”章节
  */
 static MOTOR_RM_Param_t can_devices_chassis_motor_param[CAN_DEVICES_CHASSIS_MOTOR_COUNT] =
@@ -47,13 +47,30 @@ static MOTOR_RM_Param_t can_devices_chassis_motor_param[CAN_DEVICES_CHASSIS_MOTO
 };
 
 /*
+ * GM6020 固定 CAN 设备参数：
+ * - 使用 CAN1，电调 ID 为 5，对应反馈标准帧 ID 0x209
+ * - 电机型号为 GM6020，不启用减速箱换算，当前安装方向不反向
+ * - 本阶段只注册和读取反馈，不写入电流缓存，不发送 0x2FF 控制帧
+ * @datasheet RoboMaster GM6020 用户手册“CAN 通信协议”章节
+ */
+static MOTOR_RM_Param_t can_devices_gm6020_param =
+{
+    .can = BSP_CAN_1,
+    .id = 0x209U,
+    .module = MOTOR_GM6020,
+    .reverse = false,
+    .gear = false,
+};
+
+/*
  * 整车 CAN 设备集合私有状态：
- * - initialized：CAN1 初始化成功后为 true。
- * - init_status：CAN1 初始化与四路注册的聚合结果。
- * - register_status[0~3]：四个 M3508 的注册结果。
- * - feedback_update_status[0~3]：四个 M3508 最近一次反馈更新结果。
- * - chassis_motor[0~3]：四个已注册 RM 电机实例，注册失败时对应项为 NULL。
- * - sequence：反馈更新周期序号。
+ * - initialized：CAN1 初始化成功后为 true
+ * - init_status：CAN1 初始化、四路 M3508 和一路 GM6020 注册的聚合结果
+ * - register_status[0~3]、feedback_update_status[0~3]：四个 M3508 的注册和反馈更新结果
+ * - chassis_motor[0~3]：四个已注册 M3508 实例，注册失败时对应项为 NULL
+ * - gm6020_register_status、gm6020_feedback_update_status：GM6020 的注册和反馈更新结果
+ * - gm6020：已注册 GM6020 实例，注册失败时为 NULL
+ * - sequence：反馈更新周期序号
  */
 typedef struct
 {
@@ -62,6 +79,9 @@ typedef struct
     int8_t register_status[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     int8_t feedback_update_status[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     MOTOR_RM_t *chassis_motor[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
+    int8_t gm6020_register_status;
+    int8_t gm6020_feedback_update_status;
+    MOTOR_RM_t *gm6020;
     uint32_t sequence;
 } CANDevices_State_t;
 
@@ -72,7 +92,7 @@ static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot);
 static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_current_a, float *applied_current_a);
 
 /**
- * @brief 初始化 CAN1 并注册当前实际存在的四个底盘 M3508
+ * @brief 初始化 CAN1 并注册四个底盘 M3508 和一个 GM6020
  *
  * @param[out] snapshot CAN 设备集合初始化结果快照
  * @return 全部设备注册成功返回 CAN_DEVICES_OK，部分失败或总线不可用时返回对应状态码
@@ -117,16 +137,31 @@ int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot)
         }
     }
 
+    // 独立注册 CAN1 上电调 ID 5 的 GM6020，不扩展底盘四电机槽位
+    can_devices_state.gm6020_register_status = MOTOR_RM_Register(&can_devices_gm6020_param);
+    if (can_devices_state.gm6020_register_status == DEVICE_OK)
+    {
+        can_devices_state.gm6020 = MOTOR_RM_GetMotor(&can_devices_gm6020_param);
+        if (can_devices_state.gm6020 == NULL)
+        {
+            can_devices_state.gm6020_register_status = DEVICE_ERR_NO_DEV;
+        }
+    }
+    if (can_devices_state.gm6020_register_status != DEVICE_OK)
+    {
+        all_registered = false;
+    }
+
     can_devices_state.init_status = all_registered ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
     CANDevices_ResetSnapshot(snapshot);
     return can_devices_state.init_status;
 }
 
 /**
- * @brief 更新四个底盘 M3508 的最新反馈
+ * @brief 更新四个底盘 M3508 和一个 GM6020 的最新反馈
  *
  * @param[out] snapshot 本周期 CAN 设备反馈快照
- * @return 四路均取得新反馈返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
+ * @return 五路均取得新反馈返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
 int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot)
 {
@@ -165,6 +200,28 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot)
         snapshot->actual_speed_rpm[motor_index] = motor->feedback.rotor_speed;
         snapshot->temperature_c[motor_index] = motor->feedback.temp;
         if (snapshot->feedback_update_status[motor_index] != DEVICE_OK)
+        {
+            all_updated = false;
+        }
+    }
+
+    // 独立更新 GM6020 反馈，仅向快照发布物理量与在线状态
+    if (can_devices_state.gm6020 == NULL)
+    {
+        can_devices_state.gm6020_feedback_update_status = DEVICE_ERR_NO_DEV;
+        snapshot->gm6020_feedback_update_status = DEVICE_ERR_NO_DEV;
+        all_updated = false;
+    }
+    else
+    {
+        can_devices_state.gm6020_feedback_update_status = MOTOR_RM_Update(&can_devices_gm6020_param);
+        snapshot->gm6020_feedback_update_status = can_devices_state.gm6020_feedback_update_status;
+        snapshot->gm6020_online = can_devices_state.gm6020->motor.header.online;
+        snapshot->gm6020_angle_rad = can_devices_state.gm6020->feedback.rotor_abs_angle;
+        snapshot->gm6020_speed_rpm = can_devices_state.gm6020->feedback.rotor_speed;
+        snapshot->gm6020_torque_current_a = can_devices_state.gm6020->feedback.torque_current;
+        snapshot->gm6020_temperature_c = can_devices_state.gm6020->feedback.temp;
+        if (snapshot->gm6020_feedback_update_status != DEVICE_OK)
         {
             all_updated = false;
         }
@@ -259,6 +316,8 @@ static void CANDevices_ResetState(void)
         can_devices_state.register_status[motor_index] = DEVICE_ERR_NO_DEV;
         can_devices_state.feedback_update_status[motor_index] = DEVICE_ERR_NO_DEV;
     }
+    can_devices_state.gm6020_register_status = DEVICE_ERR_NO_DEV;
+    can_devices_state.gm6020_feedback_update_status = DEVICE_ERR_NO_DEV;
 }
 
 /**
@@ -279,6 +338,8 @@ static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot)
     snapshot->output_status = CAN_DEVICES_NOT_INITIALIZED;
     snapshot->tx_status = CAN_DEVICES_NOT_INITIALIZED;
     snapshot->sequence = can_devices_state.sequence;
+    snapshot->gm6020_register_status = can_devices_state.gm6020_register_status;
+    snapshot->gm6020_feedback_update_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
     for (uint32_t motor_index = 0U; motor_index < CAN_DEVICES_CHASSIS_MOTOR_COUNT; motor_index++)
     {
         snapshot->register_status[motor_index] = can_devices_state.register_status[motor_index];
