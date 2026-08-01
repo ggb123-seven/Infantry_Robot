@@ -32,7 +32,9 @@ struct Chassis_Snapshot;
  * - mailbox_error_count、stream_restart_error_count：状态邮箱发布和 UART 重启失败次数。
  * - last_uart_error：最近一次 UART HAL 错误位或 BSP 内部错误码。
  * - current_frame_age_us：当前时刻距离最后合法帧的时间，单位微秒，超过 32 位时饱和。
+ * - receiver_initialized：DR16 协议字节流接收器初始化成功时为 true
  * - online：最近一帧业务状态的在线标志。
+ * - fault_detected、fault_flags：DR16 当前故障汇总状态和故障位
  * - latest_data：最近一帧完整合法的解码值，仅供调试观察，不作为控制输入。
  */
 typedef struct
@@ -50,7 +52,10 @@ typedef struct
     uint32_t stream_restart_error_count;
     uint32_t last_uart_error;
     uint32_t current_frame_age_us;
+    bool receiver_initialized;
     bool online;
+    bool fault_detected;
+    uint32_t fault_flags;
     DR16_Data_t latest_data;
 } DR16_Monitor_t;
 

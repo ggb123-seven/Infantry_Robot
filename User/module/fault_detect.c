@@ -53,6 +53,49 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
 }
 
 /**
+ * @brief 汇总 DR16 在线状态与 UART 字节流状态
+ *
+ * @param[in] dr16_state DR16 接收器状态快照，允许为 NULL
+ * @param[in] stream_running UART 字节流当前运行时为 true
+ * @param[out] fault_snapshot 待写入的 DR16 故障检测快照
+ * @return 无返回值
+ */
+void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
+                            FaultDetect_DR16Snapshot_t *fault_snapshot)
+{
+    if (fault_snapshot == NULL)
+    {
+        return;
+    }
+
+    // 每周期从空快照重新判断，使链路和设备恢复后能够立即清除当前故障
+    *fault_snapshot = (FaultDetect_DR16Snapshot_t)
+    {
+        .evaluated = true,
+    };
+    if (dr16_state == NULL)
+    {
+        fault_snapshot->fault_flags = FAULT_DETECT_DR16_OFFLINE | FAULT_DETECT_DR16_DATA;
+    }
+    else
+    {
+        if (!dr16_state->header.online)
+        {
+            fault_snapshot->fault_flags |= FAULT_DETECT_DR16_OFFLINE;
+        }
+        if (dr16_state->header.online && dr16_state->valid_frame_sequence == 0U)
+        {
+            fault_snapshot->fault_flags |= FAULT_DETECT_DR16_DATA;
+        }
+    }
+    if (!stream_running)
+    {
+        fault_snapshot->fault_flags |= FAULT_DETECT_DR16_STREAM;
+    }
+    fault_snapshot->has_fault = fault_snapshot->fault_flags != FAULT_DETECT_DR16_NONE;
+}
+
+/**
  * @brief 恢复故障检测快照的安全默认值
  *
  * @param[out] fault_snapshot 待复位的故障检测快照

@@ -6,6 +6,7 @@ extern "C"
 #endif
 
 #include "device/can_devices.h"
+#include "device/dr16.h"
 #include "module/chassis.h"
 
 #include <stdbool.h>
@@ -64,6 +65,33 @@ typedef enum
 } FaultDetect_MotorFaultFlags_t;
 
 /*
+ * DR16 故障位：
+ * - OFFLINE：接收器当前没有处于在线状态
+ * - STREAM：UART 字节流当前没有运行
+ * - DATA：DR16 状态缺失或在线状态与合法帧序号不一致
+ */
+typedef enum
+{
+    FAULT_DETECT_DR16_NONE = 0U,
+    FAULT_DETECT_DR16_OFFLINE = 1U << 0,
+    FAULT_DETECT_DR16_STREAM = 1U << 1,
+    FAULT_DETECT_DR16_DATA = 1U << 2,
+} FaultDetect_DR16FaultFlags_t;
+
+/*
+ * DR16 故障检测快照：
+ * - evaluated：至少完成过一次诊断更新时为 true
+ * - has_fault：存在任意 DR16 故障位时为 true
+ * - fault_flags：当前 DR16 故障位，取值见 FaultDetect_DR16FaultFlags_t
+ */
+typedef struct
+{
+    bool evaluated;
+    bool has_fault;
+    uint32_t fault_flags;
+} FaultDetect_DR16Snapshot_t;
+
+/*
  * 故障检测快照：
  * - evaluated：至少完成过一次诊断更新时为 true。
  * - has_fault：系统级或任一电机存在故障位时为 true。
@@ -99,6 +127,17 @@ typedef struct
 void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
                                     const Chassis_Snapshot_t *chassis_snapshot,
                                     FaultDetect_Snapshot_t *fault_snapshot);
+
+/**
+ * @brief 汇总 DR16 在线状态与 UART 字节流状态
+ *
+ * @param[in] dr16_state DR16 接收器状态快照，允许为 NULL
+ * @param[in] stream_running UART 字节流当前运行时为 true
+ * @param[out] fault_snapshot 待写入的 DR16 故障检测快照
+ * @return 无返回值
+ */
+void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
+                            FaultDetect_DR16Snapshot_t *fault_snapshot);
 
 #ifdef __cplusplus
 }

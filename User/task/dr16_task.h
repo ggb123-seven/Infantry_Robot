@@ -10,16 +10,16 @@ extern "C"
 
 /*
  * DR16 任务线程标志：
- * - DR16_TASK_FLAG_RX_DATA：UART BSP 已向任务私有 RingBuffer 写入新字节。
- * - DR16_TASK_FLAG_UART_ERROR：UART BSP 检测到接收错误，任务需要清空并重启链路。
- * - DR16_TASK_FLAG_RING_BUFFER_OVERFLOW：RingBuffer 空间不足，任务需要丢弃未验证数据并重启链路。
+ * - DR16_TASK_FLAG_RX_DATA：UART BSP 已向设备接收器写入新字节
+ * - DR16_TASK_FLAG_UART_ERROR：UART BSP 检测到接收错误，任务需要清空并重启链路
+ * - DR16_TASK_FLAG_RING_BUFFER_OVERFLOW：设备接收器空间不足，任务需要丢弃未验证数据并重启链路
  */
 #define DR16_TASK_FLAG_RX_DATA (1UL << 0U)
 #define DR16_TASK_FLAG_UART_ERROR (1UL << 1U)
 #define DR16_TASK_FLAG_RING_BUFFER_OVERFLOW (1UL << 2U)
 
 /**
- * @brief 运行 DR16 接收、重同步和状态发布任务
+ * @brief 运行 DR16 UART 通信调度和状态发布任务
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
