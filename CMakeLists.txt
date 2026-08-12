@@ -57,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/component 源文件
     User/component/filter.c
+    User/component/mixer.c
     User/component/pid.c
     User/component/user_math.c
 
