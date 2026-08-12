@@ -15,7 +15,7 @@ _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘�
  * - can_devices_snapshot：保存从反馈邮箱取得的最新 CAN 设备快照。
  * - chassis_feedback：保存从 CAN 设备快照映射出的本周期底盘控制反馈。
  * - chassis_output：保存底盘模块本周期计算得到的四路电流命令。
- * - chassis_snapshot：保存底盘速度控制器初始化和本周期控制结果。
+ * - chassis_snapshot：保存底盘运动学与速度控制器的初始化和本周期控制结果
  * - fault_detect_snapshot：保存本周期独立故障检测结果。
  */
 static CANDevices_Snapshot_t can_devices_snapshot;
@@ -28,7 +28,7 @@ static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_PublishCommand(void);
 
 /**
- * @brief 初始化并周期运行四个 M3508 的速度控制链
+ * @brief 初始化并周期运行 X 型全向轮底盘控制链
  *
  * 调试使能关闭、设备离线或任一控制步骤失败时，对应电机电流指令保持为零。
  *
@@ -53,7 +53,7 @@ void Task_motor_chassis(void *argument)
         // 消费并映射最新 CAN 反馈，邮箱没有新快照时四路反馈保持无效
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
 
-        // 取得一致控制参数并完成纯速度控制计算，再发布最新电流命令
+        // 取得一致运动指令并完成运动学和速度控制，再发布最新电流命令
         OzoneDebug_GetMotorChassisInput(&chassis_input, 1.0F / (float)MOTOR_CHASSIS_FREQ);
         Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
         MotorChassis_PublishCommand();
@@ -74,14 +74,14 @@ void Task_motor_chassis(void *argument)
 }
 
 /**
- * @brief 初始化底盘任务私有速度控制器
+ * @brief 初始化底盘任务私有运动学与速度控制器
  *
- * @return 四路速度控制器可运行时返回 true，否则返回 false
+ * @return X 型全向轮混合器和四路速度控制器可运行时返回 true，否则返回 false
  */
 bool Task_motor_chassis_Init(void)
 {
-    // 初始化四路底盘速度控制器，CAN 设备集合由独立通信任务负责初始化
-    Chassis_Init((float)MOTOR_CHASSIS_FREQ, &chassis_snapshot);
+    // 选择四角 X 型全向轮布局并初始化底盘控制链，CAN 设备集合由独立通信任务负责初始化
+    Chassis_Init((float)MOTOR_CHASSIS_FREQ, MIXER_OMNICROSS, &chassis_snapshot);
     OzoneDebug_UpdateChassisInit(&chassis_snapshot);
 
     // 发布初始化阶段诊断快照，帮助调试器区分未诊断和启动故障

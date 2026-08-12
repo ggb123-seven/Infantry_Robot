@@ -61,15 +61,19 @@ typedef struct
 
 /*
  * 四个 M3508 的 Ozone 在线调试参数：
- * - motor_debug_enable：可修改的四电机全局调试使能；设为 false 后所有速度环清零并持续发送零电流。
- * - requested_speed_rpm[0~3]：可修改的输出轴目标转速，依次对应 C620 电调 ID 1~4，单位 rpm。
- * - pid_kp、pid_ki、pid_kd：可修改的速度 PID 参数。
- * - actual_speed_rpm[0~3]：只读的输出轴真实转速，依次对应 C620 电调 ID 1~4，单位 rpm。
+ * - motor_debug_enable：可修改的四电机全局调试使能，设为 false 后所有速度环清零并持续发送零电流
+ * - vx、vy、wz：可修改的归一化底盘运动分量，正方向依次为前向、左向和俯视逆时针
+ * - scale_rpm：可修改的归一化轮速尺度，单位 rpm，底盘模块内限制到 CHASSIS_SPEED_LIMIT_RPM
+ * - pid_kp、pid_ki、pid_kd：可修改的速度 PID 参数
+ * - actual_speed_rpm[0~3]：只读的输出轴真实转速，依次对应 C620 电调 ID 1~4，单位 rpm
  */
 typedef struct
 {
     bool motor_debug_enable;
-    float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
+    float vx;
+    float vy;
+    float wz;
+    float scale_rpm;
     float pid_kp;
     float pid_ki;
     float pid_kd;
@@ -85,10 +89,13 @@ typedef struct
  * - control_init_status[0~3]：对应速度环初始化结果，0 表示成功。
  * - feedback_update_status[0~3]：本周期对应电机反馈更新结果，0 表示成功。
  * - current_set_status[0~3]：本周期对应电流指令写入结果，0 表示成功。
+ * - mixer_init_status：运动学混合器初始化结果，取值见 Mixer_Status_t
+ * - mixer_status：本周期运动学解算结果，取值见 Mixer_Status_t
  * - chassis_status：本周期 Chassis 四路组合控制结果，0 表示全部活动控制器正常。
  * - control_status[0~3]：本周期对应速度环状态，0 表示正常，-2 表示使能关闭或反馈离线。
  * - can_tx_status：本周期 CAN 控制帧发送结果，0 表示成功。
  * - debug_stop_zero_tx_count：关闭调试使能后连续成功提交的零电流帧周期数。
+ * - requested_speed_rpm[0~3]：运动学解算后的输出轴目标转速，依次对应 C620 电调 ID 1~4，单位 rpm
  * - limited_target_speed_rpm[0~3]：限幅后的对应输出轴目标转速，单位 rpm。
  * - ramped_target_speed_rpm[0~3]：缓启动后的对应输出轴目标转速，单位 rpm。
  * - current_command_a[0~3]：下发给对应 C620 的转子侧电流指令，单位 A。
@@ -103,10 +110,13 @@ typedef struct
     int8_t control_init_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t feedback_update_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t current_set_status[OZONE_MOTOR_CHASSIS_COUNT];
+    int8_t mixer_init_status;
+    int8_t mixer_status;
     int8_t chassis_status;
     int8_t control_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t can_tx_status;
     uint32_t debug_stop_zero_tx_count;
+    float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float limited_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float ramped_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float current_command_a[OZONE_MOTOR_CHASSIS_COUNT];

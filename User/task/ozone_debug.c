@@ -25,19 +25,16 @@ volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 
 /*
  * 四个 M3508 的 Ozone 在线调试参数初值：
- * - 上电默认开启调试使能，四路目标转速均为 100 rpm，反馈保持清零等待 CAN 更新。
- * - PID 初值使用速度控制模块的当前默认参数。
+ * - 上电默认关闭调试使能并清零运动分量，避免调试器连接前产生非零电流
+ * - 轮速尺度初值为 100 rpm，PID 初值使用速度控制模块的当前默认参数
  */
 volatile MotorChassisTune_t g_motor_chassis_tune =
 {
-    .motor_debug_enable = true,
-    .requested_speed_rpm =
-    {
-        100.0F,
-        100.0F,
-        100.0F,
-        100.0F,
-    },
+    .motor_debug_enable = false,
+    .vx = 0.0F,
+    .vy = 0.0F,
+    .wz = 0.0F,
+    .scale_rpm = 100.0F,
     .pid_kp = CHASSIS_PID_KP,
     .pid_ki = CHASSIS_PID_KI,
     .pid_kd = CHASSIS_PID_KD,
@@ -100,6 +97,8 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         CAN_DEVICES_DEVICE_UNAVAILABLE,
         CAN_DEVICES_DEVICE_UNAVAILABLE,
     },
+    .mixer_init_status = MIXER_ERROR,
+    .mixer_status = MIXER_ERROR,
     .chassis_status = CHASSIS_NOT_INITIALIZED,
     .control_status =
     {
@@ -193,7 +192,9 @@ void OzoneDebug_UpdateChassisInit(const Chassis_Snapshot_t *chassis_snapshot)
         return;
     }
 
-    // 发布四路速度控制器初始化状态并清除停机确认历史
+    // 发布运动学与四路速度控制器初始化状态并清除停机确认历史
+    g_motor_chassis_monitor.mixer_init_status = chassis_snapshot->mixer_init_status;
+    g_motor_chassis_monitor.mixer_status = chassis_snapshot->mixer_status;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
         g_motor_chassis_monitor.control_init_status[motor_index] =
@@ -240,6 +241,13 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
     *input = (Chassis_Input_t)
     {
         .enabled = g_motor_chassis_tune.motor_debug_enable,
+        .move_vector =
+        {
+            .vx = g_motor_chassis_tune.vx,
+            .vy = g_motor_chassis_tune.vy,
+            .wz = g_motor_chassis_tune.wz,
+        },
+        .scale_rpm = g_motor_chassis_tune.scale_rpm,
         .pid_tune =
         {
             .kp = g_motor_chassis_tune.pid_kp,
@@ -248,10 +256,6 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
         },
         .control_period_s = control_period_s,
     };
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        input->requested_speed_rpm[motor_index] = g_motor_chassis_tune.requested_speed_rpm[motor_index];
-    }
 }
 
 /**
@@ -308,6 +312,8 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
         }
 
         g_motor_chassis_monitor.control_status[motor_index] = chassis_snapshot->control_status[motor_index];
+        g_motor_chassis_monitor.requested_speed_rpm[motor_index] =
+            chassis_snapshot->requested_speed_rpm[motor_index];
         g_motor_chassis_monitor.limited_target_speed_rpm[motor_index] =
             chassis_snapshot->limited_target_speed_rpm[motor_index];
         g_motor_chassis_monitor.ramped_target_speed_rpm[motor_index] =
@@ -330,6 +336,7 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
 
     g_motor_chassis_monitor.debug_stop_ready =
         debug_stop_zero_tx_count >= MOTOR_DEBUG_STOP_CONFIRM_CYCLES;
+    g_motor_chassis_monitor.mixer_status = chassis_snapshot->mixer_status;
     g_motor_chassis_monitor.chassis_status = chassis_snapshot->chassis_status;
     if (can_snapshot != NULL)
     {
