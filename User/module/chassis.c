@@ -59,7 +59,10 @@ typedef struct
 
 /*
  * 底盘模块私有运行状态：
- * - initialized：四路速度控制器均可运行时为 true。
+ * - initialized：运动学混合器和四路速度控制器均可运行时为 true
+ * - mixer：当前底盘机械布局对应的运动学混合器
+ * - mixer_init_status：运动学混合器初始化及四路输出兼容性检查结果
+ * - mixer_status：本周期运动学解算结果
  * - control_init_status：四路速度控制器的聚合初始化结果。
  * - motor_init_status[0~3]：四个速度控制器的初始化结果。
  * - motor_control[0~3]：四个相互独立的单电机速度控制上下文。
@@ -67,6 +70,9 @@ typedef struct
 typedef struct
 {
     bool initialized;
+    Mixer_t mixer;
+    int8_t mixer_init_status;
+    int8_t mixer_status;
     int8_t control_init_status;
     Chassis_MotorStatus_t motor_init_status[CHASSIS_MOTOR_COUNT];
     Chassis_MotorControl_t motor_control[CHASSIS_MOTOR_COUNT];
@@ -94,13 +100,14 @@ static void Chassis_ResetMotorControl(Chassis_MotorControl_t *control);
 static void Chassis_PrimeFeedback(Chassis_MotorControl_t *control);
 
 /**
- * @brief 初始化四个相互独立的 M3508 速度控制器
+ * @brief 初始化底盘运动学混合器和四个相互独立的 M3508 速度控制器
  *
  * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
+ * @param[in] mixer_mode 底盘机械布局，当前任务应传入 MIXER_OMNICROSS
  * @param[out] snapshot 底盘初始化结果快照
- * @return 全部速度控制器初始化成功返回 CHASSIS_OK，否则返回对应状态码
+ * @return 混合器和全部速度控制器初始化成功返回 CHASSIS_OK，否则返回对应状态码
  */
-int8_t Chassis_Init(float sample_frequency_hz, Chassis_Snapshot_t *snapshot)
+int8_t Chassis_Init(float sample_frequency_hz, Mixer_Mode_t mixer_mode, Chassis_Snapshot_t *snapshot)
 {
     if (snapshot == NULL)
     {
@@ -121,7 +128,30 @@ int8_t Chassis_Init(float sample_frequency_hz, Chassis_Snapshot_t *snapshot)
         return CHASSIS_CONFIG_ERROR;
     }
 
-    // 配置有效后初始化四路速度控制器，任一路初始化失败都禁止模块进入运行态
+    // 初始化运动学混合器，并用零输入确认当前布局支持四路电机输出
+    const MoveVector_t zero_move_vector =
+    {
+        0,
+    };
+    float zero_speed_rpm[CHASSIS_MOTOR_COUNT] =
+    {
+        0,
+    };
+    chassis_state.mixer_init_status = Mixer_Init(&chassis_state.mixer, mixer_mode);
+    if (chassis_state.mixer_init_status == MIXER_OK)
+    {
+        chassis_state.mixer_init_status = Mixer_Apply(&chassis_state.mixer, &zero_move_vector, zero_speed_rpm,
+                                                      CHASSIS_MOTOR_COUNT, 0.0F);
+    }
+    chassis_state.mixer_status = chassis_state.mixer_init_status;
+    if (chassis_state.mixer_init_status != MIXER_OK)
+    {
+        chassis_state.control_init_status = CHASSIS_CONFIG_ERROR;
+        Chassis_ResetSnapshot(snapshot);
+        return CHASSIS_CONFIG_ERROR;
+    }
+
+    // 混合器可用后初始化四路速度控制器，任一路初始化失败都禁止模块进入运行态
     const int8_t control_status = Chassis_InitControllers(sample_frequency_hz);
     chassis_state.initialized = control_status == CHASSIS_OK;
     Chassis_ResetSnapshot(snapshot);
@@ -139,7 +169,7 @@ int8_t Chassis_Init(float sample_frequency_hz, Chassis_Snapshot_t *snapshot)
  * @param[in] feedback 本周期四路电机反馈快照
  * @param[out] output 本周期四路电流计算结果
  * @param[out] snapshot 本周期速度控制结果快照
- * @return 四路速度控制均正常或安全禁用时返回 CHASSIS_OK，存在计算异常时返回 CHASSIS_ERROR
+ * @return 控制正常或安全禁用时返回 CHASSIS_OK，运动学或速度控制异常时返回对应状态码
  */
 int8_t Chassis_Run(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback, Chassis_Output_t *output,
                    Chassis_Snapshot_t *snapshot)
@@ -186,6 +216,8 @@ static void Chassis_ResetState(void)
     {
         0,
     };
+    chassis_state.mixer_init_status = MIXER_ERROR;
+    chassis_state.mixer_status = MIXER_ERROR;
     chassis_state.control_init_status = CHASSIS_NOT_INITIALIZED;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
@@ -206,6 +238,8 @@ static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot)
         0,
     };
     snapshot->initialized = chassis_state.initialized;
+    snapshot->mixer_init_status = chassis_state.mixer_init_status;
+    snapshot->mixer_status = chassis_state.mixer_status;
     snapshot->control_init_status = chassis_state.control_init_status;
     snapshot->chassis_status = CHASSIS_NOT_INITIALIZED;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
@@ -250,6 +284,22 @@ static int8_t Chassis_InitControllers(float sample_frequency_hz)
 static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback,
                                 Chassis_Output_t *output, Chassis_Snapshot_t *snapshot)
 {
+    // 先按底盘布局整组解算轮速，限制统一尺度以保持四轮之间的合成比例
+    float requested_speed_rpm[CHASSIS_MOTOR_COUNT] =
+    {
+        0,
+    };
+    float scale_rpm = input->scale_rpm;
+    if (isfinite(scale_rpm) && scale_rpm > CHASSIS_SPEED_LIMIT_RPM)
+    {
+        scale_rpm = CHASSIS_SPEED_LIMIT_RPM;
+    }
+    chassis_state.mixer_status = Mixer_Apply(&chassis_state.mixer, &input->move_vector, requested_speed_rpm,
+                                             CHASSIS_MOTOR_COUNT, scale_rpm);
+    snapshot->mixer_status = chassis_state.mixer_status;
+    const bool mixer_valid = chassis_state.mixer_status == MIXER_OK;
+
+    // 使用解算后的四路目标分别执行反馈校验、斜坡和速度闭环
     bool all_control_valid = true;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
@@ -257,10 +307,11 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         const bool feedback_available = feedback->valid[motor_index] && feedback->motor_online[motor_index];
         const float actual_speed_rpm = feedback_available ? feedback->actual_speed_rpm[motor_index] : 0.0F;
         const Chassis_MotorStatus_t feedback_status = Chassis_MotorUpdateFeedback(motor_control, actual_speed_rpm);
-        const bool motor_enabled = input->enabled && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
+        const bool motor_enabled =
+            input->enabled && mixer_valid && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
         const Chassis_MotorStatus_t control_status =
-            Chassis_MotorControl(motor_control, input->requested_speed_rpm[motor_index], &input->pid_tune,
-                                 motor_enabled, input->control_period_s);
+            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], &input->pid_tune, motor_enabled,
+                                 input->control_period_s);
         float current_command_a = 0.0F;
         const Chassis_MotorStatus_t output_status = Chassis_MotorDumpOutput(motor_control, &current_command_a);
 
@@ -288,11 +339,16 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         // 保存统一结果快照，调用方不再读取控制器内部状态
         snapshot->control_status[motor_index] = published_status;
         snapshot->motor_enabled[motor_index] = motor_control->feedback.enabled;
+        snapshot->requested_speed_rpm[motor_index] = requested_speed_rpm[motor_index];
         snapshot->limited_target_speed_rpm[motor_index] = motor_control->feedback.limited_target_speed_rpm;
         snapshot->ramped_target_speed_rpm[motor_index] = motor_control->feedback.target_speed_rpm;
         snapshot->actual_speed_rpm[motor_index] = motor_control->feedback.actual_speed_rpm;
         snapshot->current_command_a[motor_index] = current_command_a;
         output->current_command_a[motor_index] = current_command_a;
+    }
+    if (!mixer_valid)
+    {
+        return CHASSIS_CONFIG_ERROR;
     }
     return all_control_valid ? CHASSIS_OK : CHASSIS_ERROR;
 }
