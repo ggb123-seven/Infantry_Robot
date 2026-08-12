@@ -19,3 +19,6 @@ CHASSIS-MERGE-CONTROL-05 已经用户确认并提交本地快照 ebcd75e；当�
 
 ## #7  task=迁移故障检测模块到-user-module  phase=REVIEW
 按用户确认将故障检测从 User/task 迁移到 User/module，task 层仅保留 FaultDetect_UpdateMotorChassis 调用和 Ozone 发布；CMake Debug 构建、格式扫描和 check.py 全部门禁通过。
+
+## #8  task=移植通用mixer并接入x型全向轮解算  phase=REVIEW
+已移植通用 Mixer，补全四角 X 型全向轮解算并接入 Chassis、Ozone 和 motor_chassis，Debug 全量构建及 ARCH/HW/SPEC 门禁通过，临时测试程序已清理；下一步需上板架空按 ID1 左前、ID2 左后、ID3 右后、ID4 右前验证纯 +vx、+vy、+wz 的轮位和符号

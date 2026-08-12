@@ -1,0 +1,2 @@
+{"file": "spec/architecture/index.md", "reason": "Mixer属于Component层，Chassis属于Module层"}
+{"file": "spec/conventions/index.md", "reason": "编码、注释、验证与CAN安全约束"}
