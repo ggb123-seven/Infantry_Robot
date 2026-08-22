@@ -126,11 +126,8 @@ typedef struct
 /*
  * GM6020 Ozone 运行状态、命令与反馈数据：
  * - current_control_enable：电流测试启用开关，关闭后任务持续发布零电流
- * - target_current_a、limited_current_a、applied_current_a：目标、限幅后和设备实际应用电流，单位 A
- * - command_status、can_tx_status：本周期电流写入和 GM6020 控制组发送结果
- * - command_sequence：最近一次应用的云台命令序号
+ * - target_current_a：目标电流，单位 A
  * - register_status：CAN1 上 GM6020 的注册结果，0 表示成功
- * - feedback_update_status：本周期 0x209 反馈更新结果，0 表示成功
  * - online：最近 100 ms 内收到 GM6020 反馈时为 true
  * - angle_rad：转子单圈角度，范围 [0, 2π)，单位 rad
  * - speed_rpm、raw_current_lsb、torque_current_a、temperature_c：转速、原始电流、换算电流和温度
@@ -140,13 +137,7 @@ typedef struct
 {
     bool current_control_enable;
     float target_current_a;
-    float limited_current_a;
-    float applied_current_a;
-    int8_t command_status;
-    int8_t can_tx_status;
-    uint32_t command_sequence;
     int8_t register_status;
-    int8_t feedback_update_status;
     bool online;
     float angle_rad;
     float speed_rpm;
@@ -209,11 +200,9 @@ void OzoneDebug_GetMotorGimbalCommand(bool *enabled, float *current_a);
  * @param[in] can_snapshot CAN 设备集合本周期快照，允许为 NULL
  * @param[in] enabled 云台电流测试启用状态
  * @param[in] target_current_a Ozone 目标电流，单位 A
- * @param[in] limited_current_a 限幅后的安全电流，单位 A
  * @return 无返回值
  */
-void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot, bool enabled,
-                                  float target_current_a, float limited_current_a);
+void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot, bool enabled, float target_current_a);
 
 /**
  * @brief 将 CAN 设备集合、GM6020 和底盘模块单周期结果发布到 Ozone 监控区

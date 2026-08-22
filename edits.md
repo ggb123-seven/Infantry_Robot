@@ -57,3 +57,11 @@
 - 源码改动：`User/task/motor_gimbal.c` 中 `MOTOR_GIMBAL_TEST_CURRENT_A` 由 `0.05F` 改为 `0.1F`，并同步更新集中说明
 - 验证：正向和反向状态均引用 `MOTOR_GIMBAL_TEST_CURRENT_A` 的 `0.1F`；源码检查无超过 120 列、同行 `else` 或行尾空白；`git diff --check` 通过；`cmake --build build/Debug --verbose` 成功生成 `build/Debug/Infantry_Robot.elf`
 - 状态：已验证，待用户确认创建本地 Git 快照
+
+## GM6020-MONITOR-06
+
+- 目标：精简 GM6020 Ozone 监视结构，保留当前速度环规划所需的命令、注册状态和物理反馈
+- 源码改动：从 `MotorGM6020Monitor_t` 移除 `feedback_update_status`、`limited_current_a`、`applied_current_a`、`command_status`、`can_tx_status` 和 `command_sequence`，同步精简初始化、发布接口及集中注释
+- 边界：设备层 CAN 快照中的同名诊断字段继续保留，供通信安全判断使用，不属于本次 Ozone 监视精简范围
+- 验证：工程内无被移除的 GM6020 Ozone 成员引用；发布接口声明、定义和调用一致；源码规范与 `git diff --check` 检查通过；`cmake --build build/Debug --verbose` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：已验证，待用户确认创建本地 Git 快照

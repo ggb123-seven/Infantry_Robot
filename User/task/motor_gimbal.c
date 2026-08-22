@@ -68,9 +68,8 @@ void Task_motor_gimbal(void *argument)
             limited_current_a = 0.0F;
         }
 
-        // 发布命令、反馈和发送结果，区分 Ozone 目标值与设备实际应用值
-        OzoneDebug_UpdateMotorGimbal(feedback_received ? &motor_gimbal_snapshot : NULL, enabled,
-                                     target_current_a, limited_current_a);
+        // 发布目标电流和 GM6020 物理反馈，供 Ozone 观察当前测试状态
+        OzoneDebug_UpdateMotorGimbal(feedback_received ? &motor_gimbal_snapshot : NULL, enabled, target_current_a);
 
         tick += delay_tick;
         // 按绝对时间等待下一周期，避免控制频率随处理耗时漂移
@@ -91,7 +90,7 @@ bool Task_motor_gimbal_Init(void)
     };
     motor_gimbal_test_state = MOTOR_GIMBAL_TEST_STATE_FORWARD;
     motor_gimbal_test_state_enter_tick = osKernelGetTickCount();
-    OzoneDebug_UpdateMotorGimbal(NULL, false, 0.0F, 0.0F);
+    OzoneDebug_UpdateMotorGimbal(NULL, false, 0.0F);
     return true;
 }
 
