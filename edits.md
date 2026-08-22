@@ -65,3 +65,13 @@
 - 边界：设备层 CAN 快照中的同名诊断字段继续保留，供通信安全判断使用，不属于本次 Ozone 监视精简范围
 - 验证：工程内无被移除的 GM6020 Ozone 成员引用；发布接口声明、定义和调用一致；源码规范与 `git diff --check` 检查通过；`cmake --build build/Debug --verbose` 成功生成 `build/Debug/Infantry_Robot.elf`
 - 状态：已验证，待用户确认创建本地 Git 快照
+
+## GM6020-SPEED-MODULE-07
+
+- 目标：新增 GM6020 单路速度控制模块，与 3508 速度环复用同一套 PID 组件和计算顺序，仅使用独立参数与状态
+- 源码改动：新增 `User/module/gimbal.c` 和 `User/module/gimbal.h`，实现目标斜坡、反馈滤波、`PID_Calc`、电流滤波、目标与电流限幅以及禁用和异常复位，并加入 CMake 源文件列表
+- 初始参数：目标转速限幅 100 rpm、斜坡 100 rpm/s、Kp=0.01、Ki=0.005、Kd=0、积分限幅 50 rpm*s、电流限幅 1 A，均为待上板整定的保守初值
+- 边界：本轮只建立并编译模块，尚未接入 `motor_gimbal` 任务，因此不会改变当前电机运行行为
+- 验证：源码规范与 `git diff --check` 检查通过；ARM Debug 构建重新生成并编译 `gimbal.c`；主机侧边界测试覆盖禁用归零、正负速度方向、目标和电流限幅、反馈无效、非法目标及非法 PID 参数并输出 `Gimbal speed tests passed`
+- 清理：临时测试源码 `build/gimbal_speed_test.c` 和可执行文件 `build/gimbal_speed_test.exe` 已删除
+- 状态：已验证，待用户确认创建本地 Git 快照
