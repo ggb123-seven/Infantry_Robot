@@ -75,3 +75,13 @@
 - 验证：源码规范与 `git diff --check` 检查通过；ARM Debug 构建重新生成并编译 `gimbal.c`；主机侧边界测试覆盖禁用归零、正负速度方向、目标和电流限幅、反馈无效、非法目标及非法 PID 参数并输出 `Gimbal speed tests passed`
 - 清理：临时测试源码 `build/gimbal_speed_test.c` 和可执行文件 `build/gimbal_speed_test.exe` 已删除
 - 状态：已验证，待用户确认创建本地 Git 快照
+
+## GM6020-SPEED-INTEGRATION-08
+
+- 目标：移除固定正反转电流测试，将 `motor_gimbal` 改为由 Ozone 目标转速驱动的 GM6020 速度闭环任务
+- 任务改动：删除正反转状态枚举、10 秒定时器和固定电流限幅函数；任务在 500 Hz 读取速度目标与独立 PID 参数，使用 CAN 反馈调用 `Gimbal_Run`，再通过原有独立邮箱发布电流命令
+- 调试改动：新增 `g_motor_gm6020_tune` 保存速度使能、目标转速和 PID 参数；`g_motor_gm6020_monitor` 改为发布速度环状态、目标、滤波反馈、误差、电流指令及设备物理反馈，并同步更新集中注释
+- 安全默认：速度控制默认关闭、目标转速默认 0 rpm；禁用、反馈缺失、设备离线、输入非法或模块异常时持续发布零电流
+- 验证：源码格式和旧正反转引用扫描通过；`git diff --check` 通过；ARM Debug 构建成功，RAM 占用 41672 B / 128 KB，FLASH 占用 87364 B / 1 MB；主机集成测试覆盖默认禁用、目标与 PID 参数映射、正负速度方向和监视区发布，并输出 `Gimbal integration tests passed`
+- 清理：临时测试源码 `build/gimbal_integration_test.c` 和可执行文件 `build/gimbal_integration_test.exe` 已删除
+- 状态：已验证，用户已确认创建本地 Git 快照

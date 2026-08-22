@@ -26,7 +26,7 @@ extern "C"
 #define MOTOR_CHASSIS_INIT_DELAY (0U)
 
 /*
- * 云台电流测试任务运行参数：与 CAN 任务保持 500 Hz 周期，使用 0 栈延时启动
+ * GM6020 速度控制任务运行参数：与 CAN 任务保持 500 Hz 周期，使用 0 栈延时启动
  */
 #define MOTOR_GIMBAL_FREQ (500U)
 #define MOTOR_GIMBAL_INIT_DELAY (0U)

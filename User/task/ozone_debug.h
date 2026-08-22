@@ -11,6 +11,7 @@ extern "C"
 #include "device/can_devices.h"
 #include "device/dr16.h"
 #include "module/fault_detect.h"
+#include "module/gimbal.h"
 
 /*
  * Ozone 底盘调试参数：
@@ -124,9 +125,27 @@ typedef struct
 } MotorChassisMonitor_t;
 
 /*
- * GM6020 Ozone 运行状态、命令与反馈数据：
- * - current_control_enable：电流测试启用开关，关闭后任务持续发布零电流
- * - target_current_a：目标电流，单位 A
+ * GM6020 Ozone 速度环在线参数：
+ * - speed_control_enable：速度控制使能，false 时任务持续发布零电流
+ * - target_speed_rpm：目标转速，单位 rpm，正负值决定旋转方向
+ * - pid_kp、pid_ki、pid_kd：GM6020 独立速度 PID 参数
+ */
+typedef struct
+{
+    bool speed_control_enable;
+    float target_speed_rpm;
+    float pid_kp;
+    float pid_ki;
+    float pid_kd;
+} MotorGM6020Tune_t;
+
+/*
+ * GM6020 Ozone 速度控制与物理反馈数据：
+ * - control_init_status、control_status：速度环初始化和本周期控制状态，取值见 Gimbal_Status_t
+ * - control_enabled：本周期使能、反馈有效且设备在线时为 true
+ * - requested_speed_rpm、limited_target_speed_rpm、ramped_target_speed_rpm：请求、限幅和斜坡目标转速
+ * - filtered_speed_rpm、speed_error_rpm：滤波后转速和速度误差，单位 rpm
+ * - current_command_a：速度环输出的转子侧电流指令，单位 A，异常路径为 0
  * - register_status：CAN1 上 GM6020 的注册结果，0 表示成功
  * - online：最近 100 ms 内收到 GM6020 反馈时为 true
  * - angle_rad：转子单圈角度，范围 [0, 2π)，单位 rad
@@ -135,8 +154,15 @@ typedef struct
  */
 typedef struct
 {
-    bool current_control_enable;
-    float target_current_a;
+    Gimbal_Status_t control_init_status;
+    Gimbal_Status_t control_status;
+    bool control_enabled;
+    float requested_speed_rpm;
+    float limited_target_speed_rpm;
+    float ramped_target_speed_rpm;
+    float filtered_speed_rpm;
+    float speed_error_rpm;
+    float current_command_a;
     int8_t register_status;
     bool online;
     float angle_rad;
@@ -150,6 +176,7 @@ extern volatile DR16_Monitor_t g_dr16_monitor;
 extern volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
+extern volatile MotorGM6020Tune_t g_motor_gm6020_tune;
 extern volatile MotorGM6020Monitor_t g_motor_gm6020_monitor;
 
 /**
@@ -186,23 +213,23 @@ void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot);
 void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
 
 /**
- * @brief 读取 Ozone 中的 GM6020 电流测试命令
+ * @brief 从 Ozone 在线参数生成本周期 GM6020 速度控制输入
  *
- * @param[out] enabled 云台电流测试启用状态
- * @param[out] current_a Ozone 设定的目标电流，单位 A
+ * @param[out] input 待写入的 GM6020 速度控制输入
+ * @param[in] control_period_s 控制周期，单位 s，必须大于 0
  * @return 无返回值
  */
-void OzoneDebug_GetMotorGimbalCommand(bool *enabled, float *current_a);
+void OzoneDebug_GetMotorGimbalInput(Gimbal_Input_t *input, float control_period_s);
 
 /**
- * @brief 发布 GM6020 本周期命令与反馈监视数据
+ * @brief 发布 GM6020 本周期速度控制与物理反馈数据
  *
  * @param[in] can_snapshot CAN 设备集合本周期快照，允许为 NULL
- * @param[in] enabled 云台电流测试启用状态
- * @param[in] target_current_a Ozone 目标电流，单位 A
+ * @param[in] gimbal_snapshot GM6020 速度控制结果快照，允许为 NULL
  * @return 无返回值
  */
-void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot, bool enabled, float target_current_a);
+void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot,
+                                  const Gimbal_Snapshot_t *gimbal_snapshot);
 
 /**
  * @brief 将 CAN 设备集合、GM6020 和底盘模块单周期结果发布到 Ozone 监控区

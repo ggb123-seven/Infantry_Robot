@@ -162,7 +162,7 @@ static bool Task_InitModules(void)
         return false;
     }
 
-    // 初始化云台电流测试任务的 Ozone 默认状态
+    // 初始化 GM6020 速度控制器和 Ozone 默认状态
     task_runtime.init_status = TASK_INIT_MOTOR_GIMBAL_FAILED;
     return Task_motor_gimbal_Init();
 }

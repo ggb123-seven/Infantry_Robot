@@ -140,14 +140,35 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
 };
 
 /*
- * GM6020 Ozone 运行监视数据初值：
- * - 任务启动前注册状态标记为不可用，在线状态为 false
- * - 电流测试默认启用，目标电流为 0.2 A，其余物理反馈保持为零
+ * GM6020 Ozone 速度环在线参数初值：
+ * - 速度控制默认关闭且目标转速为 0 rpm，避免上电后产生非零电流
+ * - PID 参数使用 GM6020 模块的独立保守初值，供后续上板整定
+ */
+volatile MotorGM6020Tune_t g_motor_gm6020_tune =
+{
+    .speed_control_enable = false,
+    .target_speed_rpm = 0.0F,
+    .pid_kp = GIMBAL_PID_KP,
+    .pid_ki = GIMBAL_PID_KI,
+    .pid_kd = GIMBAL_PID_KD,
+};
+
+/*
+ * GM6020 Ozone 速度控制与物理反馈初值：
+ * - 控制器和设备状态在对应初始化完成前均标记为不可用
+ * - 目标、反馈和电流相关物理量保持为零
  */
 volatile MotorGM6020Monitor_t g_motor_gm6020_monitor =
 {
-    .current_control_enable = true,
-    .target_current_a = 0.2F,
+    .control_init_status = GIMBAL_NOT_INITIALIZED,
+    .control_status = GIMBAL_NOT_INITIALIZED,
+    .control_enabled = false,
+    .requested_speed_rpm = 0.0F,
+    .limited_target_speed_rpm = 0.0F,
+    .ramped_target_speed_rpm = 0.0F,
+    .filtered_speed_rpm = 0.0F,
+    .speed_error_rpm = 0.0F,
+    .current_command_a = 0.0F,
     .register_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     .online = false,
     .angle_rad = 0.0F,
@@ -261,36 +282,58 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
 }
 
 /**
- * @brief 读取 Ozone 中的 GM6020 电流测试命令
+ * @brief 从 Ozone 在线参数生成本周期 GM6020 速度控制输入
  *
- * @param[out] enabled 云台电流测试启用状态
- * @param[out] current_a Ozone 设定的目标电流，单位 A
+ * @param[out] input 待写入的 GM6020 速度控制输入
+ * @param[in] control_period_s 控制周期，单位 s，必须大于 0
  * @return 无返回值
  */
-void OzoneDebug_GetMotorGimbalCommand(bool *enabled, float *current_a)
+void OzoneDebug_GetMotorGimbalInput(Gimbal_Input_t *input, float control_period_s)
 {
-    if (enabled != NULL)
+    if (input == NULL)
     {
-        *enabled = g_motor_gm6020_monitor.current_control_enable;
+        return;
     }
-    if (current_a != NULL)
+
+    // 集中读取本周期允许由 Ozone 修改的速度目标和 GM6020 独立 PID 参数
+    *input = (Gimbal_Input_t)
     {
-        *current_a = g_motor_gm6020_monitor.target_current_a;
-    }
+        .enabled = g_motor_gm6020_tune.speed_control_enable,
+        .target_speed_rpm = g_motor_gm6020_tune.target_speed_rpm,
+        .pid_tune =
+        {
+            .kp = g_motor_gm6020_tune.pid_kp,
+            .ki = g_motor_gm6020_tune.pid_ki,
+            .kd = g_motor_gm6020_tune.pid_kd,
+        },
+        .control_period_s = control_period_s,
+    };
 }
 
 /**
- * @brief 发布 GM6020 本周期命令与反馈监视数据
+ * @brief 发布 GM6020 本周期速度控制与物理反馈数据
  *
  * @param[in] can_snapshot CAN 设备集合本周期快照，允许为 NULL
- * @param[in] enabled 云台电流测试启用状态
- * @param[in] target_current_a Ozone 目标电流，单位 A
+ * @param[in] gimbal_snapshot GM6020 速度控制结果快照，允许为 NULL
  * @return 无返回值
  */
-void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot, bool enabled, float target_current_a)
+void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot,
+                                  const Gimbal_Snapshot_t *gimbal_snapshot)
 {
-    g_motor_gm6020_monitor.current_control_enable = enabled;
-    g_motor_gm6020_monitor.target_current_a = target_current_a;
+    if (gimbal_snapshot != NULL)
+    {
+        // 发布速度环状态、目标、反馈误差和最终电流指令
+        g_motor_gm6020_monitor.control_init_status = gimbal_snapshot->init_status;
+        g_motor_gm6020_monitor.control_status = gimbal_snapshot->control_status;
+        g_motor_gm6020_monitor.control_enabled = gimbal_snapshot->enabled;
+        g_motor_gm6020_monitor.requested_speed_rpm = gimbal_snapshot->requested_speed_rpm;
+        g_motor_gm6020_monitor.limited_target_speed_rpm = gimbal_snapshot->limited_target_speed_rpm;
+        g_motor_gm6020_monitor.ramped_target_speed_rpm = gimbal_snapshot->ramped_target_speed_rpm;
+        g_motor_gm6020_monitor.filtered_speed_rpm = gimbal_snapshot->filtered_speed_rpm;
+        g_motor_gm6020_monitor.speed_error_rpm = gimbal_snapshot->speed_error_rpm;
+        g_motor_gm6020_monitor.current_command_a = gimbal_snapshot->current_command_a;
+    }
+
     if (can_snapshot == NULL)
     {
         g_motor_gm6020_monitor.online = false;
