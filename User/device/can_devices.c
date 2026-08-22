@@ -90,6 +90,7 @@ static CANDevices_State_t can_devices_state;
 static void CANDevices_ResetState(void);
 static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot);
 static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_current_a, float *applied_current_a);
+static int8_t CANDevices_WriteGimbalCurrent(float requested_current_a, float *applied_current_a);
 
 /**
  * @brief 初始化 CAN1 并注册四个底盘 M3508 和一个 GM6020
@@ -219,6 +220,7 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot)
         snapshot->gm6020_online = can_devices_state.gm6020->motor.header.online;
         snapshot->gm6020_angle_rad = can_devices_state.gm6020->feedback.rotor_abs_angle;
         snapshot->gm6020_speed_rpm = can_devices_state.gm6020->feedback.rotor_speed;
+        snapshot->gm6020_raw_current_lsb = can_devices_state.gm6020->motor.raw_feedback.raw_current;
         snapshot->gm6020_torque_current_a = can_devices_state.gm6020->feedback.torque_current;
         snapshot->gm6020_temperature_c = can_devices_state.gm6020->feedback.temp;
         if (snapshot->gm6020_feedback_update_status != DEVICE_OK)
@@ -300,6 +302,71 @@ int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_S
 }
 
 /**
+ * @brief 校验并提交 GM6020 独立电流命令后发送对应控制帧
+ *
+ * @param[in] command 云台电流命令快照，允许为 NULL
+ * @param[in,out] snapshot CAN 设备反馈与云台输出结果快照
+ * @return 命令有效且 GM6020 控制帧发送成功时返回 CAN_DEVICES_OK，否则返回对应状态码
+ */
+int8_t CANDevices_ApplyGimbalCurrent(const CANDevices_GimbalCommand_t *command,
+                                     CANDevices_Snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return CAN_DEVICES_NULL_ERROR;
+    }
+    if (!can_devices_state.initialized)
+    {
+        CANDevices_ResetSnapshot(snapshot);
+        return CAN_DEVICES_NOT_INITIALIZED;
+    }
+
+    snapshot->gm6020_current_set_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+    snapshot->gm6020_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+    snapshot->gm6020_applied_current_a = 0.0F;
+    snapshot->gm6020_applied_command_sequence = command == NULL ? 0U : command->sequence;
+
+    if (can_devices_state.gm6020 == NULL)
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+
+    float requested_current_a = command == NULL ? 0.0F : command->current_a;
+    int8_t command_status = CAN_DEVICES_OK;
+    if (!isfinite(requested_current_a))
+    {
+        requested_current_a = 0.0F;
+        command_status = CAN_DEVICES_INVALID_CURRENT;
+    }
+    else if (requested_current_a < -CAN_DEVICES_GM6020_CURRENT_LIMIT_A ||
+             requested_current_a > CAN_DEVICES_GM6020_CURRENT_LIMIT_A)
+    {
+        requested_current_a = 0.0F;
+        command_status = CAN_DEVICES_INVALID_CURRENT;
+    }
+    else if ((can_devices_state.gm6020_feedback_update_status != DEVICE_OK ||
+              !can_devices_state.gm6020->motor.header.online) &&
+             requested_current_a != 0.0F)
+    {
+        requested_current_a = 0.0F;
+        command_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+
+    snapshot->gm6020_current_set_status =
+        CANDevices_WriteGimbalCurrent(requested_current_a, &snapshot->gm6020_applied_current_a);
+    if (snapshot->gm6020_current_set_status == DEVICE_OK && command_status != CAN_DEVICES_OK)
+    {
+        snapshot->gm6020_current_set_status = command_status;
+    }
+    snapshot->gm6020_tx_status = MOTOR_RM_FlushGroup(&can_devices_gm6020_param);
+    if (snapshot->gm6020_current_set_status != DEVICE_OK || snapshot->gm6020_tx_status != DEVICE_OK)
+    {
+        return CAN_DEVICES_ERROR;
+    }
+    return CAN_DEVICES_OK;
+}
+
+/**
  * @brief 恢复整车 CAN 设备集合的安全默认状态
  *
  * @return 无返回值
@@ -337,6 +404,10 @@ static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot)
     snapshot->feedback_status = CAN_DEVICES_NOT_INITIALIZED;
     snapshot->output_status = CAN_DEVICES_NOT_INITIALIZED;
     snapshot->tx_status = CAN_DEVICES_NOT_INITIALIZED;
+    snapshot->gm6020_current_set_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+    snapshot->gm6020_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+    snapshot->gm6020_applied_current_a = 0.0F;
+    snapshot->gm6020_applied_command_sequence = 0U;
     snapshot->sequence = can_devices_state.sequence;
     snapshot->gm6020_register_status = can_devices_state.gm6020_register_status;
     snapshot->gm6020_feedback_update_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
@@ -367,6 +438,27 @@ static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_curr
     }
 
     const int8_t zero_status = MOTOR_RM_SetTorqueCurrent(motor_param, 0.0F);
+    *applied_current_a = 0.0F;
+    return zero_status == DEVICE_OK ? current_status : zero_status;
+}
+
+/**
+ * @brief 写入 GM6020 转子侧电流并在失败时覆盖为零电流
+ *
+ * @param[in] requested_current_a 待写入的转子侧电流，单位 A
+ * @param[out] applied_current_a 实际保留在发送缓存中的电流，单位 A
+ * @return 写入成功返回 DEVICE_OK，否则返回设备层错误码
+ */
+static int8_t CANDevices_WriteGimbalCurrent(float requested_current_a, float *applied_current_a)
+{
+    const int8_t current_status = MOTOR_RM_SetTorqueCurrent(&can_devices_gm6020_param, requested_current_a);
+    if (current_status == DEVICE_OK)
+    {
+        *applied_current_a = requested_current_a;
+        return DEVICE_OK;
+    }
+
+    const int8_t zero_status = MOTOR_RM_SetTorqueCurrent(&can_devices_gm6020_param, 0.0F);
     *applied_current_a = 0.0F;
     return zero_status == DEVICE_OK ? current_status : zero_status;
 }

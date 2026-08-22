@@ -13,6 +13,7 @@
 static CANDevices_Snapshot_t can_devices_snapshot;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
+static bool CANTask_ReadLatestGimbalCommand(CANDevices_GimbalCommand_t *command);
 static bool CANTask_PublishSnapshot(void);
 
 /**
@@ -35,17 +36,26 @@ void Task_can(void *argument)
     while (true)
     {
         CANDevices_Command_t command;
+        CANDevices_GimbalCommand_t gimbal_command;
 
         // 只读取本周期可用的最新命令，邮箱为空或异常时保留四路零电流默认值
         const bool command_received = CANTask_ReadLatestCommand(&command);
 
-        // 刷新全部设备反馈后应用命令，设备集合负责逐路校验和统一组发送
+        // 读取独立云台命令，邮箱为空时保持 GM6020 零电流默认值
+        const bool gimbal_command_received = CANTask_ReadLatestGimbalCommand(&gimbal_command);
+
+        // 刷新全部设备反馈后按底盘、云台顺序应用两路命令，保持 CAN 发送顺序稳定
         CANDevices_UpdateFeedback(&can_devices_snapshot);
         if (!command_received)
         {
             command.sequence = can_devices_snapshot.sequence;
         }
+        if (!gimbal_command_received)
+        {
+            gimbal_command.sequence = can_devices_snapshot.sequence;
+        }
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
+        CANDevices_ApplyGimbalCurrent(&gimbal_command, &can_devices_snapshot);
 
         // 发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
@@ -89,18 +99,47 @@ static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command)
 }
 
 /**
+ * @brief 从独立云台命令邮箱读取最新 GM6020 电流命令
+ *
+ * @param[out] command 本周期云台电流命令，读取失败时保持零命令
+ * @return 成功取到新命令返回 true，否则返回 false
+ */
+static bool CANTask_ReadLatestGimbalCommand(CANDevices_GimbalCommand_t *command)
+{
+    *command = (CANDevices_GimbalCommand_t)
+    {
+        0,
+    };
+    if (task_runtime.msgq.can_gimbal_command == NULL)
+    {
+        return false;
+    }
+    return osMessageQueueGet(task_runtime.msgq.can_gimbal_command, command, NULL, 0U) == osOK;
+}
+
+/**
  * @brief 向容量为 1 的反馈邮箱发布最新 CAN 设备快照
  *
  * @return 邮箱重置并写入成功时返回 true，否则返回 false
  */
 static bool CANTask_PublishSnapshot(void)
 {
-    if (task_runtime.msgq.can_feedback == NULL)
+    bool success = true;
+
+    // 底盘邮箱只保留最新设备状态，重置和写入失败均记录为发布失败
+    if (task_runtime.msgq.can_feedback == NULL ||
+        osMessageQueueReset(task_runtime.msgq.can_feedback) != osOK ||
+        osMessageQueuePut(task_runtime.msgq.can_feedback, &can_devices_snapshot, 0U, 0U) != osOK)
     {
-        return false;
+        success = false;
     }
 
-    // 邮箱只保留最新设备状态，重置和写入任一失败都视为本周期发布失败
-    return osMessageQueueReset(task_runtime.msgq.can_feedback) == osOK &&
-           osMessageQueuePut(task_runtime.msgq.can_feedback, &can_devices_snapshot, 0U, 0U) == osOK;
+    // 云台邮箱独立保留同一快照，避免与底盘任务竞争消费
+    if (task_runtime.msgq.can_gimbal_feedback == NULL ||
+        osMessageQueueReset(task_runtime.msgq.can_gimbal_feedback) != osOK ||
+        osMessageQueuePut(task_runtime.msgq.can_gimbal_feedback, &can_devices_snapshot, 0U, 0U) != osOK)
+    {
+        success = false;
+    }
+    return success;
 }

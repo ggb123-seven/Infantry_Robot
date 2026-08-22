@@ -5,6 +5,7 @@
 #include "task/can_task.h"
 #include "task/dr16_task.h"
 #include "task/motor_chassis.h"
+#include "task/motor_gimbal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -78,7 +79,7 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 创建 CAN 反馈邮箱，保证 CAN task 启动后已有明确发布目标
+    // 创建 3508 底盘电机使用的 CAN 反馈邮箱，保证 CAN task 启动后已有明确发布目标
     task_runtime.init_status = TASK_INIT_CAN_FEEDBACK_MAILBOX_FAILED;
     task_runtime.msgq.can_feedback = osMessageQueueNew(1U, sizeof(CANDevices_Snapshot_t), NULL);
     if (task_runtime.msgq.can_feedback == NULL)
@@ -86,10 +87,26 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 创建 CAN 命令邮箱，保证底盘 task 启动后已有明确发布目标
+    // 创建 3508 底盘电机电流命令邮箱，保证底盘 task 启动后已有明确发布目标
     task_runtime.init_status = TASK_INIT_CAN_COMMAND_MAILBOX_FAILED;
     task_runtime.msgq.can_command = osMessageQueueNew(1U, sizeof(CANDevices_Command_t), NULL);
     if (task_runtime.msgq.can_command == NULL)
+    {
+        return false;
+    }
+
+    // 创建独立的 GM6020 反馈邮箱，避免云台任务与底盘任务竞争同一快照
+    task_runtime.init_status = TASK_INIT_GIMBAL_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.can_gimbal_feedback = osMessageQueueNew(1U, sizeof(CANDevices_Snapshot_t), NULL);
+    if (task_runtime.msgq.can_gimbal_feedback == NULL)
+    {
+        return false;
+    }
+
+    // 创建独立的 GM6020 命令邮箱，避免云台命令覆盖底盘四路命令
+    task_runtime.init_status = TASK_INIT_GIMBAL_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.can_gimbal_command = osMessageQueueNew(1U, sizeof(CANDevices_GimbalCommand_t), NULL);
+    if (task_runtime.msgq.can_gimbal_command == NULL)
     {
         return false;
     }
@@ -106,6 +123,14 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
     task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
     if (task_runtime.thread.motor_chassis == NULL)
+    {
+        return false;
+    }
+
+    // 创建独立云台任务，确保其运行前 CAN 反馈和命令邮箱均已存在
+    task_runtime.init_status = TASK_INIT_MOTOR_GIMBAL_FAILED;
+    task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
+    if (task_runtime.thread.motor_gimbal == NULL)
     {
         return false;
     }
@@ -132,7 +157,14 @@ static bool Task_InitModules(void)
 
     // CAN 总线可运行后初始化底盘速度控制器，失败时不创建业务任务
     task_runtime.init_status = TASK_INIT_MOTOR_CHASSIS_FAILED;
-    return Task_motor_chassis_Init();
+    if (!Task_motor_chassis_Init())
+    {
+        return false;
+    }
+
+    // 初始化云台电流测试任务的 Ozone 默认状态
+    task_runtime.init_status = TASK_INIT_MOTOR_GIMBAL_FAILED;
+    return Task_motor_gimbal_Init();
 }
 
 /**
@@ -153,6 +185,14 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.dr16 = NULL;
     }
+    if (task_runtime.thread.motor_gimbal != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.motor_gimbal) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.motor_gimbal = NULL;
+    }
     if (task_runtime.thread.motor_chassis != NULL)
     {
         if (osThreadTerminate(task_runtime.thread.motor_chassis) != osOK)
@@ -169,6 +209,14 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.can = NULL;
     }
+    if (task_runtime.msgq.can_gimbal_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.can_gimbal_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.can_gimbal_command = NULL;
+    }
     if (task_runtime.msgq.can_command != NULL)
     {
         if (osMessageQueueDelete(task_runtime.msgq.can_command) != osOK)
@@ -176,6 +224,14 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.can_command = NULL;
+    }
+    if (task_runtime.msgq.can_gimbal_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.can_gimbal_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.can_gimbal_feedback = NULL;
     }
     if (task_runtime.msgq.can_feedback != NULL)
     {

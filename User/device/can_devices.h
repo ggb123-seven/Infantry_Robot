@@ -8,7 +8,13 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+/*
+ * CAN 设备聚合参数：底盘固定注册四路 M3508，云台固定注册一路 GM6020
+ * GM6020 电流环给定范围为 -3~3 A，对应设备协议原始范围 -16384~16384
+ */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
+#define CAN_DEVICES_GIMBAL_MOTOR_COUNT (1U)
+#define CAN_DEVICES_GM6020_CURRENT_LIMIT_A (3.0F)
 
 /**
  * @brief 整车 CAN 设备集合状态
@@ -36,6 +42,17 @@ typedef struct
 } CANDevices_Command_t;
 
 /*
+ * 云台 GM6020 的独立电流命令快照
+ * - sequence：命令快照序号，仅用于任务间诊断，不参与电机协议计算
+ * - current_a：GM6020 转子侧目标电流，单位 A，安全范围由设备层校验
+ */
+typedef struct
+{
+    uint32_t sequence;
+    float current_a;
+} CANDevices_GimbalCommand_t;
+
+/*
  * 整车 CAN 设备集合快照：
  * - initialized：CAN1 可运行时为 true，允许单个电机注册失败后隔离运行
  * - init_status：CAN1 初始化、四路 M3508 和一路 GM6020 注册的聚合结果
@@ -51,8 +68,8 @@ typedef struct
  * - gm6020_register_status、gm6020_feedback_update_status：GM6020 的注册和本周期反馈更新结果
  * - gm6020_online：GM6020 最近 100 ms 内收到反馈时为 true
  * - gm6020_angle_rad：GM6020 转子单圈角度，范围 [0, 2π)，单位 rad
- * - gm6020_speed_rpm、gm6020_torque_current_a、gm6020_temperature_c：GM6020 转速、转矩电流和温度
- *   单位分别为 rpm、A 和摄氏度
+ * - gm6020_speed_rpm、gm6020_raw_current_lsb、gm6020_torque_current_a、gm6020_temperature_c：
+ *   GM6020 转速、原始电流、换算电流和温度，单位分别为 rpm、LSB、A 和摄氏度
  * - sequence：设备反馈周期序号，每次反馈更新调用递增
  * - applied_command_sequence：最近一次电流提交采用的命令快照序号
  */
@@ -72,13 +89,18 @@ typedef struct
     float applied_current_a[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     int8_t gm6020_register_status;
     int8_t gm6020_feedback_update_status;
+    int8_t gm6020_current_set_status;
+    int8_t gm6020_tx_status;
     bool gm6020_online;
     float gm6020_angle_rad;
     float gm6020_speed_rpm;
+    int16_t gm6020_raw_current_lsb;
     float gm6020_torque_current_a;
     float gm6020_temperature_c;
+    float gm6020_applied_current_a;
     uint32_t sequence;
     uint32_t applied_command_sequence;
+    uint32_t gm6020_applied_command_sequence;
 } CANDevices_Snapshot_t;
 
 /**
@@ -109,6 +131,19 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot);
  * @return 四路命令均有效且统一发送成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
 int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_Snapshot_t *snapshot);
+
+/**
+ * @brief 校验并提交 GM6020 独立电流命令后发送对应控制帧
+ *
+ * 空命令、非法电流、反馈离线或写入失败时均向 GM6020 写入零电流
+ * 该接口只刷新 GM6020 控制组，不会发送底盘四路控制帧
+ *
+ * @param[in] command 云台电流命令快照，允许为 NULL
+ * @param[in,out] snapshot CAN 设备反馈与云台输出结果快照
+ * @return 命令有效且 GM6020 控制帧发送成功时返回 CAN_DEVICES_OK，否则返回对应状态码
+ */
+int8_t CANDevices_ApplyGimbalCurrent(const CANDevices_GimbalCommand_t *command,
+                                     CANDevices_Snapshot_t *snapshot);
 
 #ifdef __cplusplus
 }

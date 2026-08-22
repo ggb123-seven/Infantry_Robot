@@ -146,11 +146,19 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
  */
 volatile MotorGM6020Monitor_t g_motor_gm6020_monitor =
 {
+    .current_control_enable = true,
+    .target_current_a = 0.2F,
+    .limited_current_a = 0.0F,
+    .applied_current_a = 0.0F,
+    .command_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
+    .can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
+    .command_sequence = 0U,
     .register_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     .feedback_update_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     .online = false,
     .angle_rad = 0.0F,
     .speed_rpm = 0.0F,
+    .raw_current_lsb = 0,
     .torque_current_a = 0.0F,
     .temperature_c = 0.0F,
 };
@@ -259,6 +267,69 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
 }
 
 /**
+ * @brief 读取 Ozone 中的 GM6020 电流测试命令
+ *
+ * @param[out] enabled 云台电流测试启用状态
+ * @param[out] current_a Ozone 设定的目标电流，单位 A
+ * @return 无返回值
+ */
+void OzoneDebug_GetMotorGimbalCommand(bool *enabled, float *current_a)
+{
+    if (enabled != NULL)
+    {
+        *enabled = g_motor_gm6020_monitor.current_control_enable;
+    }
+    if (current_a != NULL)
+    {
+        *current_a = g_motor_gm6020_monitor.target_current_a;
+    }
+}
+
+/**
+ * @brief 发布 GM6020 本周期命令与反馈监视数据
+ *
+ * @param[in] can_snapshot CAN 设备集合本周期快照，允许为 NULL
+ * @param[in] enabled 云台电流测试启用状态
+ * @param[in] target_current_a Ozone 目标电流，单位 A
+ * @param[in] limited_current_a 限幅后的安全电流，单位 A
+ * @return 无返回值
+ */
+void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot, bool enabled,
+                                  float target_current_a, float limited_current_a)
+{
+    g_motor_gm6020_monitor.current_control_enable = enabled;
+    g_motor_gm6020_monitor.target_current_a = target_current_a;
+    g_motor_gm6020_monitor.limited_current_a = limited_current_a;
+    if (can_snapshot == NULL)
+    {
+        g_motor_gm6020_monitor.applied_current_a = 0.0F;
+        g_motor_gm6020_monitor.command_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+        g_motor_gm6020_monitor.can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+        g_motor_gm6020_monitor.feedback_update_status = CAN_DEVICES_DEVICE_UNAVAILABLE;
+        g_motor_gm6020_monitor.online = false;
+        g_motor_gm6020_monitor.angle_rad = 0.0F;
+        g_motor_gm6020_monitor.speed_rpm = 0.0F;
+        g_motor_gm6020_monitor.raw_current_lsb = 0;
+        g_motor_gm6020_monitor.torque_current_a = 0.0F;
+        g_motor_gm6020_monitor.temperature_c = 0.0F;
+        return;
+    }
+
+    g_motor_gm6020_monitor.applied_current_a = can_snapshot->gm6020_applied_current_a;
+    g_motor_gm6020_monitor.command_status = can_snapshot->gm6020_current_set_status;
+    g_motor_gm6020_monitor.can_tx_status = can_snapshot->gm6020_tx_status;
+    g_motor_gm6020_monitor.command_sequence = can_snapshot->gm6020_applied_command_sequence;
+    g_motor_gm6020_monitor.register_status = can_snapshot->gm6020_register_status;
+    g_motor_gm6020_monitor.feedback_update_status = can_snapshot->gm6020_feedback_update_status;
+    g_motor_gm6020_monitor.online = can_snapshot->gm6020_online;
+    g_motor_gm6020_monitor.angle_rad = can_snapshot->gm6020_angle_rad;
+    g_motor_gm6020_monitor.speed_rpm = can_snapshot->gm6020_speed_rpm;
+    g_motor_gm6020_monitor.raw_current_lsb = can_snapshot->gm6020_raw_current_lsb;
+    g_motor_gm6020_monitor.torque_current_a = can_snapshot->gm6020_torque_current_a;
+    g_motor_gm6020_monitor.temperature_c = can_snapshot->gm6020_temperature_c;
+}
+
+/**
  * @brief 将 CAN 设备集合、GM6020 和底盘模块单周期结果发布到 Ozone 监控区
  *
  * @param[in] input 本周期实际采用的底盘控制输入快照
@@ -276,18 +347,6 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
 
     bool all_zero_current_set = can_snapshot != NULL && !input->enabled &&
                                 can_snapshot->tx_status == CAN_DEVICES_OK;
-
-    // 取得新 CAN 快照时发布 GM6020 反馈，不将其纳入底盘四电机控制状态
-    if (can_snapshot != NULL)
-    {
-        g_motor_gm6020_monitor.register_status = can_snapshot->gm6020_register_status;
-        g_motor_gm6020_monitor.feedback_update_status = can_snapshot->gm6020_feedback_update_status;
-        g_motor_gm6020_monitor.online = can_snapshot->gm6020_online;
-        g_motor_gm6020_monitor.angle_rad = can_snapshot->gm6020_angle_rad;
-        g_motor_gm6020_monitor.speed_rpm = can_snapshot->gm6020_speed_rpm;
-        g_motor_gm6020_monitor.torque_current_a = can_snapshot->gm6020_torque_current_a;
-        g_motor_gm6020_monitor.temperature_c = can_snapshot->gm6020_temperature_c;
-    }
 
     // 汇总四路控制结果，并在取得新 CAN 快照时同步设备反馈和实际输出
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)

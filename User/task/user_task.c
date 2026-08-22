@@ -30,6 +30,13 @@ const osThreadAttr_t attr_motor_chassis =
     .stack_size = 256U * 4U,
 };
 
+const osThreadAttr_t attr_motor_gimbal =
+{
+    .name = "motor_gimbal",
+    .priority = osPriorityNormal,
+    .stack_size = 256U * 4U,
+};
+
 const osThreadAttr_t attr_dr16 =
 {
     .name = "dr16",

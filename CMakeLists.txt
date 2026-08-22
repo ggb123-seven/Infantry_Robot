@@ -76,6 +76,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/task/dr16_task.c
     User/task/init.c
     User/task/motor_chassis.c
+    User/task/motor_gimbal.c
     User/task/ozone_debug.c
     User/task/user_task.c
 

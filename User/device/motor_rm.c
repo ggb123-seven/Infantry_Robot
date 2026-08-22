@@ -15,16 +15,22 @@
 /* USER INCLUDE END */
 
 /* Private define ----------------------------------------------------------- */
+/*
+ * GM6020 电流环协议参数：
+ * - ID 5~7 使用标准控制帧 0x2FE
+ * - 原始电流范围 -16384~16384 对应 -3~3 A
+ * @datasheet RoboMaster GM6020 直流无刷电机使用说明 2023-10-13 第 7 页
+ */
 #define GM6020_FB_ID_BASE        (0x205)
 #define GM6020_CTRL_ID_BASE      (0x1ff)
-#define GM6020_CTRL_ID_EXTAND    (0x2ff)
+#define GM6020_CTRL_ID_EXTAND    (0x2fe)
 
 #define M3508_M2006_FB_ID_BASE   (0x201)
 #define M3508_M2006_CTRL_ID_BASE (0x200)
 #define M3508_M2006_CTRL_ID_EXTAND (0x1ff)
 #define M3508_M2006_ID_SETTING_ID (0x700)
 
-#define GM6020_MAX_ABS_LSB       (30000)
+#define GM6020_MAX_ABS_LSB       (16384)
 #define M3508_MAX_ABS_LSB        (16384)
 #define M2006_MAX_ABS_LSB        (10000)
 
@@ -282,7 +288,17 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg) {
     uint64_t now_time = BSP_TIME_Get();
     float rotor_angle = raw_angle / (float)MOTOR_ENC_RES * M_2PI;
     float rotor_speed = raw_speed;
-    float torque_current = raw_current * lsb / (float)MOTOR_CUR_RES;
+    // 按电机协议分别换算反馈电流，GM6020 电流环使用安培量程而非旧电压模式满量程
+    float torque_current;
+    if (motor->param.module == MOTOR_GM6020)
+    {
+        torque_current = raw_current * MOTOR_RM_GetCurrentRangeAmp(motor->param.module) /
+                         (float)MOTOR_CUR_RES;
+    }
+    else
+    {
+        torque_current = raw_current * lsb / (float)MOTOR_CUR_RES;
+    }
 
     /* MOTOR_CPP_ADAPTER_DATA: preserve raw feedback for rm_protocol.cpp. */
     motor->motor.raw_feedback.raw_angle = raw_angle;

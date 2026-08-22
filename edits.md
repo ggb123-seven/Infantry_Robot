@@ -17,3 +17,43 @@
 - 残余风险：仍需在目标板确认初始化峰值 heap 和实际栈水位，并验证 CAN 反馈链是否恢复。
 - 限制：当前未连接 GDB Server/目标板，无法读取运行态栈水位，也无法确认刷写后 `feedback_update_status` 是否仍为 `-4`。
 - 状态：软件验证完成，待烧录新 ELF 进行上板验证。
+
+## GM6020-R01-CAN-MAILBOX-COMMENT
+
+- 目标：明确底盘 CAN 反馈邮箱和命令邮箱的 3508 电机业务归属
+- 源码改动：仅修改 `User/task/init.c` 中 `can_feedback` 和 `can_command` 创建前的两处注释，未改动运行逻辑
+- 依据：`can_feedback` 由 `Task_can` 发布并由 `Task_motor_chassis` 消费；`can_command` 承载四路 M3508 电流命令
+- 验证：注释格式与 120 列检查通过，`git diff --check` 通过，CMake Debug 构建成功
+- 状态：待用户确认后创建本地 Git 快照
+
+## GM6020-R02-STATE-MACHINE-RULE
+
+- 目标：为全局协作规则和项目局部规则补充复杂业务分支优先状态机约束
+- 规则改动：在 `AGENTS.md` 与 `agent.md` 中分别新增“分支与状态机”章节
+- 依据：`User` 源码当前检出约 512 个 `if` 和 15 个 `switch`，复杂流程需要与简单保护判断区别治理
+- 边界：跨周期状态、互斥业务模式、超时重试和故障恢复使用状态机；空指针、参数及返回值检查保留 `if`
+- 验证：两份规则均包含适用场景、状态结构、安全默认值和允许保留 `if` 的边界，`git diff --check` 通过
+- 状态：待用户确认后创建本地 Git 快照
+
+## GM6020-R07-AUTO-REVERSAL
+
+- 目标：让 GM6020 上电后以 0.05 A 电流进行每 3 秒换向的自动往复测试
+- 源码改动：在 `User/task/motor_gimbal.c` 中新增正向和反向两状态测试状态机，依次输出 `+0.05 A` 和 `-0.05 A`
+- 安全边界：仅在本周期取得在线反馈时允许非零输出，反馈缺失、设备离线、命令发布失败或非法状态均输出零电流
+- 监视方式：通过 `g_motor_gm6020_monitor` 观察目标电流、限幅电流、实际下发电流和反馈电流
+- 验证：UTF-8、Allman 花括号、120 列和 `git diff --check` 检查通过，CMake Debug 构建成功并生成 `build/Debug/Infantry_Robot.elf`
+- 状态：待用户确认后创建本地 Git 快照
+
+## GM6020-TIME-01
+
+- 目标：将 GM6020 正反转测试的每方向电流持续时间由 3 秒调整为 10 秒
+- 源码改动：`User/task/motor_gimbal.c` 中 `MOTOR_GIMBAL_TEST_DIRECTION_TIME_MS` 由 `3000U` 改为 `10000U`，并同步更新对应说明
+- 验证：方向状态机使用 `10000U` 参与毫秒到 RTOS 节拍的换算；源码检查无超过 120 列、同行 `else` 或行尾空白；`git diff --check` 通过；`cmake --build build/Debug` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：已验证，待用户确认创建本地 Git 快照
+
+## GM6020-CURRENT-02
+
+- 目标：将 GM6020 正反转测试电流由 0.05 A 调整为 0.1 A，方向持续时间保持 10 秒
+- 源码改动：`User/task/motor_gimbal.c` 中 `MOTOR_GIMBAL_TEST_CURRENT_A` 由 `0.05F` 改为 `0.1F`，并同步更新集中说明
+- 验证：正向和反向状态均引用 `MOTOR_GIMBAL_TEST_CURRENT_A` 的 `0.1F`；源码检查无超过 120 列、同行 `else` 或行尾空白；`git diff --check` 通过；`cmake --build build/Debug --verbose` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：已验证，待用户确认创建本地 Git 快照
