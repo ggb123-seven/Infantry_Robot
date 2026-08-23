@@ -1,5 +1,13 @@
 # 修改记录
 
+## gm6020-rad-reverse-20260823-03
+
+- 目标：在 CAN 设备快照中增加 GM6020 的 `rad/s` 反馈量，为后续速度环单位切换提供明确输入
+- 源码改动：`User/device/can_devices.h` 新增 `gm6020_speed_rad_s`；`User/device/can_devices.c` 按 `2π/60` 将协议反馈 rpm 换算为 rad/s；保留 `gm6020_speed_rpm` 作为原始协议诊断量
+- 方向边界：保持 GM6020 ID `0x209` 的 `.reverse = false`，本轮未改变输出和反馈符号处理
+- 验证：`git diff --check` 通过；`cmake --build build/Debug --parallel 4` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：本改动点已完成，待继续切换 GM6020 速度环和 Ozone 字段单位
+
 ## CMAKE-PATH-20260721-01
 
 - 目标：修正 VS Code CMake Tools 对不存在的 `cube-cmake` 的引用。

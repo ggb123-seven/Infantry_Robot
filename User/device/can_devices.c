@@ -7,6 +7,9 @@
 #include <math.h>
 #include <stddef.h>
 
+/* GM6020 协议反馈速度为 rpm，速度环使用 rad/s，换算系数为 2π/60 */
+#define CAN_DEVICES_GM6020_RPM_TO_RAD_S (0.10471975511965977F)
+
 /*
  * 四个 M3508 的固定 CAN 设备参数：
  * - 全部使用 CAN1，C620 电调 ID 依次为 1~4，对应反馈标准帧 ID 0x201~0x204
@@ -220,6 +223,7 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot)
         snapshot->gm6020_online = can_devices_state.gm6020->motor.header.online;
         snapshot->gm6020_angle_rad = can_devices_state.gm6020->feedback.rotor_abs_angle;
         snapshot->gm6020_speed_rpm = can_devices_state.gm6020->feedback.rotor_speed;
+        snapshot->gm6020_speed_rad_s = snapshot->gm6020_speed_rpm * CAN_DEVICES_GM6020_RPM_TO_RAD_S;
         snapshot->gm6020_raw_current_lsb = can_devices_state.gm6020->motor.raw_feedback.raw_current;
         snapshot->gm6020_torque_current_a = can_devices_state.gm6020->feedback.torque_current;
         snapshot->gm6020_temperature_c = can_devices_state.gm6020->feedback.temp;

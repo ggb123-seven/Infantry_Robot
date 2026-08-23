@@ -68,8 +68,8 @@ typedef struct
  * - gm6020_register_status、gm6020_feedback_update_status：GM6020 的注册和本周期反馈更新结果
  * - gm6020_online：GM6020 最近 100 ms 内收到反馈时为 true
  * - gm6020_angle_rad：GM6020 转子单圈角度，范围 [0, 2π)，单位 rad
- * - gm6020_speed_rpm、gm6020_raw_current_lsb、gm6020_torque_current_a、gm6020_temperature_c：
- *   GM6020 转速、原始电流、换算电流和温度，单位分别为 rpm、LSB、A 和摄氏度
+ * - gm6020_speed_rpm、gm6020_speed_rad_s、gm6020_raw_current_lsb、gm6020_torque_current_a、gm6020_temperature_c：
+ *   GM6020 原始转速、控制用角速度、原始电流、换算电流和温度，单位分别为 rpm、rad/s、LSB、A 和摄氏度
  * - sequence：设备反馈周期序号，每次反馈更新调用递增
  * - applied_command_sequence：最近一次电流提交采用的命令快照序号
  */
@@ -94,6 +94,7 @@ typedef struct
     bool gm6020_online;
     float gm6020_angle_rad;
     float gm6020_speed_rpm;
+    float gm6020_speed_rad_s;
     int16_t gm6020_raw_current_lsb;
     float gm6020_torque_current_a;
     float gm6020_temperature_c;
