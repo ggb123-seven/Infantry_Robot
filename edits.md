@@ -76,6 +76,14 @@
 - 清理：临时测试源码 `build/gimbal_speed_test.c` 和可执行文件 `build/gimbal_speed_test.exe` 已删除
 - 状态：已验证，待用户确认创建本地 Git 快照
 
+## GM6020-FILTER-OFF-001
+
+- 目标：关闭 GM6020 速度反馈低通滤波器和 PID D 项低通滤波器
+- 源码改动：修改 `User/module/gimbal.h` 中的 `GIMBAL_PID_D_CUTOFF_HZ` 与 `GIMBAL_FEEDBACK_LPF_CUTOFF_HZ` 为 `-1.0F`，电流指令滤波保持 `-1.0F`
+- 验证：三个截止频率均为非正值，滤波器进入直通分支；`git diff --check` 和 `cmake --build build/Debug --parallel 4` 均通过
+- 风险：反馈量化噪声将直接进入控制链，需要上板观察转速和电流指令
+- 状态：已按用户确认修改并完成构建验证，待本地 Git 快照
+
 ## GM6020-SPEED-INTEGRATION-08
 
 - 目标：移除固定正反转电流测试，将 `motor_gimbal` 改为由 Ozone 目标转速驱动的 GM6020 速度闭环任务
