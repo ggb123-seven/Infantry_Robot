@@ -10,7 +10,7 @@
  * GM6020 速度控制运行上下文：
  * - initialized、was_enabled：初始化和上一周期实际使能状态
  * - init_status：初始化结果
- * - ramped_target_speed_rpm：斜坡处理后的目标转速，单位 rpm
+ * - ramped_target_speed_rpm：兼容字段，当前直接采用限幅后的目标转速，单位 rpm
  * - pid_param、pid：GM6020 独立 PID 参数和动态状态
  * - feedback_filter、current_filter：速度反馈和电流指令滤波器状态
  */
@@ -32,7 +32,6 @@ static Gimbal_Control_t gimbal_control =
 };
 
 static float Gimbal_Clamp(float value, float absolute_limit);
-static float Gimbal_ApplyRamp(float current, float target, float maximum_step);
 static bool Gimbal_IsConfigurationValid(float sample_frequency_hz);
 static bool Gimbal_ApplyPidTune(const Gimbal_PidTune_t *pid_tune);
 static void Gimbal_ResetControl(void);
@@ -185,10 +184,8 @@ Gimbal_Status_t Gimbal_Run(const Gimbal_Input_t *input, const Gimbal_Feedback_t 
             Gimbal_PrimeFeedback(feedback->actual_speed_rpm);
         }
 
-        // 按与 3508 相同的顺序执行目标斜坡、反馈滤波、PID 计算和电流滤波
-        gimbal_control.ramped_target_speed_rpm =
-            Gimbal_ApplyRamp(gimbal_control.ramped_target_speed_rpm, snapshot->limited_target_speed_rpm,
-                             GIMBAL_RAMP_RATE_RPM_S * input->control_period_s);
+        // 直接采用限幅后的目标转速，再执行反馈滤波、PID 计算和电流滤波
+        gimbal_control.ramped_target_speed_rpm = snapshot->limited_target_speed_rpm;
         snapshot->filtered_speed_rpm =
             LowPassFilter2p_Apply(&gimbal_control.feedback_filter, feedback->actual_speed_rpm);
         const float pid_current_command_a =
@@ -244,28 +241,6 @@ static float Gimbal_Clamp(float value, float absolute_limit)
 }
 
 /**
- * @brief 按单周期最大变化量逼近目标值
- *
- * @param[in] current 当前值
- * @param[in] target 目标值
- * @param[in] maximum_step 单周期允许的最大变化量
- * @return 本周期更新后的数值
- */
-static float Gimbal_ApplyRamp(float current, float target, float maximum_step)
-{
-    const float difference = target - current;
-    if (difference > maximum_step)
-    {
-        return current + maximum_step;
-    }
-    if (difference < -maximum_step)
-    {
-        return current - maximum_step;
-    }
-    return target;
-}
-
-/**
  * @brief 校验 GM6020 速度控制固定参数
  *
  * @param[in] sample_frequency_hz 控制采样频率，单位 Hz
@@ -274,7 +249,7 @@ static float Gimbal_ApplyRamp(float current, float target, float maximum_step)
 static bool Gimbal_IsConfigurationValid(float sample_frequency_hz)
 {
     return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(GIMBAL_SPEED_LIMIT_RPM) &&
-           GIMBAL_SPEED_LIMIT_RPM > 0.0F && isfinite(GIMBAL_RAMP_RATE_RPM_S) && GIMBAL_RAMP_RATE_RPM_S > 0.0F &&
+           GIMBAL_SPEED_LIMIT_RPM > 0.0F &&
            isfinite(GIMBAL_PID_D_CUTOFF_HZ) && GIMBAL_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
            isfinite(GIMBAL_FEEDBACK_LPF_CUTOFF_HZ) &&
            GIMBAL_FEEDBACK_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F &&

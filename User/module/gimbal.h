@@ -11,7 +11,6 @@ extern "C"
 /*
  * GM6020 速度控制参数：
  * - GIMBAL_SPEED_LIMIT_RPM：目标转速正负对称限幅，单位 rpm
- * - GIMBAL_RAMP_RATE_RPM_S：目标转速最大变化斜率，单位 rpm/s
  * - GIMBAL_PID_KP、GIMBAL_PID_KI、GIMBAL_PID_KD：GM6020 独立速度 PID 初始参数
  * - GIMBAL_PID_D_CUTOFF_HZ：反馈微分低通截止频率，单位 Hz，小于等于 0 时直通
  * - GIMBAL_FEEDBACK_LPF_CUTOFF_HZ：速度反馈二阶低通截止频率，单位 Hz，小于等于 0 时直通
@@ -22,10 +21,6 @@ extern "C"
  */
 #ifndef GIMBAL_SPEED_LIMIT_RPM
 #define GIMBAL_SPEED_LIMIT_RPM (100.0F)
-#endif
-
-#ifndef GIMBAL_RAMP_RATE_RPM_S
-#define GIMBAL_RAMP_RATE_RPM_S (100.0F)
 #endif
 
 #ifndef GIMBAL_PID_KP
@@ -131,7 +126,7 @@ typedef struct
  * - enabled：本周期反馈有效、设备在线且控制使能时为 true
  * - requested_speed_rpm：外部请求的目标转速，单位 rpm
  * - limited_target_speed_rpm：经过安全限幅的目标转速，单位 rpm
- * - ramped_target_speed_rpm：经过斜坡限制的 PID 目标转速，单位 rpm
+ * - ramped_target_speed_rpm：兼容字段，当前直接等于限幅后的 PID 目标转速，单位 rpm
  * - actual_speed_rpm、filtered_speed_rpm：实际与滤波后反馈转速，单位 rpm
  * - speed_error_rpm：PID 目标与滤波反馈之差，单位 rpm
  * - current_command_a：本周期转子侧电流指令，单位 A，异常路径为 0

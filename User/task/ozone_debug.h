@@ -143,7 +143,7 @@ typedef struct
  * GM6020 Ozone 速度控制与物理反馈数据：
  * - control_init_status、control_status：速度环初始化和本周期控制状态，取值见 Gimbal_Status_t
  * - control_enabled：本周期使能、反馈有效且设备在线时为 true
- * - requested_speed_rpm、limited_target_speed_rpm、ramped_target_speed_rpm：请求、限幅和斜坡目标转速
+ * - requested_speed_rpm、limited_target_speed_rpm、ramped_target_speed_rpm：请求、限幅和当前实际采用的目标转速，其中最后一项为兼容字段
  * - filtered_speed_rpm、speed_error_rpm：滤波后转速和速度误差，单位 rpm
  * - current_command_a：速度环输出的转子侧电流指令，单位 A，异常路径为 0
  * - register_status：CAN1 上 GM6020 的注册结果，0 表示成功

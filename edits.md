@@ -93,3 +93,11 @@
 - 验证：源码格式和旧正反转引用扫描通过；`git diff --check` 通过；ARM Debug 构建成功，RAM 占用 41672 B / 128 KB，FLASH 占用 87364 B / 1 MB；主机集成测试覆盖默认禁用、目标与 PID 参数映射、正负速度方向和监视区发布，并输出 `Gimbal integration tests passed`
 - 清理：临时测试源码 `build/gimbal_integration_test.c` 和可执行文件 `build/gimbal_integration_test.exe` 已删除
 - 状态：已验证，用户已确认创建本地 Git 快照
+
+## GM6020-SPEED-NO-RAMP-001
+
+- 目标：移除 GM6020 速度环目标转速斜坡，使 PID 每周期直接使用限幅后的目标转速
+- 源码改动：删除 `Gimbal_ApplyRamp()`、斜坡参数及其配置校验；保留 `ramped_target_speed_rpm` 兼容字段，但其值直接等于限幅目标；同步更新 Ozone 字段说明
+- 边界：不修改 IMU 反馈、GM6020 电流模式控制帧 `0x2FE`、滤波参数、电流限幅和 Ozone 数据布局
+- 验证：`Gimbal_Run()` 中目标转速直接赋值；工程内 `gimbal.c` 和 `gimbal.h` 不再引用 GM6020 斜坡参数或函数；`git diff --check` 通过；`cmake --build build/Debug --parallel 4` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：已验证，待本地 Git 快照
