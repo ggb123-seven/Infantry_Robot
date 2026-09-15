@@ -47,7 +47,7 @@ void Task_motor_gimbal(void *argument)
             .valid = feedback_received &&
                      motor_gimbal_can_snapshot.gm6020_feedback_update_status == CAN_DEVICES_OK,
             .online = feedback_received && motor_gimbal_can_snapshot.gm6020_online,
-            .actual_speed_rpm = feedback_received ? motor_gimbal_can_snapshot.gm6020_speed_rpm : 0.0F,
+            .actual_speed_rad_s = feedback_received ? motor_gimbal_can_snapshot.gm6020_speed_rad_s : 0.0F,
         };
 
         // 执行速度闭环，禁用、离线或非法输入时模块输出零电流

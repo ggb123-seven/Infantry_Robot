@@ -109,3 +109,45 @@
 - 边界：不修改 IMU 反馈、GM6020 电流模式控制帧 `0x2FE`、滤波参数、电流限幅和 Ozone 数据布局
 - 验证：`Gimbal_Run()` 中目标转速直接赋值；工程内 `gimbal.c` 和 `gimbal.h` 不再引用 GM6020 斜坡参数或函数；`git diff --check` 通过；`cmake --build build/Debug --parallel 4` 成功生成 `build/Debug/Infantry_Robot.elf`
 - 状态：已验证，待本地 Git 快照
+
+## CHASSIS-PROGRESS-DOC-01
+
+- 日期：2026-09-15
+- 目标：保存当前底盘进度，并要求重新开发底盘前先阅读进度
+- 文档改动：在根目录 `agent.md` 顶部新增必读规则、当前阶段、已实现链路、参数与轮序、验证证据边界、未完成项及后续开发顺序
+- 核心结论：四轮运动学与速度闭环已接入，当前输入来自 Ozone；DR16 状态邮箱尚无运动命令消费者，整车使能与故障恢复策略仍需补齐
+- 验证：重新阅读 `AGENTS.md` 与 `agent.md`，人工核对源码和历史记录；`git diff --check -- agent.md` 通过，原有项目规则保留
+- 边界：本轮仅修改文档，未修改源码，未运行构建或上板测试，未创建临时测试程序
+- 状态：文档已写入并完成检查
+
+## OZONE-DISPLAY-TRIM-01
+
+- 日期：2026-09-15
+- 目标：精简底盘与 GM6020 的重复展示，将低频诊断收进子结构体，保留日常控制量
+- 源码范围：`User/task/ozone_debug.h`、`User/task/ozone_debug.c`
+- GM6020：监视区目标合并为 `target_speed_rad_s`，取模块实际控制目标，禁用与控制异常时为零；移除请求、限幅、兼容斜坡和直通滤波反馈的重复展示
+- GM6020 诊断：初始化状态、注册结果、单圈角度、原始电流和温度迁入 `diagnostics`；保留顶层实际角速度、误差、指令电流、反馈电流、使能、在线和控制状态
+- 底盘：移除重复的限幅目标与外露零电流计数，保留解算目标、斜坡目标及内部五周期停机确认；初始化、通信、温度迁入 `diagnostics`
+- 数据有效性：底盘新增 `diagnostics.feedback_available`，缺少 CAN 快照时标明设备量为保留值；GM6020 监视初始化改为尚未实际使能，调参使能与 10 rpm 目标维持原样，并修正对应注释
+- 边界：DR16 展示、故障模块、PID、任务通信和控制输入函数未调整；修改过的分支仅用于快照判空、数值校验和停机确认计数边界，不新增业务模式
+- 验证：逐文件重读规则，中文集中注释、Allman、120 列和旧字段引用检查通过；`git diff --check` 通过；`cmake --build --preset Debug --parallel 4` 成功；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 构建占用：RAM 41656 B / 128 KB，FLASH 87172 B / 1 MB
+- 文档：同步 `agent.md` 的 Ozone 查看路径和验证边界；旧监视表达式与曲线需按新 ELF 的字段路径调整
+- 清理：本轮未创建临时测试源码或测试可执行文件；未烧录和上板验证
+- 状态：实现和软件验证完成，用户已确认纳入本地 Git 快照
+
+## gm6020-rad-loop-20260823-04
+
+- 目标：将 GM6020 速度环及 Ozone 监视字段统一为 `rad/s`，并采用参考工程的速度 PID 初值
+- 源码改动：CAN 反馈通过 `2π/60` 从协议 `rpm` 转换为 `rad/s`；GM6020 模块、任务和 Ozone 链路改用 `target_speed_rad_s`、`actual_speed_rad_s` 等字段；速度 PID 初值设为 `Kp=0.03`、`Ki=0.3`、`Kd=0`；10 rpm 目标换算为 `1.0471976 rad/s`
+- 方向核对：GM6020 使用 CAN ID `0x209`，对应参考工程 Yaw，`.reverse = false` 与参考工程一致，发送电流和反馈符号保持同向
+- 边界：GM6020 控制帧继续使用电流模式 `0x2FE`；速度斜坡保持关闭，兼容字段直接等于限幅目标；滤波截止频率保持非正值以关闭滤波；底盘速度字段继续使用 `rpm`
+- 验证：旧 GM6020 速度环字段仅保留设备层原始诊断量；`git diff --check` 通过；`cmake --build build/Debug --parallel 4` 成功生成 `build/Debug/Infantry_Robot.elf`
+- 状态：已验证，用户已确认纳入本地 Git 快照
+
+## LOCAL-GIT-SNAPSHOT-01
+
+- 目标：按用户要求将当前已验证改动保存到本地 Git
+- 范围：GM6020 角速度单位与参数调整、Ozone 展示精简、`agent.md` 底盘进度和本日志，共 7 个已跟踪文件
+- 验证依据：本轮核对差异，`git diff --check` 通过；沿用上一轮同版源码的 Debug 构建和 ARCH/HW/SPEC 通过结果
+- 提交方式：逐个指定文件暂存，仅创建本地提交；未跟踪的 `.obsidian/` 不纳入，不推送远端

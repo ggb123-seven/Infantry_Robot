@@ -82,94 +82,113 @@ typedef struct
 } MotorChassisTune_t;
 
 /*
- * 四个 M3508 的 Ozone 运行状态与诊断数据：
- * - motor_online[0~3]：最近 100 ms 内收到对应电机反馈时为 true。
- * - current_saturated[0~3]：对应电机电流指令达到正负限幅时为 true。
- * - debug_stop_ready：关闭调试使能后，连续成功提交 5 个周期的四电机零电流帧时为 true。
- * - register_status[0~3]：对应电机注册结果，0 表示成功。
- * - control_init_status[0~3]：对应速度环初始化结果，0 表示成功。
- * - feedback_update_status[0~3]：本周期对应电机反馈更新结果，0 表示成功。
- * - current_set_status[0~3]：本周期对应电流指令写入结果，0 表示成功。
+ * 四个 M3508 的 Ozone 详细诊断，数组下标依次对应 C620 电调 ID 1~4：
+ * - feedback_available：本周期取得 CAN 快照时为 true，为 false 时设备反馈与通信状态保留上次值
+ * - register_status[0~3]：对应电机注册结果，0 表示成功
+ * - control_init_status[0~3]：对应速度环初始化结果，0 表示成功
+ * - feedback_update_status[0~3]：最近一次 CAN 快照中的电机反馈更新结果，0 表示成功
+ * - current_set_status[0~3]：最近一次 CAN 快照中的电流指令写入结果，0 表示成功
  * - mixer_init_status：运动学混合器初始化结果，取值见 Mixer_Status_t
  * - mixer_status：本周期运动学解算结果，取值见 Mixer_Status_t
- * - chassis_status：本周期 Chassis 四路组合控制结果，0 表示全部活动控制器正常。
- * - control_status[0~3]：本周期对应速度环状态，0 表示正常，-2 表示使能关闭或反馈离线。
- * - can_tx_status：本周期 CAN 控制帧发送结果，0 表示成功。
- * - debug_stop_zero_tx_count：关闭调试使能后连续成功提交的零电流帧周期数。
- * - requested_speed_rpm[0~3]：运动学解算后的输出轴目标转速，依次对应 C620 电调 ID 1~4，单位 rpm
- * - limited_target_speed_rpm[0~3]：限幅后的对应输出轴目标转速，单位 rpm。
- * - ramped_target_speed_rpm[0~3]：缓启动后的对应输出轴目标转速，单位 rpm。
- * - current_command_a[0~3]：下发给对应 C620 的转子侧电流指令，单位 A。
- * - temperature_c[0~3]：对应 C620 反馈的电机温度，单位摄氏度。
+ * - can_tx_status：最近一次 CAN 快照中的控制帧发送结果，0 表示成功，首次快照前为总线初始化结果
+ * - temperature_c[0~3]：最近一次 CAN 快照中的电机温度，单位摄氏度
  */
 typedef struct
 {
-    bool motor_online[OZONE_MOTOR_CHASSIS_COUNT];
-    bool current_saturated[OZONE_MOTOR_CHASSIS_COUNT];
-    bool debug_stop_ready;
+    bool feedback_available;
     int8_t register_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t control_init_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t feedback_update_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t current_set_status[OZONE_MOTOR_CHASSIS_COUNT];
     int8_t mixer_init_status;
     int8_t mixer_status;
+    int8_t can_tx_status;
+    float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
+} MotorChassisDiagnostics_t;
+
+/*
+ * 四个 M3508 的 Ozone 日常监视量，数组下标依次对应 C620 电调 ID 1~4：
+ * - motor_online[0~3]：最近一次 CAN 快照中的电机在线标志，以 100 ms 反馈超时为判断依据
+ * - current_saturated[0~3]：最近一次 CAN 快照中的电流指令达到正负限幅时为 true
+ * - debug_stop_ready：关闭调试使能后连续成功提交 5 个周期的零电流帧，不表示机械上已经停稳
+ * - chassis_status：本周期底盘四路组合控制结果，0 表示全部活动控制器正常
+ * - control_status[0~3]：本周期速度环状态，0 表示正常，-2 表示使能关闭或反馈离线
+ * - requested_speed_rpm[0~3]：运动学解算后的输出轴目标转速，单位 rpm
+ * - ramped_target_speed_rpm[0~3]：速度环实际采用的缓启动目标转速，单位 rpm
+ * - current_command_a[0~3]：最近一次 CAN 快照中的转子侧电流指令，单位 A
+ * - diagnostics：初始化、通信和温度等详细诊断，设备量是否为本周期数据由 feedback_available 标记
+ * 调试使能和真实转速继续集中在 g_motor_chassis_tune，便于修改参数时直接观察反馈
+ */
+typedef struct
+{
+    bool motor_online[OZONE_MOTOR_CHASSIS_COUNT];
+    bool current_saturated[OZONE_MOTOR_CHASSIS_COUNT];
+    bool debug_stop_ready;
     int8_t chassis_status;
     int8_t control_status[OZONE_MOTOR_CHASSIS_COUNT];
-    int8_t can_tx_status;
-    uint32_t debug_stop_zero_tx_count;
     float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
-    float limited_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float ramped_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
     float current_command_a[OZONE_MOTOR_CHASSIS_COUNT];
-    float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
+    MotorChassisDiagnostics_t diagnostics;
 } MotorChassisMonitor_t;
 
 /*
  * GM6020 Ozone 速度环在线参数：
  * - speed_control_enable：速度控制使能，false 时任务持续发布零电流
- * - target_speed_rpm：目标转速，单位 rpm，正负值决定旋转方向
+ * - target_speed_rad_s：目标角速度，单位 rad/s，正负值决定旋转方向
  * - pid_kp、pid_ki、pid_kd：GM6020 独立速度 PID 参数
  */
 typedef struct
 {
     bool speed_control_enable;
-    float target_speed_rpm;
+    float target_speed_rad_s;
     float pid_kp;
     float pid_ki;
     float pid_kd;
 } MotorGM6020Tune_t;
 
 /*
- * GM6020 Ozone 速度控制与物理反馈数据：
- * - control_init_status、control_status：速度环初始化和本周期控制状态，取值见 Gimbal_Status_t
- * - control_enabled：本周期使能、反馈有效且设备在线时为 true
- * - requested_speed_rpm、limited_target_speed_rpm、ramped_target_speed_rpm：请求、限幅和当前实际采用的目标转速，其中最后一项为兼容字段
- * - filtered_speed_rpm、speed_error_rpm：滤波后转速和速度误差，单位 rpm
- * - current_command_a：速度环输出的转子侧电流指令，单位 A，异常路径为 0
+ * GM6020 Ozone 详细诊断：
+ * - control_init_status：速度环初始化状态，取值见 Gimbal_Status_t
  * - register_status：CAN1 上 GM6020 的注册结果，0 表示成功
- * - online：最近 100 ms 内收到 GM6020 反馈时为 true
  * - angle_rad：转子单圈角度，范围 [0, 2π)，单位 rad
- * - speed_rpm、raw_current_lsb、torque_current_a、temperature_c：转速、原始电流、换算电流和温度
- *   单位分别为 rpm、LSB、A 和摄氏度
+ * - raw_current_lsb：协议原始有符号电流读数，单位 LSB，供核对电流换算使用
+ * - temperature_c：电机温度，单位摄氏度
+ * 缺少 CAN 快照时角度、原始电流和温度显示为零，不能据此认定真实物理量为零
  */
 typedef struct
 {
     Gimbal_Status_t control_init_status;
+    int8_t register_status;
+    float angle_rad;
+    int16_t raw_current_lsb;
+    float temperature_c;
+} MotorGM6020Diagnostics_t;
+
+/*
+ * GM6020 Ozone 日常速度环监视量：
+ * - control_status：本周期控制状态，取值见 Gimbal_Status_t
+ * - control_enabled：本周期使能请求、反馈有效且设备在线时为 true，是否计算成功还需查看 control_status
+ * - target_speed_rad_s：速度环实际采用的目标角速度，单位 rad/s，禁用或控制异常时为零
+ * - speed_rad_s：CAN 快照中的实际角速度，单位 rad/s，缺少快照时显示为零
+ * - speed_error_rad_s：控制模块本周期角速度误差，单位 rad/s，控制异常或禁用时为零
+ * - current_command_a：速度环计算的转子侧电流指令，单位 A，异常路径为零，不代表 CAN 已发送成功
+ * - torque_current_a：CAN 快照中换算后的反馈电流，单位 A，缺少快照时显示为零
+ * - online：取得 CAN 快照且电机最近 100 ms 内收到反馈时为 true
+ * - diagnostics：初始化、注册和协议物理量等详细诊断
+ * 请求目标和 PID 参数由 g_motor_gm6020_tune 提供，监视区只展示实际控制目标
+ */
+typedef struct
+{
     Gimbal_Status_t control_status;
     bool control_enabled;
-    float requested_speed_rpm;
-    float limited_target_speed_rpm;
-    float ramped_target_speed_rpm;
-    float filtered_speed_rpm;
-    float speed_error_rpm;
+    float target_speed_rad_s;
+    float speed_rad_s;
+    float speed_error_rad_s;
     float current_command_a;
-    int8_t register_status;
-    bool online;
-    float angle_rad;
-    float speed_rpm;
-    int16_t raw_current_lsb;
     float torque_current_a;
-    float temperature_c;
+    bool online;
+    MotorGM6020Diagnostics_t diagnostics;
 } MotorGM6020Monitor_t;
 
 extern volatile DR16_Monitor_t g_dr16_monitor;

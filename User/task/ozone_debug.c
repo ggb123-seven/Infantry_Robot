@@ -2,6 +2,7 @@
 
 #include "module/chassis.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 /*
@@ -49,8 +50,9 @@ volatile MotorChassisTune_t g_motor_chassis_tune =
 
 /*
  * 四个 M3508 的 Ozone 运行监视数据初值：
- * - 任务启动前所有设备和控制器均标记为不可用。
- * - 数值反馈保持为零，避免尚未运行的状态被误认为有效数据。
+ * - 任务启动前所有设备和控制器均标记为不可用
+ * - 数值反馈保持为零，避免尚未运行的状态被误认为有效数据
+ * - 初始化和通信状态集中在 diagnostics，未显式指定的字段由静态初始化清零
  */
 volatile MotorChassisMonitor_t g_motor_chassis_monitor =
 {
@@ -69,36 +71,6 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         false,
     },
     .debug_stop_ready = false,
-    .register_status =
-    {
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-    },
-    .control_init_status =
-    {
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-    },
-    .feedback_update_status =
-    {
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-    },
-    .current_set_status =
-    {
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-        CAN_DEVICES_DEVICE_UNAVAILABLE,
-    },
-    .mixer_init_status = MIXER_ERROR,
-    .mixer_status = MIXER_ERROR,
     .chassis_status = CHASSIS_NOT_INITIALIZED,
     .control_status =
     {
@@ -106,15 +78,6 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         CHASSIS_MOTOR_INIT_ERROR,
         CHASSIS_MOTOR_INIT_ERROR,
         CHASSIS_MOTOR_INIT_ERROR,
-    },
-    .can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
-    .debug_stop_zero_tx_count = 0U,
-    .limited_target_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
     },
     .ramped_target_speed_rpm =
     {
@@ -130,24 +93,52 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         0.0F,
         0.0F,
     },
-    .temperature_c =
+    .diagnostics =
     {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
+        .feedback_available = false,
+        .register_status =
+        {
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+        },
+        .control_init_status =
+        {
+            CHASSIS_MOTOR_INIT_ERROR,
+            CHASSIS_MOTOR_INIT_ERROR,
+            CHASSIS_MOTOR_INIT_ERROR,
+            CHASSIS_MOTOR_INIT_ERROR,
+        },
+        .feedback_update_status =
+        {
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+        },
+        .current_set_status =
+        {
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            CAN_DEVICES_DEVICE_UNAVAILABLE,
+        },
+        .mixer_init_status = MIXER_ERROR,
+        .mixer_status = MIXER_ERROR,
+        .can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     },
 };
 
 /*
  * GM6020 Ozone 速度环在线参数初值：
- * - 速度控制默认关闭且目标转速为 0 rpm，避免上电后产生非零电流
+ * - 当前调试配置开启速度控制，目标角速度为 1.0471976 rad/s，对应 10 rpm
  * - PID 参数使用 GM6020 模块的独立保守初值，供后续上板整定
  */
 volatile MotorGM6020Tune_t g_motor_gm6020_tune =
 {
-    .speed_control_enable = false,
-    .target_speed_rpm = 0.0F,
+    .speed_control_enable = true,
+    .target_speed_rad_s = 1.0471976F,
     .pid_kp = GIMBAL_PID_KP,
     .pid_ki = GIMBAL_PID_KI,
     .pid_kd = GIMBAL_PID_KD,
@@ -160,22 +151,22 @@ volatile MotorGM6020Tune_t g_motor_gm6020_tune =
  */
 volatile MotorGM6020Monitor_t g_motor_gm6020_monitor =
 {
-    .control_init_status = GIMBAL_NOT_INITIALIZED,
     .control_status = GIMBAL_NOT_INITIALIZED,
     .control_enabled = false,
-    .requested_speed_rpm = 0.0F,
-    .limited_target_speed_rpm = 0.0F,
-    .ramped_target_speed_rpm = 0.0F,
-    .filtered_speed_rpm = 0.0F,
-    .speed_error_rpm = 0.0F,
+    .target_speed_rad_s = 0.0F,
+    .speed_error_rad_s = 0.0F,
     .current_command_a = 0.0F,
-    .register_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     .online = false,
-    .angle_rad = 0.0F,
-    .speed_rpm = 0.0F,
-    .raw_current_lsb = 0,
+    .speed_rad_s = 0.0F,
     .torque_current_a = 0.0F,
-    .temperature_c = 0.0F,
+    .diagnostics =
+    {
+        .control_init_status = GIMBAL_NOT_INITIALIZED,
+        .register_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
+        .angle_rad = 0.0F,
+        .raw_current_lsb = 0,
+        .temperature_c = 0.0F,
+    },
 };
 
 static uint32_t debug_stop_zero_tx_count;
@@ -196,10 +187,10 @@ void OzoneDebug_UpdateCANDevicesInit(const CANDevices_Snapshot_t *can_snapshot)
     // 发布 CAN 总线和设备注册状态，失败启动不得显示为可用
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        g_motor_chassis_monitor.register_status[motor_index] = can_snapshot->register_status[motor_index];
+        g_motor_chassis_monitor.diagnostics.register_status[motor_index] = can_snapshot->register_status[motor_index];
     }
-    g_motor_chassis_monitor.can_tx_status = can_snapshot->init_status;
-    g_motor_gm6020_monitor.register_status = can_snapshot->gm6020_register_status;
+    g_motor_chassis_monitor.diagnostics.can_tx_status = can_snapshot->init_status;
+    g_motor_gm6020_monitor.diagnostics.register_status = can_snapshot->gm6020_register_status;
 }
 
 /**
@@ -216,17 +207,17 @@ void OzoneDebug_UpdateChassisInit(const Chassis_Snapshot_t *chassis_snapshot)
     }
 
     // 发布运动学与四路速度控制器初始化状态并清除停机确认历史
-    g_motor_chassis_monitor.mixer_init_status = chassis_snapshot->mixer_init_status;
-    g_motor_chassis_monitor.mixer_status = chassis_snapshot->mixer_status;
+    g_motor_chassis_monitor.diagnostics.mixer_init_status = chassis_snapshot->mixer_init_status;
+    g_motor_chassis_monitor.diagnostics.mixer_status = chassis_snapshot->mixer_status;
+    g_motor_chassis_monitor.diagnostics.feedback_available = false;
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        g_motor_chassis_monitor.control_init_status[motor_index] =
+        g_motor_chassis_monitor.diagnostics.control_init_status[motor_index] =
             chassis_snapshot->motor_init_status[motor_index];
     }
     g_motor_chassis_monitor.chassis_status = chassis_snapshot->control_init_status;
     debug_stop_zero_tx_count = 0U;
     g_motor_chassis_monitor.debug_stop_ready = false;
-    g_motor_chassis_monitor.debug_stop_zero_tx_count = 0U;
 }
 
 /**
@@ -299,7 +290,7 @@ void OzoneDebug_GetMotorGimbalInput(Gimbal_Input_t *input, float control_period_
     *input = (Gimbal_Input_t)
     {
         .enabled = g_motor_gm6020_tune.speed_control_enable,
-        .target_speed_rpm = g_motor_gm6020_tune.target_speed_rpm,
+        .target_speed_rad_s = g_motor_gm6020_tune.target_speed_rad_s,
         .pid_tune =
         {
             .kp = g_motor_gm6020_tune.pid_kp,
@@ -323,35 +314,34 @@ void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot,
     if (gimbal_snapshot != NULL)
     {
         // 发布速度环状态、目标、反馈误差和最终电流指令
-        g_motor_gm6020_monitor.control_init_status = gimbal_snapshot->init_status;
+        g_motor_gm6020_monitor.diagnostics.control_init_status = gimbal_snapshot->init_status;
         g_motor_gm6020_monitor.control_status = gimbal_snapshot->control_status;
         g_motor_gm6020_monitor.control_enabled = gimbal_snapshot->enabled;
-        g_motor_gm6020_monitor.requested_speed_rpm = gimbal_snapshot->requested_speed_rpm;
-        g_motor_gm6020_monitor.limited_target_speed_rpm = gimbal_snapshot->limited_target_speed_rpm;
-        g_motor_gm6020_monitor.ramped_target_speed_rpm = gimbal_snapshot->ramped_target_speed_rpm;
-        g_motor_gm6020_monitor.filtered_speed_rpm = gimbal_snapshot->filtered_speed_rpm;
-        g_motor_gm6020_monitor.speed_error_rpm = gimbal_snapshot->speed_error_rpm;
+        g_motor_gm6020_monitor.target_speed_rad_s = gimbal_snapshot->ramped_target_speed_rad_s;
+        g_motor_gm6020_monitor.speed_error_rad_s = gimbal_snapshot->speed_error_rad_s;
         g_motor_gm6020_monitor.current_command_a = gimbal_snapshot->current_command_a;
     }
 
+    // 缺少设备快照时明确显示离线，清除物理反馈以免沿用旧读数
     if (can_snapshot == NULL)
     {
         g_motor_gm6020_monitor.online = false;
-        g_motor_gm6020_monitor.angle_rad = 0.0F;
-        g_motor_gm6020_monitor.speed_rpm = 0.0F;
-        g_motor_gm6020_monitor.raw_current_lsb = 0;
+        g_motor_gm6020_monitor.diagnostics.angle_rad = 0.0F;
+        g_motor_gm6020_monitor.speed_rad_s = 0.0F;
+        g_motor_gm6020_monitor.diagnostics.raw_current_lsb = 0;
         g_motor_gm6020_monitor.torque_current_a = 0.0F;
-        g_motor_gm6020_monitor.temperature_c = 0.0F;
+        g_motor_gm6020_monitor.diagnostics.temperature_c = 0.0F;
         return;
     }
 
-    g_motor_gm6020_monitor.register_status = can_snapshot->gm6020_register_status;
+    // 从同一份 CAN 快照发布日常反馈与详细诊断，保持数据来源一致
+    g_motor_gm6020_monitor.diagnostics.register_status = can_snapshot->gm6020_register_status;
     g_motor_gm6020_monitor.online = can_snapshot->gm6020_online;
-    g_motor_gm6020_monitor.angle_rad = can_snapshot->gm6020_angle_rad;
-    g_motor_gm6020_monitor.speed_rpm = can_snapshot->gm6020_speed_rpm;
-    g_motor_gm6020_monitor.raw_current_lsb = can_snapshot->gm6020_raw_current_lsb;
+    g_motor_gm6020_monitor.diagnostics.angle_rad = can_snapshot->gm6020_angle_rad;
+    g_motor_gm6020_monitor.speed_rad_s = can_snapshot->gm6020_speed_rad_s;
+    g_motor_gm6020_monitor.diagnostics.raw_current_lsb = can_snapshot->gm6020_raw_current_lsb;
     g_motor_gm6020_monitor.torque_current_a = can_snapshot->gm6020_torque_current_a;
-    g_motor_gm6020_monitor.temperature_c = can_snapshot->gm6020_temperature_c;
+    g_motor_gm6020_monitor.diagnostics.temperature_c = can_snapshot->gm6020_temperature_c;
 }
 
 /**
@@ -373,6 +363,9 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
     bool all_zero_current_set = can_snapshot != NULL && !input->enabled &&
                                 can_snapshot->tx_status == CAN_DEVICES_OK;
 
+    // 标记设备量的新鲜度，缺少快照时保留的旧值仅供故障追踪
+    g_motor_chassis_monitor.diagnostics.feedback_available = can_snapshot != NULL;
+
     // 汇总四路控制结果，并在取得新 CAN 快照时同步设备反馈和实际输出
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
@@ -388,18 +381,16 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
             g_motor_chassis_monitor.current_saturated[motor_index] =
                 can_snapshot->applied_current_a[motor_index] >= CHASSIS_CURRENT_LIMIT_A ||
                 can_snapshot->applied_current_a[motor_index] <= -CHASSIS_CURRENT_LIMIT_A;
-            g_motor_chassis_monitor.feedback_update_status[motor_index] =
+            g_motor_chassis_monitor.diagnostics.feedback_update_status[motor_index] =
                 can_snapshot->feedback_update_status[motor_index];
-            g_motor_chassis_monitor.current_set_status[motor_index] = can_snapshot->current_set_status[motor_index];
+            g_motor_chassis_monitor.diagnostics.current_set_status[motor_index] =
+                can_snapshot->current_set_status[motor_index];
             g_motor_chassis_monitor.current_command_a[motor_index] = can_snapshot->applied_current_a[motor_index];
-            g_motor_chassis_monitor.temperature_c[motor_index] = can_snapshot->temperature_c[motor_index];
+            g_motor_chassis_monitor.diagnostics.temperature_c[motor_index] = can_snapshot->temperature_c[motor_index];
         }
 
         g_motor_chassis_monitor.control_status[motor_index] = chassis_snapshot->control_status[motor_index];
-        g_motor_chassis_monitor.requested_speed_rpm[motor_index] =
-            chassis_snapshot->requested_speed_rpm[motor_index];
-        g_motor_chassis_monitor.limited_target_speed_rpm[motor_index] =
-            chassis_snapshot->limited_target_speed_rpm[motor_index];
+        g_motor_chassis_monitor.requested_speed_rpm[motor_index] = chassis_snapshot->requested_speed_rpm[motor_index];
         g_motor_chassis_monitor.ramped_target_speed_rpm[motor_index] =
             chassis_snapshot->ramped_target_speed_rpm[motor_index];
         g_motor_chassis_tune.actual_speed_rpm[motor_index] = chassis_snapshot->actual_speed_rpm[motor_index];
@@ -418,13 +409,11 @@ void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevice
         debug_stop_zero_tx_count = 0U;
     }
 
-    g_motor_chassis_monitor.debug_stop_ready =
-        debug_stop_zero_tx_count >= MOTOR_DEBUG_STOP_CONFIRM_CYCLES;
-    g_motor_chassis_monitor.mixer_status = chassis_snapshot->mixer_status;
+    g_motor_chassis_monitor.debug_stop_ready = debug_stop_zero_tx_count >= MOTOR_DEBUG_STOP_CONFIRM_CYCLES;
+    g_motor_chassis_monitor.diagnostics.mixer_status = chassis_snapshot->mixer_status;
     g_motor_chassis_monitor.chassis_status = chassis_snapshot->chassis_status;
     if (can_snapshot != NULL)
     {
-        g_motor_chassis_monitor.can_tx_status = can_snapshot->tx_status;
+        g_motor_chassis_monitor.diagnostics.can_tx_status = can_snapshot->tx_status;
     }
-    g_motor_chassis_monitor.debug_stop_zero_tx_count = debug_stop_zero_tx_count;
 }

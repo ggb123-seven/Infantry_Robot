@@ -10,7 +10,7 @@
  * GM6020 速度控制运行上下文：
  * - initialized、was_enabled：初始化和上一周期实际使能状态
  * - init_status：初始化结果
- * - ramped_target_speed_rpm：兼容字段，当前直接采用限幅后的目标转速，单位 rpm
+ * - ramped_target_speed_rad_s：兼容字段，当前直接采用限幅后的目标角速度，单位 rad/s
  * - pid_param、pid：GM6020 独立 PID 参数和动态状态
  * - feedback_filter、current_filter：速度反馈和电流指令滤波器状态
  */
@@ -19,7 +19,7 @@ typedef struct
     bool initialized;
     bool was_enabled;
     Gimbal_Status_t init_status;
-    float ramped_target_speed_rpm;
+    float ramped_target_speed_rad_s;
     KPID_Params_t pid_param;
     KPID_t pid;
     LowPassFilter2p_t feedback_filter;
@@ -35,7 +35,7 @@ static float Gimbal_Clamp(float value, float absolute_limit);
 static bool Gimbal_IsConfigurationValid(float sample_frequency_hz);
 static bool Gimbal_ApplyPidTune(const Gimbal_PidTune_t *pid_tune);
 static void Gimbal_ResetControl(void);
-static void Gimbal_PrimeFeedback(float actual_speed_rpm);
+static void Gimbal_PrimeFeedback(float actual_speed_rad_s);
 
 /**
  * @brief 初始化 GM6020 速度控制器
@@ -141,10 +141,10 @@ Gimbal_Status_t Gimbal_Run(const Gimbal_Input_t *input, const Gimbal_Feedback_t 
         .init_status = gimbal_control.init_status,
         .control_status = GIMBAL_NOT_INITIALIZED,
         .enabled = input->enabled && feedback->valid && feedback->online,
-        .requested_speed_rpm = input->target_speed_rpm,
-        .limited_target_speed_rpm = isfinite(input->target_speed_rpm) ?
-                                    Gimbal_Clamp(input->target_speed_rpm, GIMBAL_SPEED_LIMIT_RPM) : 0.0F,
-        .actual_speed_rpm = isfinite(feedback->actual_speed_rpm) ? feedback->actual_speed_rpm : 0.0F,
+        .requested_speed_rad_s = input->target_speed_rad_s,
+        .limited_target_speed_rad_s = isfinite(input->target_speed_rad_s) ?
+                                      Gimbal_Clamp(input->target_speed_rad_s, GIMBAL_SPEED_LIMIT_RAD_S) : 0.0F,
+        .actual_speed_rad_s = isfinite(feedback->actual_speed_rad_s) ? feedback->actual_speed_rad_s : 0.0F,
         .pid_kp = gimbal_control.pid_param.p,
         .pid_ki = gimbal_control.pid_param.i,
         .pid_kd = gimbal_control.pid_param.d,
@@ -165,8 +165,8 @@ Gimbal_Status_t Gimbal_Run(const Gimbal_Input_t *input, const Gimbal_Feedback_t 
         snapshot->control_status = GIMBAL_CONFIG_ERROR;
         Gimbal_ResetControl();
     }
-    else if (!isfinite(input->target_speed_rpm) || !isfinite(input->control_period_s) ||
-             input->control_period_s <= 0.0F || !isfinite(feedback->actual_speed_rpm))
+    else if (!isfinite(input->target_speed_rad_s) || !isfinite(input->control_period_s) ||
+             input->control_period_s <= 0.0F || !isfinite(feedback->actual_speed_rad_s))
     {
         snapshot->control_status = GIMBAL_INVALID_VALUE;
         Gimbal_ResetControl();
@@ -181,16 +181,16 @@ Gimbal_Status_t Gimbal_Run(const Gimbal_Input_t *input, const Gimbal_Feedback_t 
         // 使能恢复时预置反馈状态，避免反馈微分产生突跳
         if (!gimbal_control.was_enabled)
         {
-            Gimbal_PrimeFeedback(feedback->actual_speed_rpm);
+            Gimbal_PrimeFeedback(feedback->actual_speed_rad_s);
         }
 
         // 直接采用限幅后的目标转速，再执行反馈滤波、PID 计算和电流滤波
-        gimbal_control.ramped_target_speed_rpm = snapshot->limited_target_speed_rpm;
-        snapshot->filtered_speed_rpm =
-            LowPassFilter2p_Apply(&gimbal_control.feedback_filter, feedback->actual_speed_rpm);
+        gimbal_control.ramped_target_speed_rad_s = snapshot->limited_target_speed_rad_s;
+        snapshot->filtered_speed_rad_s =
+            LowPassFilter2p_Apply(&gimbal_control.feedback_filter, feedback->actual_speed_rad_s);
         const float pid_current_command_a =
-            PID_Calc(&gimbal_control.pid, gimbal_control.ramped_target_speed_rpm,
-                     snapshot->filtered_speed_rpm, 0.0F, input->control_period_s);
+            PID_Calc(&gimbal_control.pid, gimbal_control.ramped_target_speed_rad_s,
+                     snapshot->filtered_speed_rad_s, 0.0F, input->control_period_s);
         snapshot->current_command_a =
             LowPassFilter2p_Apply(&gimbal_control.current_filter, pid_current_command_a);
 
@@ -209,9 +209,9 @@ Gimbal_Status_t Gimbal_Run(const Gimbal_Input_t *input, const Gimbal_Feedback_t 
     }
 
     // 汇总目标与误差，异常路径始终保持零电流
-    snapshot->ramped_target_speed_rpm = gimbal_control.ramped_target_speed_rpm;
-    snapshot->speed_error_rpm = snapshot->control_status == GIMBAL_OK ?
-                                snapshot->ramped_target_speed_rpm - snapshot->filtered_speed_rpm : 0.0F;
+    snapshot->ramped_target_speed_rad_s = gimbal_control.ramped_target_speed_rad_s;
+    snapshot->speed_error_rad_s = snapshot->control_status == GIMBAL_OK ?
+                                  snapshot->ramped_target_speed_rad_s - snapshot->filtered_speed_rad_s : 0.0F;
     if (snapshot->control_status != GIMBAL_OK)
     {
         snapshot->current_command_a = 0.0F;
@@ -248,8 +248,8 @@ static float Gimbal_Clamp(float value, float absolute_limit)
  */
 static bool Gimbal_IsConfigurationValid(float sample_frequency_hz)
 {
-    return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(GIMBAL_SPEED_LIMIT_RPM) &&
-           GIMBAL_SPEED_LIMIT_RPM > 0.0F &&
+    return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(GIMBAL_SPEED_LIMIT_RAD_S) &&
+           GIMBAL_SPEED_LIMIT_RAD_S > 0.0F &&
            isfinite(GIMBAL_PID_D_CUTOFF_HZ) && GIMBAL_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
            isfinite(GIMBAL_FEEDBACK_LPF_CUTOFF_HZ) &&
            GIMBAL_FEEDBACK_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
@@ -293,7 +293,7 @@ static bool Gimbal_ApplyPidTune(const Gimbal_PidTune_t *pid_tune)
  */
 static void Gimbal_ResetControl(void)
 {
-    gimbal_control.ramped_target_speed_rpm = 0.0F;
+    gimbal_control.ramped_target_speed_rad_s = 0.0F;
     gimbal_control.was_enabled = false;
     if (gimbal_control.initialized)
     {
@@ -306,19 +306,19 @@ static void Gimbal_ResetControl(void)
 /**
  * @brief 预置 GM6020 反馈状态以平滑恢复使能
  *
- * @param[in] actual_speed_rpm 当前实际转速，单位 rpm
+ * @param[in] actual_speed_rad_s 当前实际角速度，单位 rad/s
  * @return 无返回值
  */
-static void Gimbal_PrimeFeedback(float actual_speed_rpm)
+static void Gimbal_PrimeFeedback(float actual_speed_rad_s)
 {
     // 清除旧 PID 状态并用当前实际转速预置反馈滤波器
     PID_Reset(&gimbal_control.pid);
-    const float filtered_speed_rpm =
-        LowPassFilter2p_Reset(&gimbal_control.feedback_filter, actual_speed_rpm);
+    const float filtered_speed_rad_s =
+        LowPassFilter2p_Reset(&gimbal_control.feedback_filter, actual_speed_rad_s);
     LowPassFilter2p_Reset(&gimbal_control.current_filter, 0.0F);
 
     // 同步微分滤波器和上一反馈，避免重新使能时产生电流冲击
-    const float scaled_feedback = gimbal_control.pid_param.k * filtered_speed_rpm;
+    const float scaled_feedback = gimbal_control.pid_param.k * filtered_speed_rad_s;
     LowPassFilter2p_Reset(&gimbal_control.pid.dfilter, scaled_feedback);
     gimbal_control.pid.last.k_fb = scaled_feedback;
     gimbal_control.was_enabled = true;
