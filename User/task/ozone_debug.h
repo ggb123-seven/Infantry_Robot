@@ -8,6 +8,7 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "component/user_math.h"
 #include "device/can_devices.h"
 #include "device/dr16.h"
 #include "module/fault_detect.h"
@@ -63,14 +64,27 @@ typedef struct
 /*
  * 四个 M3508 的 Ozone 在线调试参数：
  * - motor_debug_enable：可修改的四电机全局调试使能，设为 false 后所有速度环清零并持续发送零电流
- * - vx、vy、wz：可修改的归一化底盘运动分量，正方向依次为前向、左向和俯视逆时针
+ * - direction：方向测试选择，非手动模式时由单个变量生成前后左右运动向量
+ * - vx、vy、wz：手动模式下可修改的归一化底盘运动分量，正方向依次为前向、左向和俯视逆时针
  * - scale_rpm：可修改的归一化轮速尺度，单位 rpm，底盘模块内限制到 CHASSIS_SPEED_LIMIT_RPM
  * - pid_kp、pid_ki、pid_kd：可修改的速度 PID 参数
- * - actual_speed_rpm[0~3]：只读的输出轴真实转速，依次对应 C620 电调 ID 1~4，单位 rpm
  */
+/**
+ * @brief 底盘方向测试模式
+ */
+typedef enum
+{
+    MOTOR_CHASSIS_DIRECTION_MANUAL = 0,
+    MOTOR_CHASSIS_DIRECTION_FORWARD,
+    MOTOR_CHASSIS_DIRECTION_BACKWARD,
+    MOTOR_CHASSIS_DIRECTION_LEFT,
+    MOTOR_CHASSIS_DIRECTION_RIGHT,
+} MotorChassisDirection_t;
+
 typedef struct
 {
     bool motor_debug_enable;
+    MotorChassisDirection_t direction;
     float vx;
     float vy;
     float wz;
@@ -78,58 +92,32 @@ typedef struct
     float pid_kp;
     float pid_ki;
     float pid_kd;
-    float actual_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
 } MotorChassisTune_t;
 
 /*
- * 四个 M3508 的 Ozone 详细诊断，数组下标依次对应 C620 电调 ID 1~4：
- * - feedback_available：本周期取得 CAN 快照时为 true，为 false 时设备反馈与通信状态保留上次值
- * - register_status[0~3]：对应电机注册结果，0 表示成功
- * - control_init_status[0~3]：对应速度环初始化结果，0 表示成功
- * - feedback_update_status[0~3]：最近一次 CAN 快照中的电机反馈更新结果，0 表示成功
- * - current_set_status[0~3]：最近一次 CAN 快照中的电流指令写入结果，0 表示成功
- * - mixer_init_status：运动学混合器初始化结果，取值见 Mixer_Status_t
- * - mixer_status：本周期运动学解算结果，取值见 Mixer_Status_t
- * - can_tx_status：最近一次 CAN 快照中的控制帧发送结果，0 表示成功，首次快照前为总线初始化结果
- * - temperature_c[0~3]：最近一次 CAN 快照中的电机温度，单位摄氏度
+ * 底盘目标速度与反馈速度：
+ * - requested_speed_rpm[0~3]：运动学解算后的四路输出轴目标转速，单位 rpm
+ * - actual_speed_rpm[0~3]：CAN 反馈的四路输出轴实际转速，单位 rpm
  */
 typedef struct
 {
-    bool feedback_available;
-    int8_t register_status[OZONE_MOTOR_CHASSIS_COUNT];
-    int8_t control_init_status[OZONE_MOTOR_CHASSIS_COUNT];
-    int8_t feedback_update_status[OZONE_MOTOR_CHASSIS_COUNT];
-    int8_t current_set_status[OZONE_MOTOR_CHASSIS_COUNT];
-    int8_t mixer_init_status;
-    int8_t mixer_status;
-    int8_t can_tx_status;
-    float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
-} MotorChassisDiagnostics_t;
+    float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
+    float actual_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
+} MotorChassisSpeed_t;
 
 /*
  * 四个 M3508 的 Ozone 日常监视量，数组下标依次对应 C620 电调 ID 1~4：
- * - motor_online[0~3]：最近一次 CAN 快照中的电机在线标志，以 100 ms 反馈超时为判断依据
- * - current_saturated[0~3]：最近一次 CAN 快照中的电流指令达到正负限幅时为 true
- * - debug_stop_ready：关闭调试使能后连续成功提交 5 个周期的零电流帧，不表示机械上已经停稳
- * - chassis_status：本周期底盘四路组合控制结果，0 表示全部活动控制器正常
- * - control_status[0~3]：本周期速度环状态，0 表示正常，-2 表示使能关闭或反馈离线
- * - requested_speed_rpm[0~3]：运动学解算后的输出轴目标转速，单位 rpm
- * - ramped_target_speed_rpm[0~3]：速度环实际采用的缓启动目标转速，单位 rpm
- * - current_command_a[0~3]：最近一次 CAN 快照中的转子侧电流指令，单位 A
- * - diagnostics：初始化、通信和温度等详细诊断，设备量是否为本周期数据由 feedback_available 标记
- * 调试使能和真实转速继续集中在 g_motor_chassis_tune，便于修改参数时直接观察反馈
+ * - motor_online[0~3]：最近一次 CAN 快照中的电机在线标志
+ * - temperature_c[0~3]：最近一次 CAN 快照中的电机温度，单位摄氏度
+ * - speed_loop_ok[0~3]：本周期对应电机速度环计算正常时为 true
+ * - speed：四个电机的目标转速和反馈转速，单位 rpm
  */
 typedef struct
 {
     bool motor_online[OZONE_MOTOR_CHASSIS_COUNT];
-    bool current_saturated[OZONE_MOTOR_CHASSIS_COUNT];
-    bool debug_stop_ready;
-    int8_t chassis_status;
-    int8_t control_status[OZONE_MOTOR_CHASSIS_COUNT];
-    float requested_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
-    float ramped_target_speed_rpm[OZONE_MOTOR_CHASSIS_COUNT];
-    float current_command_a[OZONE_MOTOR_CHASSIS_COUNT];
-    MotorChassisDiagnostics_t diagnostics;
+    float temperature_c[OZONE_MOTOR_CHASSIS_COUNT];
+    bool speed_loop_ok[OZONE_MOTOR_CHASSIS_COUNT];
+    MotorChassisSpeed_t speed;
 } MotorChassisMonitor_t;
 
 /*
@@ -230,6 +218,15 @@ void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot);
  * @return 无返回值
  */
 void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
+
+/**
+ * @brief 将底盘方向测试模式转换为归一化运动向量
+ *
+ * @param[in] direction 方向测试模式
+ * @param[out] move_vector 归一化底盘运动向量
+ * @return 转换成功返回 true，手动模式或非法参数返回 false
+ */
+bool OzoneDebug_GetChassisDirectionVector(MotorChassisDirection_t direction, MoveVector_t *move_vector);
 
 /**
  * @brief 从 Ozone 在线参数生成本周期 GM6020 速度控制输入

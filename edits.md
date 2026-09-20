@@ -151,3 +151,13 @@
 - 范围：GM6020 角速度单位与参数调整、Ozone 展示精简、`agent.md` 底盘进度和本日志，共 7 个已跟踪文件
 - 验证依据：本轮核对差异，`git diff --check` 通过；沿用上一轮同版源码的 Debug 构建和 ARCH/HW/SPEC 通过结果
 - 提交方式：逐个指定文件暂存，仅创建本地提交；未跟踪的 `.obsidian/` 不纳入，不推送远端
+
+## chassis-direction-ozone-001
+
+- 目标：增加 Ozone 单变量底盘方向测试，并将底盘常规监视数据收敛为在线状态、温度、速度环状态和目标/反馈转速
+- 源码改动：`User/task/ozone_debug.h` 增加 `MotorChassisDirection_t`、`MotorChassisSpeed_t` 和方向转换接口；`User/task/ozone_debug.c` 实现前进、后退、左移、右移方向向量生成并接入底盘输入，同时移除底盘详细诊断字段和停机确认监视字段
+- 数据路径：`direction=MANUAL` 时保留 `vx/vy/wz`，其他方向由单变量覆盖运动向量；目标转速和反馈转速统一发布到 `g_motor_chassis_monitor.speed`
+- 边界：未修改 `User/module`、`User/device`、CAN 协议、速度 PID 或底盘逆运动学；详细故障信息继续由独立故障检测模块和 CAN 快照提供
+- 验证：全仓旧字段引用检查通过；`git diff --check` 通过；`cmake --build --preset Debug` 成功，RAM 41592 B / 128 KB，FLASH 86828 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：方向变量、轮位符号和电机安装方向尚未上板实测，Ozone 需重新载入新 ELF 并更新监视表达式
+- 状态：软件实现和构建验证完成，待用户确认创建本地 Git 快照

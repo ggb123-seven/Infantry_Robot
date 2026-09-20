@@ -5,12 +5,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/*
- * Ozone 底盘停机确认参数：
- * - MOTOR_DEBUG_STOP_CONFIRM_CYCLES：关闭调试使能后，连续成功提交四电机零电流帧的控制周期数。
- */
-#define MOTOR_DEBUG_STOP_CONFIRM_CYCLES (5U)
-
 _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == CHASSIS_MOTOR_COUNT,
                "Ozone 底盘调试电机数量必须与底盘控制链一致");
 _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == FAULT_DETECT_MOTOR_COUNT,
@@ -32,6 +26,7 @@ volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 volatile MotorChassisTune_t g_motor_chassis_tune =
 {
     .motor_debug_enable = false,
+    .direction = MOTOR_CHASSIS_DIRECTION_MANUAL,
     .vx = 0.0F,
     .vy = 0.0F,
     .wz = 0.0F,
@@ -39,20 +34,13 @@ volatile MotorChassisTune_t g_motor_chassis_tune =
     .pid_kp = CHASSIS_PID_KP,
     .pid_ki = CHASSIS_PID_KI,
     .pid_kd = CHASSIS_PID_KD,
-    .actual_speed_rpm =
-    {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
-    },
 };
 
 /*
  * 四个 M3508 的 Ozone 运行监视数据初值：
  * - 任务启动前所有设备和控制器均标记为不可用
  * - 数值反馈保持为零，避免尚未运行的状态被误认为有效数据
- * - 初始化和通信状态集中在 diagnostics，未显式指定的字段由静态初始化清零
+ * - 目标速度、反馈速度和速度环状态集中发布，避免调参结构体混入运行反馈
  */
 volatile MotorChassisMonitor_t g_motor_chassis_monitor =
 {
@@ -63,70 +51,36 @@ volatile MotorChassisMonitor_t g_motor_chassis_monitor =
         false,
         false,
     },
-    .current_saturated =
-    {
-        false,
-        false,
-        false,
-        false,
-    },
-    .debug_stop_ready = false,
-    .chassis_status = CHASSIS_NOT_INITIALIZED,
-    .control_status =
-    {
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-        CHASSIS_MOTOR_INIT_ERROR,
-    },
-    .ramped_target_speed_rpm =
+    .temperature_c =
     {
         0.0F,
         0.0F,
         0.0F,
         0.0F,
     },
-    .current_command_a =
+    .speed_loop_ok =
     {
-        0.0F,
-        0.0F,
-        0.0F,
-        0.0F,
+        false,
+        false,
+        false,
+        false,
     },
-    .diagnostics =
+    .speed =
     {
-        .feedback_available = false,
-        .register_status =
+        .requested_speed_rpm =
         {
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
         },
-        .control_init_status =
+        .actual_speed_rpm =
         {
-            CHASSIS_MOTOR_INIT_ERROR,
-            CHASSIS_MOTOR_INIT_ERROR,
-            CHASSIS_MOTOR_INIT_ERROR,
-            CHASSIS_MOTOR_INIT_ERROR,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
         },
-        .feedback_update_status =
-        {
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-        },
-        .current_set_status =
-        {
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-            CAN_DEVICES_DEVICE_UNAVAILABLE,
-        },
-        .mixer_init_status = MIXER_ERROR,
-        .mixer_status = MIXER_ERROR,
-        .can_tx_status = CAN_DEVICES_DEVICE_UNAVAILABLE,
     },
 };
 
@@ -169,8 +123,6 @@ volatile MotorGM6020Monitor_t g_motor_gm6020_monitor =
     },
 };
 
-static uint32_t debug_stop_zero_tx_count;
-
 /**
  * @brief 将 CAN 设备集合初始化结果发布到 Ozone 监控区
  *
@@ -184,12 +136,6 @@ void OzoneDebug_UpdateCANDevicesInit(const CANDevices_Snapshot_t *can_snapshot)
         return;
     }
 
-    // 发布 CAN 总线和设备注册状态，失败启动不得显示为可用
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        g_motor_chassis_monitor.diagnostics.register_status[motor_index] = can_snapshot->register_status[motor_index];
-    }
-    g_motor_chassis_monitor.diagnostics.can_tx_status = can_snapshot->init_status;
     g_motor_gm6020_monitor.diagnostics.register_status = can_snapshot->gm6020_register_status;
 }
 
@@ -206,18 +152,16 @@ void OzoneDebug_UpdateChassisInit(const Chassis_Snapshot_t *chassis_snapshot)
         return;
     }
 
-    // 发布运动学与四路速度控制器初始化状态并清除停机确认历史
-    g_motor_chassis_monitor.diagnostics.mixer_init_status = chassis_snapshot->mixer_init_status;
-    g_motor_chassis_monitor.diagnostics.mixer_status = chassis_snapshot->mixer_status;
-    g_motor_chassis_monitor.diagnostics.feedback_available = false;
+    // 清除底盘常规监视数据，避免初始化阶段沿用上一次运行结果
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        g_motor_chassis_monitor.diagnostics.control_init_status[motor_index] =
-            chassis_snapshot->motor_init_status[motor_index];
+        g_motor_chassis_monitor.motor_online[motor_index] = false;
+        g_motor_chassis_monitor.temperature_c[motor_index] = 0.0F;
+        g_motor_chassis_monitor.speed_loop_ok[motor_index] = false;
+        g_motor_chassis_monitor.speed.requested_speed_rpm[motor_index] = 0.0F;
+        g_motor_chassis_monitor.speed.actual_speed_rpm[motor_index] = 0.0F;
     }
-    g_motor_chassis_monitor.chassis_status = chassis_snapshot->control_init_status;
-    debug_stop_zero_tx_count = 0U;
-    g_motor_chassis_monitor.debug_stop_ready = false;
+    (void)chassis_snapshot;
 }
 
 /**
@@ -270,6 +214,63 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
         },
         .control_period_s = control_period_s,
     };
+
+    // 方向测试模式覆盖手动运动分量，便于只修改一个 Ozone 变量完成前后左右验证
+    MoveVector_t direction_vector;
+    if (g_motor_chassis_tune.direction != MOTOR_CHASSIS_DIRECTION_MANUAL &&
+        OzoneDebug_GetChassisDirectionVector(g_motor_chassis_tune.direction, &direction_vector))
+    {
+        input->move_vector = direction_vector;
+    }
+    else if (g_motor_chassis_tune.direction != MOTOR_CHASSIS_DIRECTION_MANUAL)
+    {
+        input->move_vector = (MoveVector_t)
+        {
+            0,
+        };
+    }
+}
+
+/**
+ * @brief 将底盘方向测试模式转换为归一化运动向量
+ *
+ * @param[in] direction 方向测试模式
+ * @param[out] move_vector 归一化底盘运动向量
+ * @return 转换成功返回 true，手动模式或非法参数返回 false
+ */
+bool OzoneDebug_GetChassisDirectionVector(MotorChassisDirection_t direction, MoveVector_t *move_vector)
+{
+    if (move_vector == NULL)
+    {
+        return false;
+    }
+
+    *move_vector = (MoveVector_t)
+    {
+        0,
+    };
+    switch (direction)
+    {
+        case MOTOR_CHASSIS_DIRECTION_FORWARD:
+            move_vector->vx = 1.0F;
+            return true;
+
+        case MOTOR_CHASSIS_DIRECTION_BACKWARD:
+            move_vector->vx = -1.0F;
+            return true;
+
+        case MOTOR_CHASSIS_DIRECTION_LEFT:
+            move_vector->vy = 1.0F;
+            return true;
+
+        case MOTOR_CHASSIS_DIRECTION_RIGHT:
+            move_vector->vy = -1.0F;
+            return true;
+
+        case MOTOR_CHASSIS_DIRECTION_MANUAL:
+        default:
+            return false;
+    }
 }
 
 /**
@@ -355,65 +356,31 @@ void OzoneDebug_UpdateMotorGimbal(const CANDevices_Snapshot_t *can_snapshot,
 void OzoneDebug_UpdateMotorChassis(const Chassis_Input_t *input, const CANDevices_Snapshot_t *can_snapshot,
                                    const Chassis_Snapshot_t *chassis_snapshot)
 {
-    if (input == NULL || chassis_snapshot == NULL)
+    if (chassis_snapshot == NULL)
     {
         return;
     }
 
-    bool all_zero_current_set = can_snapshot != NULL && !input->enabled &&
-                                can_snapshot->tx_status == CAN_DEVICES_OK;
+    (void)input;
 
-    // 标记设备量的新鲜度，缺少快照时保留的旧值仅供故障追踪
-    g_motor_chassis_monitor.diagnostics.feedback_available = can_snapshot != NULL;
-
-    // 汇总四路控制结果，并在取得新 CAN 快照时同步设备反馈和实际输出
+    // 汇总四路速度环状态和运动学目标，保持目标与反馈在同一组监视数据中
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
         if (can_snapshot != NULL)
         {
-            if (can_snapshot->applied_current_a[motor_index] != 0.0F ||
-                can_snapshot->current_set_status[motor_index] != CAN_DEVICES_OK)
-            {
-                all_zero_current_set = false;
-            }
-
             g_motor_chassis_monitor.motor_online[motor_index] = can_snapshot->motor_online[motor_index];
-            g_motor_chassis_monitor.current_saturated[motor_index] =
-                can_snapshot->applied_current_a[motor_index] >= CHASSIS_CURRENT_LIMIT_A ||
-                can_snapshot->applied_current_a[motor_index] <= -CHASSIS_CURRENT_LIMIT_A;
-            g_motor_chassis_monitor.diagnostics.feedback_update_status[motor_index] =
-                can_snapshot->feedback_update_status[motor_index];
-            g_motor_chassis_monitor.diagnostics.current_set_status[motor_index] =
-                can_snapshot->current_set_status[motor_index];
-            g_motor_chassis_monitor.current_command_a[motor_index] = can_snapshot->applied_current_a[motor_index];
-            g_motor_chassis_monitor.diagnostics.temperature_c[motor_index] = can_snapshot->temperature_c[motor_index];
+            g_motor_chassis_monitor.temperature_c[motor_index] = can_snapshot->temperature_c[motor_index];
         }
-
-        g_motor_chassis_monitor.control_status[motor_index] = chassis_snapshot->control_status[motor_index];
-        g_motor_chassis_monitor.requested_speed_rpm[motor_index] = chassis_snapshot->requested_speed_rpm[motor_index];
-        g_motor_chassis_monitor.ramped_target_speed_rpm[motor_index] =
-            chassis_snapshot->ramped_target_speed_rpm[motor_index];
-        g_motor_chassis_tune.actual_speed_rpm[motor_index] = chassis_snapshot->actual_speed_rpm[motor_index];
-    }
-
-    // 连续确认零电流帧发送成功，供调试器判断关闭使能后的安全停机状态
-    if (all_zero_current_set)
-    {
-        if (debug_stop_zero_tx_count < MOTOR_DEBUG_STOP_CONFIRM_CYCLES)
+        else
         {
-            debug_stop_zero_tx_count++;
+            g_motor_chassis_monitor.motor_online[motor_index] = false;
+            g_motor_chassis_monitor.temperature_c[motor_index] = 0.0F;
         }
-    }
-    else
-    {
-        debug_stop_zero_tx_count = 0U;
-    }
 
-    g_motor_chassis_monitor.debug_stop_ready = debug_stop_zero_tx_count >= MOTOR_DEBUG_STOP_CONFIRM_CYCLES;
-    g_motor_chassis_monitor.diagnostics.mixer_status = chassis_snapshot->mixer_status;
-    g_motor_chassis_monitor.chassis_status = chassis_snapshot->chassis_status;
-    if (can_snapshot != NULL)
-    {
-        g_motor_chassis_monitor.diagnostics.can_tx_status = can_snapshot->tx_status;
+        g_motor_chassis_monitor.speed_loop_ok[motor_index] =
+            chassis_snapshot->control_status[motor_index] == CHASSIS_MOTOR_OK;
+        g_motor_chassis_monitor.speed.requested_speed_rpm[motor_index] =
+            chassis_snapshot->requested_speed_rpm[motor_index];
+        g_motor_chassis_monitor.speed.actual_speed_rpm[motor_index] = chassis_snapshot->actual_speed_rpm[motor_index];
     }
 }
