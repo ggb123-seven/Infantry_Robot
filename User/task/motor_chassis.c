@@ -154,9 +154,13 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
 
         case DR16_SWITCH_DOWN:
             input->enabled = true;
-            input->move_vector.vx = forward_channel;
             input->move_vector.vy = 0.0F;
             input->move_vector.wz = lateral_channel;
+            // 下位模式横纵摇杆同时有效时丢弃前后平动，只保留自旋
+            if (forward_channel == 0.0F || lateral_channel == 0.0F)
+            {
+                input->move_vector.vx = forward_channel;
+            }
             break;
 
         case DR16_SWITCH_MIDDLE:
