@@ -85,7 +85,8 @@ static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot);
 static int8_t Chassis_InitControllers(float sample_frequency_hz);
 static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback,
                                 Chassis_Output_t *output, Chassis_Snapshot_t *snapshot);
-static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz);
+static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz,
+                                                uint32_t motor_index);
 static Chassis_MotorStatus_t Chassis_MotorUpdateFeedback(Chassis_MotorControl_t *control, float actual_speed_rpm);
 static Chassis_MotorStatus_t Chassis_MotorControl(Chassis_MotorControl_t *control, float requested_speed_rpm,
                                                   const Chassis_PidTune_t *pid_tune, bool enabled,
@@ -261,7 +262,7 @@ static int8_t Chassis_InitControllers(float sample_frequency_hz)
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
         chassis_state.motor_init_status[motor_index] =
-            Chassis_MotorInit(&chassis_state.motor_control[motor_index], sample_frequency_hz);
+            Chassis_MotorInit(&chassis_state.motor_control[motor_index], sample_frequency_hz, motor_index);
         if (chassis_state.motor_init_status[motor_index] != CHASSIS_MOTOR_OK)
         {
             all_initialized = false;
@@ -309,13 +310,14 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         const Chassis_MotorStatus_t feedback_status = Chassis_MotorUpdateFeedback(motor_control, actual_speed_rpm);
         const bool motor_enabled =
             input->enabled && mixer_valid && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
-        const Chassis_PidTune_t *pid_tune = &input->pid_tune;
-        if (input->pid_tune_override_enable[motor_index])
+        const Chassis_PidTune_t motor_pid_tune =
         {
-            pid_tune = &input->pid_tune_override[motor_index];
-        }
+            .kp = motor_index == 3U ? CHASSIS_MOTOR4_PID_KP : input->pid_tune.kp,
+            .ki = motor_index == 3U ? CHASSIS_MOTOR4_PID_KI : input->pid_tune.ki,
+            .kd = motor_index == 3U ? CHASSIS_MOTOR4_PID_KD : input->pid_tune.kd,
+        };
         const Chassis_MotorStatus_t control_status =
-            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], pid_tune, motor_enabled,
+            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], &motor_pid_tune, motor_enabled,
                                  input->control_period_s);
         float current_command_a = 0.0F;
         const Chassis_MotorStatus_t output_status = Chassis_MotorDumpOutput(motor_control, &current_command_a);
@@ -363,9 +365,11 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
  *
  * @param[in,out] control 单路电机速度控制上下文
  * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
+ * @param[in] motor_index 底盘电机数组下标，ID4 对应 3
  * @return 成功返回 CHASSIS_MOTOR_OK，失败返回对应状态码
  */
-static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz)
+static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz,
+                                                uint32_t motor_index)
 {
     if (control == NULL)
     {
@@ -377,18 +381,19 @@ static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, 
     {
         0,
     };
+    const bool is_motor4 = motor_index == 3U;
     const Chassis_PidTune_t default_pid_tune =
     {
-        .kp = CHASSIS_PID_KP,
-        .ki = CHASSIS_PID_KI,
-        .kd = CHASSIS_PID_KD,
+        .kp = is_motor4 ? CHASSIS_MOTOR4_PID_KP : CHASSIS_PID_KP,
+        .ki = is_motor4 ? CHASSIS_MOTOR4_PID_KI : CHASSIS_PID_KI,
+        .kd = is_motor4 ? CHASSIS_MOTOR4_PID_KD : CHASSIS_PID_KD,
     };
     control->pid_param = (KPID_Params_t)
     {
         .k = 1.0F,
-        .p = CHASSIS_PID_KP,
-        .i = CHASSIS_PID_KI,
-        .d = CHASSIS_PID_KD,
+        .p = default_pid_tune.kp,
+        .i = default_pid_tune.ki,
+        .d = default_pid_tune.kd,
         .i_limit = CHASSIS_PID_INTEGRAL_LIMIT,
         .out_limit = CHASSIS_CURRENT_LIMIT_A,
         .d_cutoff_freq = CHASSIS_PID_D_CUTOFF_HZ,

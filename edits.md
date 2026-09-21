@@ -171,3 +171,12 @@
 - 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41608 B / 128 KB，FLASH 87140 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；ID4 映射为内部数组下标 3 的源码检查通过
 - 上板边界：需重新加载新 ELF，并在低速、小幅目标下观察 ID4 的目标转速、实际转速和电流指令后再固化参数
 - 状态：软件实现和验证完成，待创建本地 Git 快照
+
+## CHASSIS-SINGLE-MOTOR-PID-FINAL-002
+
+- 目标：固化底盘电机 ID4 的速度环参数，并删除调试完成后的独立 PID 临时接口
+- 源码改动：`User/module/chassis.h/.c` 固化 ID4 `Kp=0.20`、`Ki=0.10`、`Kd=0`，每个控制周期按电机下标选择参数；`User/task/ozone_debug.h/.c` 删除 `MotorChassisPidOverride_t`、PID 在线调参字段和逐路覆盖映射，保留底盘使能、方向/运动量和轮速尺度接口
+- 参数边界：ID1~3 继续使用公共 `Kp=0.23`、`Ki=0.14`、`Kd=0`；ID4 对应内部数组下标 3，始终使用固化参数
+- 验证：`pid_override`、`pid_tune_override` 和底盘 Ozone 在线 PID 字段无残留引用；`cmake --build --preset Debug --parallel 4` 成功，RAM 41576 B / 128 KB，FLASH 86984 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过
+- 上板边界：需重新加载新 ELF，并在低速、小幅目标下确认 ID4 的速度响应和电流指令
+- 状态：软件实现和验证完成，待创建本地 Git 快照

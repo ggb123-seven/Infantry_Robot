@@ -17,6 +17,7 @@ extern "C"
  * - CHASSIS_SPEED_LIMIT_RPM：输出轴目标转速的正负对称限幅，单位 rpm。
  * - CHASSIS_RAMP_RATE_RPM_S：目标转速最大变化斜率，单位 rpm/s。
  * - CHASSIS_PID_KP、CHASSIS_PID_KI、CHASSIS_PID_KD：速度 PID 默认参数。
+ * - CHASSIS_MOTOR4_PID_KP、CHASSIS_MOTOR4_PID_KI、CHASSIS_MOTOR4_PID_KD：ID4 电机固化速度 PID 参数。
  * - CHASSIS_PID_D_CUTOFF_HZ：反馈微分低通截止频率，单位 Hz；小于等于 0 时直通。
  * - CHASSIS_FEEDBACK_LPF_CUTOFF_HZ：速度反馈二阶低通截止频率，单位 Hz；小于等于 0 时直通。
  * - CHASSIS_CURRENT_LPF_CUTOFF_HZ：电流指令二阶低通截止频率，单位 Hz；小于等于 0 时直通。
@@ -43,6 +44,18 @@ extern "C"
 
 #ifndef CHASSIS_PID_KD
 #define CHASSIS_PID_KD (0.0F)
+#endif
+
+#ifndef CHASSIS_MOTOR4_PID_KP
+#define CHASSIS_MOTOR4_PID_KP (0.20F)
+#endif
+
+#ifndef CHASSIS_MOTOR4_PID_KI
+#define CHASSIS_MOTOR4_PID_KI (0.10F)
+#endif
+
+#ifndef CHASSIS_MOTOR4_PID_KD
+#define CHASSIS_MOTOR4_PID_KD (0.0F)
 #endif
 
 #ifndef CHASSIS_PID_D_CUTOFF_HZ
@@ -111,8 +124,6 @@ typedef struct
  * - move_vector：归一化底盘运动向量，前向、左向和俯视逆时针分别为正
  * - scale_rpm：归一化轮速对应的输出轴转速尺度，单位 rpm，模块内限制到 CHASSIS_SPEED_LIMIT_RPM
  * - pid_tune：本周期四路共用的速度 PID 参数快照。
- * - pid_tune_override_enable[0~3]：对应电机启用独立 PID 覆盖时为 true
- * - pid_tune_override[0~3]：对应电机独立 PID 参数，覆盖关闭时忽略
  * - control_period_s：本周期控制间隔，单位 s，必须大于 0。
  */
 typedef struct Chassis_Input
@@ -121,8 +132,6 @@ typedef struct Chassis_Input
     MoveVector_t move_vector;
     float scale_rpm;
     Chassis_PidTune_t pid_tune;
-    bool pid_tune_override_enable[CHASSIS_MOTOR_COUNT];
-    Chassis_PidTune_t pid_tune_override[CHASSIS_MOTOR_COUNT];
     float control_period_s;
 } Chassis_Input_t;
 
