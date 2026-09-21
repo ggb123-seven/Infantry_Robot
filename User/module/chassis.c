@@ -309,8 +309,13 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         const Chassis_MotorStatus_t feedback_status = Chassis_MotorUpdateFeedback(motor_control, actual_speed_rpm);
         const bool motor_enabled =
             input->enabled && mixer_valid && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
+        const Chassis_PidTune_t *pid_tune = &input->pid_tune;
+        if (input->pid_tune_override_enable[motor_index])
+        {
+            pid_tune = &input->pid_tune_override[motor_index];
+        }
         const Chassis_MotorStatus_t control_status =
-            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], &input->pid_tune, motor_enabled,
+            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], pid_tune, motor_enabled,
                                  input->control_period_s);
         float current_command_a = 0.0F;
         const Chassis_MotorStatus_t output_status = Chassis_MotorDumpOutput(motor_control, &current_command_a);

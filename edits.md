@@ -161,3 +161,13 @@
 - 验证：全仓旧字段引用检查通过；`git diff --check` 通过；`cmake --build --preset Debug` 成功，RAM 41592 B / 128 KB，FLASH 86828 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
 - 上板边界：方向变量、轮位符号和电机安装方向尚未上板实测，Ozone 需重新载入新 ELF 并更新监视表达式
 - 状态：软件实现和构建验证完成，待用户确认创建本地 Git 快照
+
+## CHASSIS-SINGLE-MOTOR-PID-001
+
+- 目标：为底盘电机 ID4 单独保留速度环 PID 调试接口，调试完成后可持续使用独立参数
+- 源码改动：`User/task/ozone_debug.h` 增加 `MotorChassisPidOverride_t` 结构体，集中保存 `pid_override_enable`、`pid_override_motor_index`、`pid_override_kp`、`pid_override_ki`、`pid_override_kd`；`User/task/ozone_debug.c` 默认选择 ID4 并将合法覆盖参数映射到对应输入路；`User/module/chassis.h/.c` 增加逐路 PID 覆盖快照和选择逻辑
+- 使用方式：在 Ozone 中修改 `g_motor_chassis_tune.pid_override`，保持 `pid_override_motor_index=4`，调试时将 `pid_override_enable=true`；调好后保持该使能和参数即可继续使用
+- 安全边界：覆盖默认关闭；电机 ID 仅接受 1~4，非法编号继续使用公共 PID；未覆盖的三路始终使用公共 PID
+- 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41608 B / 128 KB，FLASH 87140 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；ID4 映射为内部数组下标 3 的源码检查通过
+- 上板边界：需重新加载新 ELF，并在低速、小幅目标下观察 ID4 的目标转速、实际转速和电流指令后再固化参数
+- 状态：软件实现和验证完成，待创建本地 Git 快照

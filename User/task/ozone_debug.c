@@ -22,6 +22,7 @@ volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
  * 四个 M3508 的 Ozone 在线调试参数初值：
  * - 上电默认关闭调试使能并清零运动分量，避免调试器连接前产生非零电流
  * - 轮速尺度初值为 100 rpm，PID 初值使用速度控制模块的当前默认参数
+ * - 独立 PID 覆盖默认关闭，电机选择为 ID4，覆盖参数从公共 PID 默认值开始
  */
 volatile MotorChassisTune_t g_motor_chassis_tune =
 {
@@ -34,6 +35,14 @@ volatile MotorChassisTune_t g_motor_chassis_tune =
     .pid_kp = CHASSIS_PID_KP,
     .pid_ki = CHASSIS_PID_KI,
     .pid_kd = CHASSIS_PID_KD,
+    .pid_override =
+    {
+        .pid_override_enable = false,
+        .pid_override_motor_index = 4U,
+        .pid_override_kp = CHASSIS_PID_KP,
+        .pid_override_ki = CHASSIS_PID_KI,
+        .pid_override_kd = CHASSIS_PID_KD,
+    },
 };
 
 /*
@@ -212,8 +221,53 @@ void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_perio
             .ki = g_motor_chassis_tune.pid_ki,
             .kd = g_motor_chassis_tune.pid_kd,
         },
+        .pid_tune_override_enable =
+        {
+            false,
+            false,
+            false,
+            false,
+        },
+        .pid_tune_override =
+        {
+            {
+                0.0F,
+                0.0F,
+                0.0F,
+            },
+            {
+                0.0F,
+                0.0F,
+                0.0F,
+            },
+            {
+                0.0F,
+                0.0F,
+                0.0F,
+            },
+            {
+                0.0F,
+                0.0F,
+                0.0F,
+            },
+        },
         .control_period_s = control_period_s,
     };
+
+    // 仅将合法的独立参数映射到指定电机，非法编号时继续使用公共 PID
+    if (g_motor_chassis_tune.pid_override.pid_override_enable &&
+        g_motor_chassis_tune.pid_override.pid_override_motor_index >= 1U &&
+        g_motor_chassis_tune.pid_override.pid_override_motor_index <= CHASSIS_MOTOR_COUNT)
+    {
+        const uint32_t motor_index = g_motor_chassis_tune.pid_override.pid_override_motor_index - 1U;
+        input->pid_tune_override_enable[motor_index] = true;
+        input->pid_tune_override[motor_index] = (Chassis_PidTune_t)
+        {
+            .kp = g_motor_chassis_tune.pid_override.pid_override_kp,
+            .ki = g_motor_chassis_tune.pid_override.pid_override_ki,
+            .kd = g_motor_chassis_tune.pid_override.pid_override_kd,
+        };
+    }
 
     // 方向测试模式覆盖手动运动分量，便于只修改一个 Ozone 变量完成前后左右验证
     MoveVector_t direction_vector;

@@ -68,6 +68,7 @@ typedef struct
  * - vx、vy、wz：手动模式下可修改的归一化底盘运动分量，正方向依次为前向、左向和俯视逆时针
  * - scale_rpm：可修改的归一化轮速尺度，单位 rpm，底盘模块内限制到 CHASSIS_SPEED_LIMIT_RPM
  * - pid_kp、pid_ki、pid_kd：可修改的速度 PID 参数
+ * - pid_override：单个电机的独立 PID 覆盖参数，电机 ID 按 1~4 填写，当前默认选择 ID4
  */
 /**
  * @brief 底盘方向测试模式
@@ -81,6 +82,21 @@ typedef enum
     MOTOR_CHASSIS_DIRECTION_RIGHT,
 } MotorChassisDirection_t;
 
+/*
+ * 单个底盘电机的速度 PID 覆盖参数：
+ * - pid_override_enable：为 true 时仅对指定电机启用独立参数
+ * - pid_override_motor_index：底盘电机 ID，取值 1~4，ID4 对应数组下标 3
+ * - pid_override_kp、pid_override_ki、pid_override_kd：指定电机的速度 PID 参数
+ */
+typedef struct
+{
+    bool pid_override_enable;
+    uint32_t pid_override_motor_index;
+    float pid_override_kp;
+    float pid_override_ki;
+    float pid_override_kd;
+} MotorChassisPidOverride_t;
+
 typedef struct
 {
     bool motor_debug_enable;
@@ -92,6 +108,7 @@ typedef struct
     float pid_kp;
     float pid_ki;
     float pid_kd;
+    MotorChassisPidOverride_t pid_override;
 } MotorChassisTune_t;
 
 /*
