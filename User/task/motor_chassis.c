@@ -1,12 +1,17 @@
 #include "task/motor_chassis.h"
 
+#include "bsp/time.h"
 #include "device/can_devices.h"
+#include "device/dr16.h"
 #include "module/chassis.h"
 #include "module/fault_detect.h"
 #include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
+
+#define MOTOR_CHASSIS_DR16_CHANNEL_LIMIT (660.0F)
+#define MOTOR_CHASSIS_DR16_DEADZONE (0.05F)
 
 _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘控制与 CAN 设备数量必须一致");
 
@@ -16,21 +21,29 @@ _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘�
  * - chassis_feedback：保存从 CAN 设备快照映射出的本周期底盘控制反馈。
  * - chassis_output：保存底盘模块本周期计算得到的四路电流命令。
  * - chassis_snapshot：保存底盘运动学与速度控制器的初始化和本周期控制结果
- * - fault_detect_snapshot：保存本周期独立故障检测结果。
+ * - fault_detect_snapshot：保存本周期独立故障检测结果
+ * - dr16_state_cache：保存底盘任务最近一次从 DR16 邮箱取得的完整状态快照
+ * - dr16_state_cache_valid：表示底盘任务是否至少取得过一帧 DR16 状态
  */
 static CANDevices_Snapshot_t can_devices_snapshot;
 static Chassis_Feedback_t chassis_feedback;
 static Chassis_Output_t chassis_output;
 static Chassis_Snapshot_t chassis_snapshot;
 static FaultDetect_Snapshot_t fault_detect_snapshot;
+static DR16_State_t dr16_state_cache;
+static bool dr16_state_cache_valid;
 
 static bool MotorChassis_ReadLatestFeedback(void);
+static bool MotorChassis_ReadLatestDR16(void);
+static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us);
+static float MotorChassis_NormalizeDR16Channel(int16_t channel);
+static float MotorChassis_ApplyDeadzone(float value);
 static bool MotorChassis_PublishCommand(void);
 
 /**
  * @brief 初始化并周期运行 X 型全向轮底盘控制链
  *
- * 调试使能关闭、设备离线或任一控制步骤失败时，对应电机电流指令保持为零。
+ * DR16 未使能、设备离线或任一控制步骤失败时，对应电机电流指令保持为零
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -49,12 +62,19 @@ void Task_motor_chassis(void *argument)
     while (1)
     {
         Chassis_Input_t chassis_input;
+        const uint64_t now_us = BSP_TIME_Get();
 
         // 消费并映射最新 CAN 反馈，邮箱没有新快照时四路反馈保持无效
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
 
-        // 取得一致运动指令并完成运动学和速度控制，再发布最新电流命令
+        // 消费最新 DR16 状态并保留本地缓存，邮箱没有新状态时继续使用最近快照
+        MotorChassis_ReadLatestDR16();
+
+        // 先建立底盘控制输入，再由 DR16 三态拨杆覆盖运动使能和运动向量
         OzoneDebug_GetMotorChassisInput(&chassis_input, 1.0F / (float)MOTOR_CHASSIS_FREQ);
+        MotorChassis_ApplyDR16Input(&chassis_input, now_us);
+
+        // 完成运动学和速度控制，再发布最新电流命令
         Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
         MotorChassis_PublishCommand();
 
@@ -71,6 +91,119 @@ void Task_motor_chassis(void *argument)
         // 等待至下一个绝对任务周期，保持稳定控制频率
         osDelayUntil(tick);
     }
+}
+
+/**
+ * @brief 从 DR16 最新状态邮箱取得一帧并更新底盘本地缓存
+ *
+ * @return 取得新状态时返回 true，否则返回 false
+ */
+static bool MotorChassis_ReadLatestDR16(void)
+{
+    if (task_runtime.msgq.dr16_state == NULL)
+    {
+        return false;
+    }
+
+    DR16_State_t received_state;
+    if (osMessageQueueGet(task_runtime.msgq.dr16_state, &received_state, NULL, 0U) != osOK)
+    {
+        return false;
+    }
+
+    dr16_state_cache = received_state;
+    dr16_state_cache_valid = true;
+    return true;
+}
+
+/**
+ * @brief 将 DR16 状态转换为当前底盘控制模式和运动向量
+ *
+ * @param[in,out] input 待覆盖的底盘控制输入
+ * @param[in] now_us 当前时间，单位微秒
+ * @return 无返回值
+ */
+static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
+{
+    if (input == NULL)
+    {
+        return;
+    }
+
+    input->enabled = false;
+    input->move_vector = (MoveVector_t)
+    {
+        0,
+    };
+    if (!dr16_state_cache_valid || !dr16_state_cache.header.online ||
+        now_us < dr16_state_cache.header.last_online_time ||
+        now_us - dr16_state_cache.header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
+    {
+        return;
+    }
+
+    const float lateral_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_x);
+    const float forward_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_y);
+    switch (dr16_state_cache.data.sw_l)
+    {
+        case DR16_SWITCH_UP:
+            input->enabled = true;
+            input->move_vector.vx = forward_channel;
+            input->move_vector.vy = lateral_channel;
+            break;
+
+        case DR16_SWITCH_DOWN:
+            input->enabled = true;
+            input->move_vector.vx = forward_channel;
+            input->move_vector.vy = 0.0F;
+            input->move_vector.wz = lateral_channel;
+            break;
+
+        case DR16_SWITCH_MIDDLE:
+        case DR16_SWITCH_ERROR:
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief 将 DR16 通道原始值归一化并执行中心死区处理
+ *
+ * @param[in] channel DR16 已减去中心值的通道原始值，典型范围 -660~660
+ * @return 归一化后的通道值，范围 [-1, 1]
+ */
+static float MotorChassis_NormalizeDR16Channel(int16_t channel)
+{
+    float normalized = (float)channel / MOTOR_CHASSIS_DR16_CHANNEL_LIMIT;
+    if (normalized > 1.0F)
+    {
+        normalized = 1.0F;
+    }
+    else if (normalized < -1.0F)
+    {
+        normalized = -1.0F;
+    }
+    return MotorChassis_ApplyDeadzone(normalized);
+}
+
+/**
+ * @brief 对归一化摇杆值执行中心死区处理
+ *
+ * @param[in] value 归一化摇杆值
+ * @return 处理后的归一化摇杆值
+ */
+static float MotorChassis_ApplyDeadzone(float value)
+{
+    if (value > -MOTOR_CHASSIS_DR16_DEADZONE && value < MOTOR_CHASSIS_DR16_DEADZONE)
+    {
+        return 0.0F;
+    }
+
+    if (value > 0.0F)
+    {
+        return (value - MOTOR_CHASSIS_DR16_DEADZONE) / (1.0F - MOTOR_CHASSIS_DR16_DEADZONE);
+    }
+    return (value + MOTOR_CHASSIS_DR16_DEADZONE) / (1.0F - MOTOR_CHASSIS_DR16_DEADZONE);
 }
 
 /**

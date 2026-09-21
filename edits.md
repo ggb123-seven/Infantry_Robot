@@ -180,3 +180,13 @@
 - 验证：`pid_override`、`pid_tune_override` 和底盘 Ozone 在线 PID 字段无残留引用；`cmake --build --preset Debug --parallel 4` 成功，RAM 41576 B / 128 KB，FLASH 86984 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过
 - 上板边界：需重新加载新 ELF，并在低速、小幅目标下确认 ID4 的速度响应和电流指令
 - 状态：软件实现和验证完成，待创建本地 Git 快照
+
+## CHASSIS-DR16-LINK-003
+
+- 目标：将 DT7/DR16 遥控状态接入底盘控制任务，按左拨杆三态选择底盘运动模式
+- 源码改动：`User/task/motor_chassis.c` 增加 DR16 最新状态邮箱消费和本地快照缓存；邮箱读到新状态时更新缓存，未读到新状态时继续使用最近快照；按 `last_online_time` 和 `100 ms` 超时保护生成安全使能
+- 控制映射：左拨杆中位输出 `vx=0、vy=0、wz=0`；上位由左摇杆 `ch_l_y -> vx`、`ch_l_x -> vy`；下位由左摇杆 `ch_l_y -> vx`、`ch_l_x -> wz` 且显式强制 `vy=0`，因此斜向摇杆输入也不会产生 `vx+vy` 平动组合，只会产生 `vx+wz` 的旋转平动；右摇杆和右拨杆暂不参与控制并保留原始接口
+- 输入处理：DR16 通道按已减中心值除以 660 归一化，执行 5% 中心死区和限幅；非法拨杆、未收到合法帧、状态离线或状态超时均保持底盘禁用和零运动量
+- 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87572 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；源码行宽和 Allman 花括号检查通过
+- 上板边界：需确认 DT7 左摇杆前后和左右的实际正方向，若方向相反只调整任务层通道符号；需低速验证拨杆中位停机、上位平动、下位旋转平动和失联停机
+- 状态：软件实现和验证完成，待创建本地 Git 快照
