@@ -147,13 +147,11 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
     switch (dr16_state_cache.data.sw_l)
     {
         case DR16_SWITCH_UP:
-            input->enabled = true;
             input->move_vector.vx = forward_channel;
             input->move_vector.vy = lateral_channel;
             break;
 
         case DR16_SWITCH_DOWN:
-            input->enabled = true;
             input->move_vector.vy = 0.0F;
             input->move_vector.wz = lateral_channel;
             // 下位模式横纵摇杆同时有效时丢弃前后平动，只保留自旋
@@ -168,6 +166,10 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
         default:
             break;
     }
+
+    // 摇杆回中时关闭速度环，触发底盘模块清除动态控制状态
+    input->enabled = input->move_vector.vx != 0.0F || input->move_vector.vy != 0.0F ||
+                     input->move_vector.wz != 0.0F;
 }
 
 /**

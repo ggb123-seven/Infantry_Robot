@@ -190,3 +190,12 @@
 - 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87612 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；源码行宽和 Allman 花括号检查通过
 - 上板边界：需确认 DT7 左摇杆前后和左右的实际正方向，若方向相反只调整任务层通道符号；需低速验证拨杆中位停机、上位平动、下位旋转平动和失联停机
 - 状态：软件实现和验证完成，待创建本地 Git 快照
+
+## CHASSIS-DR16-RETURN-CENTER-005
+
+- 目标：左摇杆回中后关闭底盘速度环，避免零速目标下部分电机持续抖动
+- 源码改动：`User/task/motor_chassis.c` 在 DR16 模式映射完成后，根据经过死区处理的 `vx、vy、wz` 是否全为零决定 `input->enabled`；回中时进入底盘已有禁用路径，清除目标斜坡、PID、反馈滤波和电流输出
+- 行为边界：左拨杆上位或下位仍只负责选择运动模式；有任一有效运动分量时速度环使能；摇杆回中或拨杆中位时速度环关闭
+- 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87664 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 和源码行宽检查通过
+- 上板边界：需观察摇杆回中后的电流指令是否立即归零，以及重新推动摇杆时速度环是否平滑恢复
+- 状态：软件实现和验证完成，待创建本地 Git 快照
