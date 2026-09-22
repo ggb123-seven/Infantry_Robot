@@ -209,3 +209,16 @@
 - 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87636 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；源码行宽和 Allman 花括号检查通过
 - 上板边界：需低速确认固定自旋方向与速度是否符合机械预期，再根据实际方向调整 `MOTOR_CHASSIS_DR16_SPIN_WZ` 的正负号或幅值
 - 状态：软件实现和构建验证完成，待创建本地 Git 快照
+
+## CHASSIS-DR16-ENABLE-ONLY-007
+
+- 日期：2026-09-22
+- 目标：删除底盘旧 Ozone 运动使能链路，保留遥控器作为唯一运动使能及运动向量来源
+- 源码：仅修改 `User/task/motor_chassis.c`、`ozone_debug.c` 和 `ozone_debug.h`；删除 `motor_debug_enable`、方向枚举、方向转换函数、手动运动量和旧输入生成函数；沿用现有调参结构体，仅保留 `scale_rpm`
+- 链路：任务初始化默认禁用的控制输入、固定 PID 参数及周期，再由 DR16 映射唯一生成使能和运动向量；Ozone 仅提供轮速尺度并接收监视数据
+- 行为：保留中位停机、上位回中停机、下位回中持续自旋，以及未收到状态、离线、超时和非法拨杆禁用；GM6020 独立调试控制保持原样
+- 验证：旧入口源码引用扫描无残留；新增代码人工检查与行宽、花括号、行尾空白检查通过；构建技能脚本使用 Debug 预设成功配置和构建；ARCH/HW/SPEC 全部通过；`git diff --check` 通过
+- 构建产物：`F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf`，构建目录 `build/Debug`，生成器 Ninja
+- 文档：同步 `agent.md` 的当前数据流、已实现能力、未完成项与后续验证顺序，保留原有协作规则修改
+- 边界：未烧录或上板测试；Ozone 需重新加载 ELF，移除旧底盘使能和运动量监视表达式；未创建临时测试程序
+- 状态：软件实现和验证完成，按本地提交约定保存快照

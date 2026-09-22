@@ -19,17 +19,12 @@ volatile DR16_Monitor_t g_dr16_monitor;
 volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 
 /*
- * 四个 M3508 的 Ozone 在线调试参数初值：
- * - 上电默认关闭调试使能并清零运动分量，避免调试器连接前产生非零电流
+ * 四个 M3508 的 Ozone 轮速调节参数初值：
+ * - Ozone 仅调节轮速尺度，底盘运动使能和运动向量由 DR16 遥控输入生成
  * - 轮速尺度初值为 100 rpm，底盘速度 PID 参数已固化在底盘模块
  */
 volatile MotorChassisTune_t g_motor_chassis_tune =
 {
-    .motor_debug_enable = false,
-    .direction = MOTOR_CHASSIS_DIRECTION_MANUAL,
-    .vx = 0.0F,
-    .vy = 0.0F,
-    .wz = 0.0F,
     .scale_rpm = 100.0F,
 };
 
@@ -176,98 +171,6 @@ void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot)
 
     // 以完整快照发布诊断结果，避免调试器读取到跨周期混合字段
     g_fault_detect_monitor = *fault_snapshot;
-}
-
-/**
- * @brief 从 Ozone 在线参数生成本周期底盘控制输入快照
- *
- * @param[out] input 待写入的底盘控制输入快照
- * @param[in] control_period_s 控制周期，单位 s，必须大于 0
- * @return 无返回值
- */
-void OzoneDebug_GetMotorChassisInput(Chassis_Input_t *input, float control_period_s)
-{
-    if (input == NULL)
-    {
-        return;
-    }
-
-    // 先建立全零快照，再集中读取本周期允许由 Ozone 修改的控制参数
-    *input = (Chassis_Input_t)
-    {
-        .enabled = g_motor_chassis_tune.motor_debug_enable,
-        .move_vector =
-        {
-            .vx = g_motor_chassis_tune.vx,
-            .vy = g_motor_chassis_tune.vy,
-            .wz = g_motor_chassis_tune.wz,
-        },
-        .scale_rpm = g_motor_chassis_tune.scale_rpm,
-        .pid_tune =
-        {
-            .kp = CHASSIS_PID_KP,
-            .ki = CHASSIS_PID_KI,
-            .kd = CHASSIS_PID_KD,
-        },
-        .control_period_s = control_period_s,
-    };
-
-    // 方向测试模式覆盖手动运动分量，便于只修改一个 Ozone 变量完成前后左右验证
-    MoveVector_t direction_vector;
-    if (g_motor_chassis_tune.direction != MOTOR_CHASSIS_DIRECTION_MANUAL &&
-        OzoneDebug_GetChassisDirectionVector(g_motor_chassis_tune.direction, &direction_vector))
-    {
-        input->move_vector = direction_vector;
-    }
-    else if (g_motor_chassis_tune.direction != MOTOR_CHASSIS_DIRECTION_MANUAL)
-    {
-        input->move_vector = (MoveVector_t)
-        {
-            0,
-        };
-    }
-}
-
-/**
- * @brief 将底盘方向测试模式转换为归一化运动向量
- *
- * @param[in] direction 方向测试模式
- * @param[out] move_vector 归一化底盘运动向量
- * @return 转换成功返回 true，手动模式或非法参数返回 false
- */
-bool OzoneDebug_GetChassisDirectionVector(MotorChassisDirection_t direction, MoveVector_t *move_vector)
-{
-    if (move_vector == NULL)
-    {
-        return false;
-    }
-
-    *move_vector = (MoveVector_t)
-    {
-        0,
-    };
-    switch (direction)
-    {
-        case MOTOR_CHASSIS_DIRECTION_FORWARD:
-            move_vector->vx = 1.0F;
-            return true;
-
-        case MOTOR_CHASSIS_DIRECTION_BACKWARD:
-            move_vector->vx = -1.0F;
-            return true;
-
-        case MOTOR_CHASSIS_DIRECTION_LEFT:
-            move_vector->vy = 1.0F;
-            return true;
-
-        case MOTOR_CHASSIS_DIRECTION_RIGHT:
-            move_vector->vy = -1.0F;
-            return true;
-
-        case MOTOR_CHASSIS_DIRECTION_MANUAL:
-        default:
-            return false;
-    }
 }
 
 /**

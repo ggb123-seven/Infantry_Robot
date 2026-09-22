@@ -62,31 +62,11 @@ typedef struct
 } DR16_Monitor_t;
 
 /*
- * 四个 M3508 的 Ozone 在线调试参数：
- * - motor_debug_enable：可修改的四电机全局调试使能，设为 false 后所有速度环清零并持续发送零电流
- * - direction：方向测试选择，非手动模式时由单个变量生成前后左右运动向量
- * - vx、vy、wz：手动模式下可修改的归一化底盘运动分量，正方向依次为前向、左向和俯视逆时针
+ * 四个 M3508 的 Ozone 轮速调节参数，使能和运动向量统一由 DR16 遥控输入生成：
  * - scale_rpm：可修改的归一化轮速尺度，单位 rpm，底盘模块内限制到 CHASSIS_SPEED_LIMIT_RPM
  */
-/**
- * @brief 底盘方向测试模式
- */
-typedef enum
-{
-    MOTOR_CHASSIS_DIRECTION_MANUAL = 0,
-    MOTOR_CHASSIS_DIRECTION_FORWARD,
-    MOTOR_CHASSIS_DIRECTION_BACKWARD,
-    MOTOR_CHASSIS_DIRECTION_LEFT,
-    MOTOR_CHASSIS_DIRECTION_RIGHT,
-} MotorChassisDirection_t;
-
 typedef struct
 {
-    bool motor_debug_enable;
-    MotorChassisDirection_t direction;
-    float vx;
-    float vy;
-    float wz;
     float scale_rpm;
 } MotorChassisTune_t;
 
@@ -205,24 +185,6 @@ void OzoneDebug_UpdateChassisInit(const struct Chassis_Snapshot *chassis_snapsho
  * @return 无返回值
  */
 void OzoneDebug_UpdateFaultDetect(const FaultDetect_Snapshot_t *fault_snapshot);
-
-/**
- * @brief 从 Ozone 在线参数生成本周期底盘控制输入快照
- *
- * @param[out] input 待写入的底盘控制输入快照
- * @param[in] control_period_s 控制周期，单位 s，必须大于 0
- * @return 无返回值
- */
-void OzoneDebug_GetMotorChassisInput(struct Chassis_Input *input, float control_period_s);
-
-/**
- * @brief 将底盘方向测试模式转换为归一化运动向量
- *
- * @param[in] direction 方向测试模式
- * @param[out] move_vector 归一化底盘运动向量
- * @return 转换成功返回 true，手动模式或非法参数返回 false
- */
-bool OzoneDebug_GetChassisDirectionVector(MotorChassisDirection_t direction, MoveVector_t *move_vector);
 
 /**
  * @brief 从 Ozone 在线参数生成本周期 GM6020 速度控制输入

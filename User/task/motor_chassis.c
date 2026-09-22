@@ -68,7 +68,21 @@ void Task_motor_chassis(void *argument)
     uint32_t tick = osKernelGetTickCount();
     while (1)
     {
-        Chassis_Input_t chassis_input;
+        // 建立默认禁用的控制输入，仅从 Ozone 读取轮速尺度
+        Chassis_Input_t chassis_input =
+        {
+            .enabled = false,
+            .scale_rpm = g_motor_chassis_tune.scale_rpm,
+            .pid_tune =
+            {
+                .kp = CHASSIS_PID_KP,
+                .ki = CHASSIS_PID_KI,
+                .kd = CHASSIS_PID_KD,
+            },
+            .control_period_s = 1.0F / (float)MOTOR_CHASSIS_FREQ,
+        };
+
+        // 取得时间基准，用于拒绝过期遥控状态
         const uint64_t now_us = BSP_TIME_Get();
 
         // 消费并映射最新 CAN 反馈，邮箱没有新快照时四路反馈保持无效
@@ -77,8 +91,7 @@ void Task_motor_chassis(void *argument)
         // 消费最新 DR16 状态并保留本地缓存，邮箱没有新状态时继续使用最近快照
         MotorChassis_ReadLatestDR16();
 
-        // 先建立底盘控制输入，再由 DR16 三态拨杆覆盖运动使能和运动向量
-        OzoneDebug_GetMotorChassisInput(&chassis_input, 1.0F / (float)MOTOR_CHASSIS_FREQ);
+        // 由 DR16 唯一生成运动使能和运动向量，失联时保持禁用
         MotorChassis_ApplyDR16Input(&chassis_input, now_us);
 
         // 完成运动学和速度控制，再发布最新电流命令
@@ -137,6 +150,7 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
         return;
     }
 
+    // 先复位运动请求，确保遥控无效或超时不会沿用上一周期输出
     input->enabled = false;
     input->move_vector = (MoveVector_t)
     {
@@ -149,6 +163,7 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
         return;
     }
 
+    // 对遥控通道限幅和去死区，再按拨杆枚举集中选择运动模式
     const float lateral_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_x);
     const float forward_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_y);
     switch (dr16_state_cache.data.sw_l)
@@ -170,7 +185,7 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
             break;
     }
 
-    // 摇杆回中时关闭速度环，触发底盘模块清除动态控制状态
+    // 无运动请求时关闭速度环，下位固定自旋使摇杆回中后仍保持使能
     input->enabled = input->move_vector.vx != 0.0F || input->move_vector.vy != 0.0F ||
                      input->move_vector.wz != 0.0F;
 }
