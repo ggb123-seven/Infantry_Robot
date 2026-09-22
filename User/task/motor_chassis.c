@@ -10,8 +10,15 @@
 
 #include <stddef.h>
 
+/*
+ * DR16 底盘输入参数：
+ * - MOTOR_CHASSIS_DR16_CHANNEL_LIMIT：摇杆去中心后的有效计数上限
+ * - MOTOR_CHASSIS_DR16_DEADZONE：摇杆中心死区比例
+ * - MOTOR_CHASSIS_DR16_SPIN_WZ：左拨杆下位时的固定自旋角速度归一化值，正值为俯视逆时针
+ */
 #define MOTOR_CHASSIS_DR16_CHANNEL_LIMIT (660.0F)
 #define MOTOR_CHASSIS_DR16_DEADZONE (0.05F)
+#define MOTOR_CHASSIS_DR16_SPIN_WZ (0.30F)
 
 _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘控制与 CAN 设备数量必须一致");
 
@@ -152,13 +159,9 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
             break;
 
         case DR16_SWITCH_DOWN:
-            input->move_vector.vy = 0.0F;
-            input->move_vector.wz = lateral_channel;
-            // 下位模式横纵摇杆同时有效时丢弃前后平动，只保留自旋
-            if (forward_channel == 0.0F || lateral_channel == 0.0F)
-            {
-                input->move_vector.vx = forward_channel;
-            }
+            input->move_vector.vx = forward_channel;
+            input->move_vector.vy = lateral_channel;
+            input->move_vector.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
             break;
 
         case DR16_SWITCH_MIDDLE:

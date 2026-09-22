@@ -199,3 +199,13 @@
 - 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87664 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 和源码行宽检查通过
 - 上板边界：需观察摇杆回中后的电流指令是否立即归零，以及重新推动摇杆时速度环是否平滑恢复
 - 状态：软件实现和验证完成，待创建本地 Git 快照
+
+## CHASSIS-DR16-SPIN-TRANSLATE-006
+
+- 日期：2026-09-22
+- 目标：左拨杆下位时立即开始固定自旋，并允许底盘同时执行前后与左右平动
+- 源码改动：`User/task/motor_chassis.c` 增加固定自旋参数 `MOTOR_CHASSIS_DR16_SPIN_WZ=+0.30F`；下位映射恢复 `ch_l_y -> vx`、`ch_l_x -> vy`，并固定输出 `wz`；删除斜向输入时丢弃平动的限制
+- 行为边界：下位且摇杆回中时仍因固定 `wz` 使能速度环；拨杆中位、DR16 未初始化、离线或超时继续输出零运动量并关闭速度环；自旋正方向为俯视逆时针
+- 验证：`cmake --build --preset Debug --parallel 4` 成功，RAM 41632 B / 128 KB，FLASH 87636 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过；源码行宽和 Allman 花括号检查通过
+- 上板边界：需低速确认固定自旋方向与速度是否符合机械预期，再根据实际方向调整 `MOTOR_CHASSIS_DR16_SPIN_WZ` 的正负号或幅值
+- 状态：软件实现和构建验证完成，待创建本地 Git 快照
