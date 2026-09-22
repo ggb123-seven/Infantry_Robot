@@ -10,8 +10,6 @@ _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == CHASSIS_MOTOR_COUNT,
 _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == FAULT_DETECT_MOTOR_COUNT,
                "Ozone 底盘调试电机数量必须与故障检测链一致");
 
-volatile DR16_Monitor_t g_dr16_monitor;
-
 /*
  * 独立故障检测 Ozone 监视数据初值：
  * - 任务首次发布前 evaluated 为 false，避免调试器把尚未诊断的零值误读为无故障。

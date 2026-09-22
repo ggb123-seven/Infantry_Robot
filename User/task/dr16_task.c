@@ -3,12 +3,10 @@
 #include "bsp/time.h"
 #include "bsp/uart.h"
 #include "module/fault_detect.h"
-#include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 #include <limits.h>
 #include <stddef.h>
-#include <string.h>
 
 /*
  * DR16 任务运行参数：
@@ -30,7 +28,7 @@ static bool DR16_TaskInitialize(void);
 static bool DR16_TaskPublishState(void);
 static bool DR16_TaskRecoverStream(void);
 static void DR16_TaskHandleFlags(uint32_t flags, uint64_t now_us);
-static void DR16_TaskUpdateMonitor(uint64_t now_us);
+static void DR16_TaskUpdateFault(void);
 static uint32_t DR16_TaskGetWaitTicks(void);
 static void DR16_TaskNotify(uint32_t flag);
 
@@ -44,7 +42,7 @@ void Task_dr16(void *argument)
 {
     (void)argument;
 
-    // 初始化设备接收器、任务诊断、UART 回调和循环 DMA 接收
+    // 初始化设备接收器、UART 回调和循环 DMA 接收
     DR16_TaskInitialize();
     const uint32_t wait_ticks = DR16_TaskGetWaitTicks();
 
@@ -59,18 +57,11 @@ void Task_dr16(void *argument)
             {
                 flags = wait_result;
             }
-            else if (wait_result != osFlagsErrorTimeout)
-            {
-                g_dr16_monitor.thread_wait_error_count++;
-            }
         }
         else
         {
             // 接收链路未运行时限制重试频率，避免持续占用处理器
-            if (osDelay(wait_ticks) != osOK)
-            {
-                g_dr16_monitor.thread_wait_error_count++;
-            }
+            osDelay(wait_ticks);
         }
 
         // 获取统一时间并优先恢复停机链路，再处理本轮字节和离线状态
@@ -86,7 +77,7 @@ void Task_dr16(void *argument)
 /**
  * @brief 将 UART BSP 交付的新字节转交给 DR16 接收器
  *
- * 本函数在 UART 中断回调上下文执行，只复制字节、更新诊断并设置线程标志
+ * 本函数在 UART 中断回调上下文执行，只复制字节并设置线程标志
  *
  * @param[in] data 本次新增字节段首地址
  * @param[in] length 本次新增字节数
@@ -98,9 +89,6 @@ static void DR16_TaskRxDataCallback(const uint8_t *data, uint16_t length)
     {
         return;
     }
-
-    g_dr16_monitor.received_byte_count += length;
-    g_dr16_monitor.uart_event_count++;
 
     // 接收器拒绝本次字节时通知任务停止 UART 并清理全部未验证数据
     if (DR16_ReceiverFeed(data, length) != DR16_RECEIVER_OK)
@@ -122,8 +110,7 @@ static void DR16_TaskRxDataCallback(const uint8_t *data, uint16_t length)
  */
 static void DR16_TaskUartErrorCallback(uint32_t error_code)
 {
-    g_dr16_monitor.uart_error_count++;
-    g_dr16_monitor.last_uart_error = error_code;
+    (void)error_code;
     DR16_TaskNotify(DR16_TASK_FLAG_UART_ERROR);
 }
 
@@ -134,7 +121,6 @@ static void DR16_TaskUartErrorCallback(uint32_t error_code)
  */
 static bool DR16_TaskInitialize(void)
 {
-    memset((void *)&g_dr16_monitor, 0, sizeof(g_dr16_monitor));
     DR16_ResetState(&dr16_state);
     dr16_fault_snapshot = (FaultDetect_DR16Snapshot_t)
     {
@@ -149,8 +135,7 @@ static bool DR16_TaskInitialize(void)
     DR16_TaskPublishState();
     if (!dr16_receiver_ready)
     {
-        g_dr16_monitor.stream_restart_error_count++;
-        DR16_TaskUpdateMonitor(0U);
+        DR16_TaskUpdateFault();
         return false;
     }
 
@@ -160,18 +145,13 @@ static bool DR16_TaskInitialize(void)
     dr16_callbacks_registered = register_status == BSP_OK;
     if (!dr16_callbacks_registered)
     {
-        g_dr16_monitor.last_uart_error = BSP_UART_StreamGetError(BSP_UART_DR16);
-        DR16_TaskUpdateMonitor(0U);
+        DR16_TaskUpdateFault();
         return false;
     }
 
     // 回调和缓冲区就绪后才开放循环 DMA 字节流交付
     dr16_stream_running = BSP_UART_StreamStart(BSP_UART_DR16) == BSP_OK;
-    if (!dr16_stream_running)
-    {
-        g_dr16_monitor.last_uart_error = BSP_UART_StreamGetError(BSP_UART_DR16);
-    }
-    DR16_TaskUpdateMonitor(0U);
+    DR16_TaskUpdateFault();
     return dr16_stream_running;
 }
 
@@ -189,7 +169,6 @@ static bool DR16_TaskPublishState(void)
     }
     if (task_runtime.msgq.dr16_state == NULL)
     {
-        g_dr16_monitor.mailbox_error_count++;
         return false;
     }
 
@@ -197,7 +176,6 @@ static bool DR16_TaskPublishState(void)
     if (osMessageQueueReset(task_runtime.msgq.dr16_state) != osOK ||
         osMessageQueuePut(task_runtime.msgq.dr16_state, &dr16_state, 0U, 0U) != osOK)
     {
-        g_dr16_monitor.mailbox_error_count++;
         return false;
     }
     return true;
@@ -217,7 +195,6 @@ static bool DR16_TaskRecoverStream(void)
         dr16_receiver_ready = DR16_ReceiverInit() == DR16_RECEIVER_OK;
         if (!dr16_receiver_ready)
         {
-            g_dr16_monitor.stream_restart_error_count++;
             return false;
         }
     }
@@ -230,7 +207,6 @@ static bool DR16_TaskRecoverStream(void)
         dr16_callbacks_registered = register_status == BSP_OK;
         if (!dr16_callbacks_registered)
         {
-            g_dr16_monitor.stream_restart_error_count++;
             return false;
         }
     }
@@ -238,23 +214,15 @@ static bool DR16_TaskRecoverStream(void)
     // 只有确认 UART 不再向回调交付字节后，才复位设备层生产者与消费者共享的协议字节流
     if (BSP_UART_StreamStop(BSP_UART_DR16) != BSP_OK)
     {
-        g_dr16_monitor.last_uart_error = BSP_UART_StreamGetError(BSP_UART_DR16);
-        g_dr16_monitor.stream_restart_error_count++;
         return false;
     }
     if (DR16_ReceiverResetStream() != DR16_RECEIVER_OK)
     {
-        g_dr16_monitor.stream_restart_error_count++;
         return false;
     }
 
     // 清空旧数据后重新开放接收，恢复后仍需新的完整合法帧才能上线
     dr16_stream_running = BSP_UART_StreamStart(BSP_UART_DR16) == BSP_OK;
-    if (!dr16_stream_running)
-    {
-        g_dr16_monitor.last_uart_error = BSP_UART_StreamGetError(BSP_UART_DR16);
-        g_dr16_monitor.stream_restart_error_count++;
-    }
     return dr16_stream_running;
 }
 
@@ -274,7 +242,7 @@ static void DR16_TaskHandleFlags(uint32_t flags, uint64_t now_us)
         DR16_ReceiverSetOffline();
         DR16_TaskPublishState();
         DR16_TaskRecoverStream();
-        DR16_TaskUpdateMonitor(now_us);
+        DR16_TaskUpdateFault();
         return;
     }
 
@@ -284,17 +252,16 @@ static void DR16_TaskHandleFlags(uint32_t flags, uint64_t now_us)
         DR16_TaskPublishState();
     }
 
-    // 汇总接收器、UART 和故障检测状态供 Ozone 观察
-    DR16_TaskUpdateMonitor(now_us);
+    // 汇总接收器故障状态，供安全诊断链路使用
+    DR16_TaskUpdateFault();
 }
 
 /**
- * @brief 刷新不参与控制的 Ozone 诊断状态
+ * @brief 刷新 DR16 故障检测状态
  *
- * @param[in] now_us 当前时间，单位微秒
  * @return 无返回值
  */
-static void DR16_TaskUpdateMonitor(uint64_t now_us)
+static void DR16_TaskUpdateFault(void)
 {
     DR16_ReceiverDiagnostics_t diagnostics;
     if (DR16_ReceiverGetState(&dr16_state) != DR16_RECEIVER_OK)
@@ -312,28 +279,6 @@ static void DR16_TaskUpdateMonitor(uint64_t now_us)
     // 接收器未初始化时显式报告状态缺失，避免把清零快照误认为有效设备状态
     const DR16_State_t *fault_state = diagnostics.initialized ? &dr16_state : NULL;
     FaultDetect_UpdateDR16(fault_state, dr16_stream_running, &dr16_fault_snapshot);
-
-    // 计算最后合法帧年龄并在超出 Ozone 32 位显示范围时饱和
-    uint64_t frame_age_us = 0U;
-    if (dr16_state.header.last_online_time != 0U && now_us >= dr16_state.header.last_online_time)
-    {
-        frame_age_us = now_us - dr16_state.header.last_online_time;
-    }
-    if (frame_age_us > UINT32_MAX)
-    {
-        frame_age_us = UINT32_MAX;
-    }
-
-    g_dr16_monitor.valid_frame_count = diagnostics.valid_frame_count;
-    g_dr16_monitor.invalid_frame_count = diagnostics.invalid_frame_count;
-    g_dr16_monitor.resync_discarded_byte_count = diagnostics.resync_discarded_byte_count;
-    g_dr16_monitor.ring_buffer_overflow_count = diagnostics.ring_buffer_overflow_count;
-    g_dr16_monitor.current_frame_age_us = (uint32_t)frame_age_us;
-    g_dr16_monitor.receiver_initialized = diagnostics.initialized;
-    g_dr16_monitor.online = dr16_state.header.online;
-    g_dr16_monitor.fault_detected = dr16_fault_snapshot.has_fault;
-    g_dr16_monitor.fault_flags = dr16_fault_snapshot.fault_flags;
-    g_dr16_monitor.latest_data = dr16_state.data;
 }
 
 /**
@@ -362,11 +307,7 @@ static uint32_t DR16_TaskGetWaitTicks(void)
  */
 static void DR16_TaskNotify(uint32_t flag)
 {
-    const uint32_t notify_result = osThreadFlagsSet(task_runtime.thread.dr16, flag);
-    if ((notify_result & osFlagsError) != 0U)
-    {
-        g_dr16_monitor.thread_notify_error_count++;
-    }
+    osThreadFlagsSet(task_runtime.thread.dr16, flag);
 }
 
 #if defined(DR16_TASK_TEST)

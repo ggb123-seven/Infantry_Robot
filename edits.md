@@ -222,3 +222,13 @@
 - 文档：同步 `agent.md` 的当前数据流、已实现能力、未完成项与后续验证顺序，保留原有协作规则修改
 - 边界：未烧录或上板测试；Ozone 需重新加载 ELF，移除旧底盘使能和运动量监视表达式；未创建临时测试程序
 - 状态：软件实现和验证完成，按本地提交约定保存快照
+
+## CHASSIS-DR16-MONITOR-008
+
+- 日期：2026-09-22
+- 目标：删除已不再需要的 `DR16_Monitor_t` 接收诊断监视结构及其 Ozone 全局变量
+- 源码改动：`User/task/ozone_debug.h/.c` 删除 DR16 诊断结构、全局监视变量和对应头文件依赖；`User/task/dr16_task.c` 删除接收统计、UART 错误、线程等待、邮箱和重启计数的维护逻辑，并保留 DR16 状态邮箱发布
+- 安全边界：`DR16_State_t` 接收状态、100 ms 离线判断和底层 `FaultDetect_UpdateDR16` 故障快照继续保留，避免影响底盘失联停机链路；GM6020 和底盘监视数据不变
+- 验证：全仓 `DR16_Monitor_t`、`g_dr16_monitor` 和旧监视更新函数引用无残留；Debug 构建成功生成 `build/Debug/Infantry_Robot.elf`；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过
+- 边界：未烧录和上板；Ozone 重新加载 ELF 后不再使用旧 DR16 诊断监视字段；未创建临时测试程序
+- 状态：软件实现和验证完成，待创建本地 Git 快照

@@ -10,7 +10,6 @@ extern "C"
 
 #include "component/user_math.h"
 #include "device/can_devices.h"
-#include "device/dr16.h"
 #include "module/fault_detect.h"
 #include "module/gimbal.h"
 
@@ -22,44 +21,6 @@ extern "C"
 
 struct Chassis_Input;
 struct Chassis_Snapshot;
-
-/*
- * DR16 Ozone 诊断数据：
- * - received_byte_count：UART BSP 交付的累计字节数。
- * - uart_event_count：UART BSP 交付的累计字节段数量。
- * - valid_frame_count、invalid_frame_count：合法帧数量和重同步期间尝试失败的候选帧数量。
- * - resync_discarded_byte_count：逐字节重同步累计丢弃的字节数。
- * - ring_buffer_overflow_count、uart_error_count：RingBuffer 溢出和 UART 错误次数。
- * - thread_notify_error_count、thread_wait_error_count：线程标志设置和等待异常次数。
- * - mailbox_error_count、stream_restart_error_count：状态邮箱发布和 UART 重启失败次数。
- * - last_uart_error：最近一次 UART HAL 错误位或 BSP 内部错误码。
- * - current_frame_age_us：当前时刻距离最后合法帧的时间，单位微秒，超过 32 位时饱和。
- * - receiver_initialized：DR16 协议字节流接收器初始化成功时为 true
- * - online：最近一帧业务状态的在线标志。
- * - fault_detected、fault_flags：DR16 当前故障汇总状态和故障位
- * - latest_data：最近一帧完整合法的解码值，仅供调试观察，不作为控制输入。
- */
-typedef struct
-{
-    uint32_t received_byte_count;
-    uint32_t uart_event_count;
-    uint32_t valid_frame_count;
-    uint32_t invalid_frame_count;
-    uint32_t resync_discarded_byte_count;
-    uint32_t ring_buffer_overflow_count;
-    uint32_t uart_error_count;
-    uint32_t thread_notify_error_count;
-    uint32_t thread_wait_error_count;
-    uint32_t mailbox_error_count;
-    uint32_t stream_restart_error_count;
-    uint32_t last_uart_error;
-    uint32_t current_frame_age_us;
-    bool receiver_initialized;
-    bool online;
-    bool fault_detected;
-    uint32_t fault_flags;
-    DR16_Data_t latest_data;
-} DR16_Monitor_t;
 
 /*
  * 四个 M3508 的 Ozone 轮速调节参数，使能和运动向量统一由 DR16 遥控输入生成：
@@ -155,7 +116,6 @@ typedef struct
     MotorGM6020Diagnostics_t diagnostics;
 } MotorGM6020Monitor_t;
 
-extern volatile DR16_Monitor_t g_dr16_monitor;
 extern volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 extern volatile MotorChassisTune_t g_motor_chassis_tune;
 extern volatile MotorChassisMonitor_t g_motor_chassis_monitor;
