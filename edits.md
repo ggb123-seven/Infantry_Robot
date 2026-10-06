@@ -223,6 +223,17 @@
 - 边界：未烧录或上板测试；Ozone 需重新加载 ELF，移除旧底盘使能和运动量监视表达式；未创建临时测试程序
 - 状态：软件实现和验证完成，按本地提交约定保存快照
 
+## CHASSIS-DR16-MAP-REVERSE-009
+
+- trace_id：`rc-chassis-map-20261006`
+- 目标：修正 DR16 左摇杆上下和左右方向均反向的问题
+- 源码改动：在 `User/task/motor_chassis.c` 中将 `ch_l_y -> vx` 与 `ch_l_x -> vy` 的两个输入分量分别取反，上位和下位模式保持一致，自旋角速度不变
+- 验证标准：静态检查确认两个模式均使用负号映射，`git diff --check` 通过，Debug 构建通过
+- 停止条件：不修改 DR16 解码、底盘混合器、电机驱动和 CubeMX 配置
+- 验证：`git diff --check` 通过；`cmake --build --preset Debug --parallel 4` 通过并生成 `build/Debug/Infantry_Robot.elf`；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：尚未烧录和实车验证；需重新加载 ELF 后分别确认前进、后退、左移、右移方向
+- 状态：软件修改与构建验证完成，等待本地 Git 快照
+
 ## CHASSIS-DR16-MONITOR-008
 
 - 日期：2026-09-22
