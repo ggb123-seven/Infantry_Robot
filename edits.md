@@ -234,6 +234,16 @@
 - 上板边界：尚未烧录和实车验证；需重新加载 ELF 后分别确认前进、后退、左移、右移方向
 - 状态：软件修改与构建验证完成，等待本地 Git 快照
 
+## OZONE-CHASSIS-PID-20261007
+
+- trace_id：`ozone-pid-002`
+- 目标：重新暴露底盘四个 M3508 速度环的 Ozone 在线调参接口，保留 ID1~3 公共参数与指定单电机独立参数
+- 源码改动：`User/task/ozone_debug.h/.c` 增加 `MotorChassisPidOverride_t` 和公共 PID 参数；`User/task/motor_chassis.c` 将 Ozone 参数映射到每路 `Chassis_Input_t`；`User/module/chassis.h/.c` 增加每路 PID 覆盖输入并在控制计算时选择覆盖参数
+- 默认行为：独立覆盖关闭，默认选择 ID4，ID4 继续使用固化参数；开启覆盖后仅指定电机使用 Ozone 独立参数，其他电机使用公共参数
+- 验证：`git diff --check` 通过；`cmake --build --preset Debug --parallel 4` 通过并生成 `build/Debug/Infantry_Robot.elf`；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：需要重新加载 ELF，并在低速小目标下分别核对 ID1~3 公共参数和 ID4 独立参数的速度响应与电流指令
+- 状态：软件实现与静态验证完成，待 Ozone 重新加载及上板调参
+
 ## CHASSIS-DR16-MONITOR-008
 
 - 日期：2026-09-22

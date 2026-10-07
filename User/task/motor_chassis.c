@@ -68,19 +68,64 @@ void Task_motor_chassis(void *argument)
     uint32_t tick = osKernelGetTickCount();
     while (1)
     {
-        // 建立默认禁用的控制输入，仅从 Ozone 读取轮速尺度
+        // 建立默认禁用的控制输入，并读取 Ozone 的公共速度 PID 参数
         Chassis_Input_t chassis_input =
         {
             .enabled = false,
             .scale_rpm = g_motor_chassis_tune.scale_rpm,
             .pid_tune =
             {
-                .kp = CHASSIS_PID_KP,
-                .ki = CHASSIS_PID_KI,
-                .kd = CHASSIS_PID_KD,
+                .kp = g_motor_chassis_tune.pid_kp,
+                .ki = g_motor_chassis_tune.pid_ki,
+                .kd = g_motor_chassis_tune.pid_kd,
+            },
+            .pid_tune_override_enable =
+            {
+                false,
+                false,
+                false,
+                false,
+            },
+            .pid_tune_override =
+            {
+                {
+                    0.0F,
+                    0.0F,
+                    0.0F,
+                },
+                {
+                    0.0F,
+                    0.0F,
+                    0.0F,
+                },
+                {
+                    0.0F,
+                    0.0F,
+                    0.0F,
+                },
+                {
+                    0.0F,
+                    0.0F,
+                    0.0F,
+                },
             },
             .control_period_s = 1.0F / (float)MOTOR_CHASSIS_FREQ,
         };
+
+        // 仅将合法的独立参数映射到指定电机，非法编号时继续使用公共 PID
+        if (g_motor_chassis_tune.pid_override.pid_override_enable &&
+            g_motor_chassis_tune.pid_override.pid_override_motor_index >= 1U &&
+            g_motor_chassis_tune.pid_override.pid_override_motor_index <= CHASSIS_MOTOR_COUNT)
+        {
+            const uint32_t motor_index = g_motor_chassis_tune.pid_override.pid_override_motor_index - 1U;
+            chassis_input.pid_tune_override_enable[motor_index] = true;
+            chassis_input.pid_tune_override[motor_index] = (Chassis_PidTune_t)
+            {
+                .kp = g_motor_chassis_tune.pid_override.pid_override_kp,
+                .ki = g_motor_chassis_tune.pid_override.pid_override_ki,
+                .kd = g_motor_chassis_tune.pid_override.pid_override_kd,
+            };
+        }
 
         // 取得时间基准，用于拒绝过期遥控状态
         const uint64_t now_us = BSP_TIME_Get();

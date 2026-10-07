@@ -23,12 +23,33 @@ struct Chassis_Input;
 struct Chassis_Snapshot;
 
 /*
- * 四个 M3508 的 Ozone 轮速调节参数，使能和运动向量统一由 DR16 遥控输入生成：
+ * 单个底盘电机的速度 PID 覆盖参数：
+ * - pid_override_enable：为 true 时仅对指定电机启用独立参数
+ * - pid_override_motor_index：底盘电机 ID，取值 1~4，ID4 对应数组下标 3
+ * - pid_override_kp、pid_override_ki、pid_override_kd：指定电机的速度 PID 参数
+ */
+typedef struct
+{
+    bool pid_override_enable;
+    uint32_t pid_override_motor_index;
+    float pid_override_kp;
+    float pid_override_ki;
+    float pid_override_kd;
+} MotorChassisPidOverride_t;
+
+/*
+ * 四个 M3508 的 Ozone 调试参数，使能和运动向量统一由 DR16 遥控输入生成：
  * - scale_rpm：可修改的归一化轮速尺度，单位 rpm，底盘模块内限制到 CHASSIS_SPEED_LIMIT_RPM
+ * - pid_kp、pid_ki、pid_kd：ID1~3 共用的底盘速度 PID 参数
+ * - pid_override：指定单个电机的独立速度 PID 参数，当前默认选择 ID4
  */
 typedef struct
 {
     float scale_rpm;
+    float pid_kp;
+    float pid_ki;
+    float pid_kd;
+    MotorChassisPidOverride_t pid_override;
 } MotorChassisTune_t;
 
 /*

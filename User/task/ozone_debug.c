@@ -17,13 +17,25 @@ _Static_assert(OZONE_MOTOR_CHASSIS_COUNT == FAULT_DETECT_MOTOR_COUNT,
 volatile FaultDetect_Snapshot_t g_fault_detect_monitor;
 
 /*
- * 四个 M3508 的 Ozone 轮速调节参数初值：
- * - Ozone 仅调节轮速尺度，底盘运动使能和运动向量由 DR16 遥控输入生成
- * - 轮速尺度初值为 100 rpm，底盘速度 PID 参数已固化在底盘模块
+ * 四个 M3508 的 Ozone 调试参数初值：
+ * - 底盘运动使能和运动向量由 DR16 遥控输入生成
+ * - 轮速尺度初值为 100 rpm，ID1~3 使用公共速度 PID 参数
+ * - 独立 PID 覆盖默认关闭，电机选择为 ID4，并从 ID4 固化参数开始
  */
 volatile MotorChassisTune_t g_motor_chassis_tune =
 {
     .scale_rpm = 100.0F,
+    .pid_kp = CHASSIS_PID_KP,
+    .pid_ki = CHASSIS_PID_KI,
+    .pid_kd = CHASSIS_PID_KD,
+    .pid_override =
+    {
+        .pid_override_enable = false,
+        .pid_override_motor_index = 4U,
+        .pid_override_kp = CHASSIS_MOTOR4_PID_KP,
+        .pid_override_ki = CHASSIS_MOTOR4_PID_KI,
+        .pid_override_kd = CHASSIS_MOTOR4_PID_KD,
+    },
 };
 
 /*

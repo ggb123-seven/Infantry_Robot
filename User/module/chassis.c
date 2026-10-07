@@ -310,12 +310,19 @@ static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feed
         const Chassis_MotorStatus_t feedback_status = Chassis_MotorUpdateFeedback(motor_control, actual_speed_rpm);
         const bool motor_enabled =
             input->enabled && mixer_valid && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
-        const Chassis_PidTune_t motor_pid_tune =
+        Chassis_PidTune_t motor_pid_tune =
         {
             .kp = motor_index == 3U ? CHASSIS_MOTOR4_PID_KP : input->pid_tune.kp,
             .ki = motor_index == 3U ? CHASSIS_MOTOR4_PID_KI : input->pid_tune.ki,
             .kd = motor_index == 3U ? CHASSIS_MOTOR4_PID_KD : input->pid_tune.kd,
         };
+
+        // 独立覆盖开启时使用指定电机参数，否则保留 ID4 的固化默认参数
+        if (input->pid_tune_override_enable[motor_index])
+        {
+            motor_pid_tune = input->pid_tune_override[motor_index];
+        }
+
         const Chassis_MotorStatus_t control_status =
             Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], &motor_pid_tune, motor_enabled,
                                  input->control_period_s);

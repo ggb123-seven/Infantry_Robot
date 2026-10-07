@@ -123,7 +123,9 @@ typedef struct
  * - enabled：四路速度控制统一使能，false 时所有电流输出清零。
  * - move_vector：归一化底盘运动向量，前向、左向和俯视逆时针分别为正
  * - scale_rpm：归一化轮速对应的输出轴转速尺度，单位 rpm，模块内限制到 CHASSIS_SPEED_LIMIT_RPM
- * - pid_tune：本周期四路共用的速度 PID 参数快照。
+ * - pid_tune：本周期未启用独立覆盖时使用的公共速度 PID 参数快照
+ * - pid_tune_override_enable[0~3]：对应电机启用独立 PID 覆盖时为 true
+ * - pid_tune_override[0~3]：对应电机独立 PID 参数，覆盖关闭时忽略
  * - control_period_s：本周期控制间隔，单位 s，必须大于 0。
  */
 typedef struct Chassis_Input
@@ -132,6 +134,8 @@ typedef struct Chassis_Input
     MoveVector_t move_vector;
     float scale_rpm;
     Chassis_PidTune_t pid_tune;
+    bool pid_tune_override_enable[CHASSIS_MOTOR_COUNT];
+    Chassis_PidTune_t pid_tune_override[CHASSIS_MOTOR_COUNT];
     float control_period_s;
 } Chassis_Input_t;
 
