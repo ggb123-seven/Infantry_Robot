@@ -253,3 +253,14 @@
 - 验证：全仓 `DR16_Monitor_t`、`g_dr16_monitor` 和旧监视更新函数引用无残留；Debug 构建成功生成 `build/Debug/Infantry_Robot.elf`；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；`git diff --check` 通过
 - 边界：未烧录和上板；Ozone 重新加载 ELF 后不再使用旧 DR16 诊断监视字段；未创建临时测试程序
 - 状态：软件实现和验证完成，待创建本地 Git 快照
+
+## CHASSIS-DR16-LATERAL-SIGN-20261007
+
+- trace_id：`RC-STEER-20261007-03`
+- 目标：修正 DR16 左摇杆左右输入映射到底盘横向运动方向相反的问题
+- 源码改动：`User/task/motor_chassis.c` 将上位和下位模式的 `ch_l_x -> vy` 从负号映射改为正号，保持前后通道、自旋角速度和失联保护不变
+- 验证标准：静态检查确认两种模式均使用正号横向映射，`git diff --check` 通过，Debug 构建通过
+- 停止条件：不修改 DR16 解码、底盘混合器、电机驱动和 CubeMX 配置
+- 验证：`git diff --check` 通过；`cmake --build --preset Debug --parallel 4` 通过并生成 `build/Debug/Infantry_Robot.elf`，RAM 41904 B、FLASH 88184 B；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：重新加载 ELF 后低速分别确认左移、右移及下位自旋叠加平动方向
+- 状态：软件修改与构建验证完成，等待本地 Git 快照

@@ -215,12 +215,12 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
     {
         case DR16_SWITCH_UP:
             input->move_vector.vx = -forward_channel;
-            input->move_vector.vy = -lateral_channel;
+            input->move_vector.vy = lateral_channel;
             break;
 
         case DR16_SWITCH_DOWN:
             input->move_vector.vx = -forward_channel;
-            input->move_vector.vy = -lateral_channel;
+            input->move_vector.vy = lateral_channel;
             input->move_vector.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
             break;
 
