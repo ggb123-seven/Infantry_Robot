@@ -48,6 +48,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # LwRB v3.2.0 手动移植第三方源码，非 STM32CubeMX/HAL 生成代码
     Middlewares/Third_Party/RingBuffer/src/ringbuffer/ringbuffer.c
 
+    # CMSIS-DSP 矩阵运算源码
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_add_f32.c
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_init_f32.c
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_inverse_f32.c
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_mult_f32.c
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_sub_f32.c
+    Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_trans_f32.c
+
     # User/bsp 源文件
     User/bsp/can.c
     User/bsp/gpio.c
@@ -58,6 +66,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/component 源文件
     User/component/filter.c
+    User/component/kalman_filter.c
     User/component/mixer.c
     User/component/pid.c
     User/component/user_math.c
@@ -93,12 +102,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     Middlewares/Third_Party/RingBuffer/src/include
+    Drivers/CMSIS/DSP/Include
     User
     applications
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    ARM_MATH_CM4
+    __FPU_PRESENT=1U
     # Add user defined symbols
 )
 

@@ -418,3 +418,14 @@
 - 验证：Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90088 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
 - 待验证：上板悬空和落地快速换向、摇杆回中制动距离、拨中位停机零电流输出
 - 状态：本轮软件验证完成，单独创建本地 Git 快照，不推送远端
+
+## INS-KALMAN-MATRIX-P5-20261009
+
+- trace_id：`ins-kalman-matrix-p5-20261009`
+- 目标：新增 L4 静态 Kalman 矩阵组件，为后续 Quaternion EKF 提供预测、量测更新和阶段回调
+- 源码改动：新增 `User/component/kalman_filter.h`、`User/component/kalman_filter.c`，矩阵与向量数据固定保存在对象内，默认维数上限为状态/控制/量测各 6，可通过宏覆盖；未使用堆分配
+- 安全校验：拒绝非法初始化维数、非有限输入、矩阵维度不兼容和超出静态元素容量的矩阵视图；CMSIS 奇异逆矩阵映射为可查询组件状态
+- 构建改动：根 `CMakeLists.txt` 登记 CMSIS-DSP 所需 MatrixFunctions、包含目录及 Cortex-M4F/FPU 编译定义
+- 验证：临时主机测试覆盖一维更新 `x=1、P=0.5`、无有效量测预测、奇异逆矩阵、越界矩阵视图和 NaN 输入；ARM Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90088 B / 1 MB；ARCH/HW/SPEC 全部通过；临时测试资产已清理
+- 边界：未新增或适配 Quaternion EKF，未进行目标板数值实测；后续按新的静态状态数组接口适配
+- 状态：软件验证完成，创建本地 Git 快照，不推送远端
