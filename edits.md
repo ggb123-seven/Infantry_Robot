@@ -429,3 +429,12 @@
 - 验证：临时主机测试覆盖一维更新 `x=1、P=0.5`、无有效量测预测、奇异逆矩阵、越界矩阵视图和 NaN 输入；ARM Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90088 B / 1 MB；ARCH/HW/SPEC 全部通过；临时测试资产已清理
 - 边界：未新增或适配 Quaternion EKF，未进行目标板数值实测；后续按新的静态状态数组接口适配
 - 状态：软件验证完成，创建本地 Git 快照，不推送远端
+
+## CHASSIS-MOTOR4-KP-20261009
+
+- trace_id：`chassis-motor4-kp-20261009`
+- 目标：按用户要求将 ID4 底盘电机速度环 Kp 由 0.20 减小 0.04
+- 源码改动：`User/module/chassis.h` 中 `CHASSIS_MOTOR4_PID_KP` 由 `0.20F` 改为 `0.16F`；ID1～ID3 公共 Kp 保持 `0.20F`，Ozone 独立覆盖初值随宏同步为 0.16，开启覆盖时以覆盖值为准
+- 授权：用户明确要求修改 ID4 速度环参数
+- 验证：`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90104 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；尚未上板验证
+- 状态：单独创建本地 Git 快照，不推送远端

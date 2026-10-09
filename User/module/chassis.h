@@ -52,7 +52,7 @@ extern "C"
 #endif
 
 #ifndef CHASSIS_MOTOR4_PID_KP
-#define CHASSIS_MOTOR4_PID_KP (0.20F)
+#define CHASSIS_MOTOR4_PID_KP (0.16F)
 #endif
 
 #ifndef CHASSIS_MOTOR4_PID_KI
