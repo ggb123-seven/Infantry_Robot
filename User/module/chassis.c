@@ -708,6 +708,9 @@ static void Chassis_PrimeFeedback(Chassis_MotorControl_t *control)
         LowPassFilter2p_Reset(&control->feedback_filter, control->feedback.actual_speed_rpm);
     LowPassFilter2p_Reset(&control->current_filter, 0.0F);
 
+    // 斜坡目标从当前实际转速起步，避免轮子仍在转动时以零目标产生满幅制动电流
+    control->ramped_target_speed_rpm = Chassis_Clamp(control->feedback.filtered_speed_rpm, CHASSIS_SPEED_LIMIT_RPM);
+
     // 同步微分滤波器和上一反馈，避免重新使能时产生电流冲击
     const float scaled_feedback = control->pid_param.k * control->feedback.filtered_speed_rpm;
     LowPassFilter2p_Reset(&control->pid.dfilter, scaled_feedback);

@@ -209,30 +209,30 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
     }
 
     // 对遥控通道限幅和去死区，再按拨杆枚举集中选择运动模式
+    // 上位和下位为运动档，摇杆回中时保持速度环并以零目标主动制动
     const float lateral_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_x);
     const float forward_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_y);
     switch (dr16_state_cache.data.sw_l)
     {
         case DR16_SWITCH_UP:
+            input->enabled = true;
             input->move_vector.vx = -forward_channel;
             input->move_vector.vy = lateral_channel;
             break;
 
         case DR16_SWITCH_DOWN:
+            input->enabled = true;
             input->move_vector.vx = -forward_channel;
             input->move_vector.vy = lateral_channel;
             input->move_vector.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
             break;
 
+        // 中位和异常拨杆作为停机档，关闭速度环并输出零电流
         case DR16_SWITCH_MIDDLE:
         case DR16_SWITCH_ERROR:
         default:
             break;
     }
-
-    // 无运动请求时关闭速度环，下位固定自旋使摇杆回中后仍保持使能
-    input->enabled = input->move_vector.vx != 0.0F || input->move_vector.vy != 0.0F ||
-                     input->move_vector.wz != 0.0F;
 }
 
 /**

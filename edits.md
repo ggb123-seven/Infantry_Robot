@@ -407,3 +407,14 @@
 - 规则改动：`AGENTS.md` 增加 Release 只能基于 GitHub 远端已存在提交、发布前后必须核验目标 SHA 和发布状态的约束
 - 验证：GitHub API 已复核 Tag 目标、`prerelease=true` 和 `draft=false`；README 构建命令与 `CMakePresets.json` 一致；`git diff --check` 通过
 - 状态：Release 已完成；README 与规则保留在本地工作树，尚未提交或推送
+
+## CHASSIS-REVERSAL-SMOOTH-20261009
+
+- trace_id：`chassis-reversal-smooth-20261009`
+- 现象：底盘悬空快速前后换向时卡顿数次，落地基本无此现象
+- 原因分析：摇杆过中心死区时速度环被关闭并清零斜坡；重新使能时轮子仍在转动，斜坡从 0 起步使纯 P 速度环直接输出 4 A 满幅制动，死区边缘抖动造成零电流滑行与满幅制动反复切换
+- 源码改动：`User/task/motor_chassis.c` 中左拨杆上位和下位始终使能速度环，摇杆回中以零目标经斜坡主动制动，中位、异常拨杆和遥控离线仍关闭输出；`User/module/chassis.c` 的 `Chassis_PrimeFeedback()` 将斜坡目标预置为限幅后的当前滤波转速
+- 授权：用户确认同时修改 `User/task` 与 `User/module`
+- 验证：Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90088 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 待验证：上板悬空和落地快速换向、摇杆回中制动距离、拨中位停机零电流输出
+- 状态：本轮软件验证完成，单独创建本地 Git 快照，不推送远端
