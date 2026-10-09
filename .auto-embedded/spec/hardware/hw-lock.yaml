@@ -16,9 +16,19 @@ pins:
   - {id: PA12, func: USB_OTG_FS_DP, owner: cubemx_usb_device_cdc}
   - {id: PC10, func: USART3_TX, owner: cubemx_dr16_uart}
   - {id: PC11, func: USART3_RX, owner: cubemx_dr16_uart}
+  - {id: PA4, func: GPIO_OUTPUT_BMI088_ACCEL_CS, owner: cubemx_bmi088}
+  - {id: PA7, func: SPI1_MOSI, owner: cubemx_bmi088}
+  - {id: PB0, func: GPIO_OUTPUT_BMI088_GYRO_CS, owner: cubemx_bmi088}
+  - {id: PB3, func: SPI1_SCK, owner: cubemx_bmi088}
+  - {id: PB4, func: SPI1_MISO, owner: cubemx_bmi088}
+  - {id: PC4, func: EXTI4_BMI088_ACCEL_INT, owner: cubemx_bmi088}
+  - {id: PC5, func: EXTI5_BMI088_GYRO_INT, owner: cubemx_bmi088}
+  - {id: PF6, func: TIM10_CH1_IMU_HEAT_PWM, owner: cubemx_bmi088}
 
 dma:
   - {stream: DMA1_Stream1_CH4, peripheral: USART3_RX, owner: cubemx_dr16_uart}
+  - {stream: DMA2_Stream2_CH3, peripheral: SPI1_RX, owner: cubemx_bmi088}
+  - {stream: DMA2_Stream3_CH3, peripheral: SPI1_TX, owner: cubemx_bmi088}
 
 irq:
   - {irqn: PendSV_IRQn, priority_preempt: 15, priority_sub: 0, owner: freertos}
@@ -28,6 +38,11 @@ irq:
   - {irqn: OTG_FS_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_usb_device_cdc}
   - {irqn: DMA1_Stream1_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_dr16_uart}
   - {irqn: USART3_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_dr16_uart}
+  - {irqn: EXTI4_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_bmi088}
+  - {irqn: EXTI9_5_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_bmi088}
+  - {irqn: DMA2_Stream2_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_bmi088}
+  - {irqn: DMA2_Stream3_IRQn, priority_preempt: 5, priority_sub: 0, owner: cubemx_bmi088}
 
 timers:
   - {id: TIM6, func: HAL_1MS_TICK, owner: cubemx_hal_tick}
+  - {id: TIM10_CH1, func: IMU_HEAT_PWM_500HZ, owner: cubemx_bmi088}

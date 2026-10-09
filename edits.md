@@ -353,3 +353,35 @@
   `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
 - 上板边界：`Kp=0.20 A/rpm` 在约 20 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
 - 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## INS-HARDWARE-CONFIG-20261009
+
+- trace_id：`ins-hardware-config-20261009`
+- 目标：为 C 板 BMI088 和板载加热电阻准备完整 INS 移植所需的 SPI1 与 PWM 硬件配置
+- CubeMX 改动：SPI1 从 328.125 Kbit/s 调整为 10.5 Mbit/s；新增 PF6/TIM10_CH1，按 84 MHz 定时器时钟配置 500 Hz PWM，初始比较值为 0
+- 生成代码：新增 `Inc/tim.h` 和 `Src/tim.c`，在 `main()` 中初始化 TIM10，并将 `Src/tim.c` 加入 CMake 源文件列表
+- 资源登记：硬件锁补充 BMI088 片选、SPI1、EXTI、DMA、PF6 和 TIM10_CH1 资源
+- 生成文件：保留 CubeMX 更新的 `.mxproject` 和随 TIM10 复制的官方 `stm32f4xx_ll_tim.h`
+- 验证：`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 88 KB / 1 MB；ARCH/HW/SPEC 全部通过
+- 边界：尚未新增 BMI088 设备驱动、INS 解算和 `INS_Task`，也未启动 PWM 或接入底盘、云台反馈
+- 状态：本轮实现和软件验证完成，等待用户确认后创建本地提交
+
+## INS-BSP-IMU-P2-20261009
+
+- trace_id：`ins-bsp-imu-p2-20261009`
+- 目标：新增 BMI088 所需的 L2 BSP 接口，隔离 SPI1、片选、延时和加热 PWM 硬件细节
+- 源码改动：新增 `User/bsp/imu.h`、`User/bsp/imu.c`；根 `CMakeLists.txt` 登记 `User/bsp/imu.c`
+- 接口行为：SPI HAL 状态映射为 `BSP_OK`、`BSP_ERR_TIMEOUT` 或 `BSP_ERR`；空接收指针返回 `BSP_ERR_NULL`；加速度计与陀螺仪片选均按低有效控制；PWM 占空比使用 0~1000 千分比，越界时先关闭 PWM
+- 边界：本轮不实现 BMI088 寄存器协议、数据换算、EKF、INS 模块或 `INS_Task`，不接入底盘和云台闭环
+- 验证：Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 88 KB / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 状态：软件验证完成，等待用户确认后创建本地 Git 快照
+
+## GITHUB-RELEASE-AND-README-20261009
+
+- 目标：建立首个可识别的预发布版本并补充项目入口文档
+- Release：已发布 `v0.1.0-alpha.1 - 底盘初步完善`，类型为 Pre-release，目标为 GitHub 远端 `main` 提交 `3b1dd3a3e3d8105a6b7a9b095886762cd54f8f83`
+- 版本边界：Release 正文标注底盘控制功能初步完善，尚未接入 IMU 姿态反馈调节；当前本地 INS 改动未进入该版本
+- 文档改动：新增根目录 `README.md`，说明硬件平台、当前功能、分层结构、CMake 构建方式和开发状态
+- 规则改动：`AGENTS.md` 增加 Release 只能基于 GitHub 远端已存在提交、发布前后必须核验目标 SHA 和发布状态的约束
+- 验证：GitHub API 已复核 Tag 目标、`prerelease=true` 和 `draft=false`；README 构建命令与 `CMakePresets.json` 一致；`git diff --check` 通过
+- 状态：Release 已完成；README 与规则保留在本地工作树，尚未提交或推送

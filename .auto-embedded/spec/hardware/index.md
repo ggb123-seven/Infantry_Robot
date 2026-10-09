@@ -16,6 +16,7 @@
 |---|---|---|
 | 2026-07-14 | 登记 USB FS 的 PA11/PA12、OTG_FS_IRQn 和 48 MHz 时钟 | 为 C 板 CDC 虚拟串口冻结硬件资源；引脚与参数参考官方 C 板例程 |
 | 2026-07-19 | 登记 DR16 的 USART3、PC10/PC11、DMA1 Stream1 Channel 4、DMA 和 USART3 中断 | 按 100000 baud、8E1、RX-only、循环 DMA 配置 RingBuffer 接收链路；STM32F4 使用 9-bit Word Length 承载 8 位数据与偶校验 |
+| 2026-10-09 | 登记 C 板 BMI088 的 SPI1、片选、数据中断、DMA 和 PF6/TIM10_CH1 | 复用当前工程已有 BMI088 引脚并补充板载加热 PWM，为完整 INS 链路移植冻结资源 |
 
 ## 沉淀（promote 回流）
 > 本板踩过的硬件坑（如某 strap 脚、某外设时钟门）沉淀于此。

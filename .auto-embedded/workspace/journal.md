@@ -22,3 +22,6 @@ CHASSIS-MERGE-CONTROL-05 已经用户确认并提交本地快照 ebcd75e；当�
 
 ## #8  task=移植通用mixer并接入x型全向轮解算  phase=REVIEW
 已移植通用 Mixer，补全四角 X 型全向轮解算并接入 Chassis、Ozone 和 motor_chassis，Debug 全量构建及 ARCH/HW/SPEC 门禁通过，临时测试程序已清理；下一步需上板架空按 ID1 左前、ID2 左后、ID3 右后、ID4 右前验证纯 +vx、+vy、+wz 的轮位和符号
+
+## #9  task=bmi088与ins姿态解算移植  phase=EXECUTE
+BMI088 与 INS 移植处于 EXECUTE：第 1 轮 SPI1 10.5 Mbit/s 和 PF6/TIM10_CH1 500 Hz PWM、 第 2 轮 User/bsp/imu.h 与 imu.c 板级接口均已通过 Debug 构建、git diff --check、ARCH/HW/SPEC，当前停在第 2 轮 review:true 用户确认节点且尚未提交；确认后先创建本地快照，再进入 BMI088 设备寄存器和协议驱动，最终独立任务名为 INS_Task，1000 Hz 解算、500 Hz 温控，不接入底盘或云台闭环。

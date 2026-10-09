@@ -51,6 +51,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # User/bsp 源文件
     User/bsp/can.c
     User/bsp/gpio.c
+    User/bsp/imu.c
     User/bsp/mm.c
     User/bsp/time.c
     User/bsp/uart.c
