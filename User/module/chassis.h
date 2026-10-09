@@ -23,7 +23,8 @@ extern "C"
  * - CHASSIS_CURRENT_LPF_CUTOFF_HZ：电流指令二阶低通截止频率，单位 Hz；小于等于 0 时直通。
  * - CHASSIS_PID_INTEGRAL_LIMIT：积分状态限幅，单位 rpm*s。
  * - CHASSIS_CURRENT_LIMIT_A：转子侧电流指令正负对称限幅，单位 A。
- * 当前固化的上板整定结果为 Kp=0.23、Ki=0.14、Kd=0，PID 微分滤波截止频率为 20 Hz。
+ * - CHASSIS_REVERSAL_ZERO_SPEED_RPM：换向时允许放行反向目标的实际转速阈值，单位 rpm。
+ * 当前四路速度 PID 参数均为 Kp=0.20、Ki=0、Kd=0，PID 微分滤波截止频率为 20 Hz
  * 速度反馈二阶低通截止频率为 45 Hz，电流输出二阶滤波保持直通。
  */
 #ifndef CHASSIS_SPEED_LIMIT_RPM
@@ -31,15 +32,19 @@ extern "C"
 #endif
 
 #ifndef CHASSIS_RAMP_RATE_RPM_S
-#define CHASSIS_RAMP_RATE_RPM_S (150.0F)
+#define CHASSIS_RAMP_RATE_RPM_S (200.0F)
+#endif
+
+#ifndef CHASSIS_REVERSAL_ZERO_SPEED_RPM
+#define CHASSIS_REVERSAL_ZERO_SPEED_RPM (10.0F)
 #endif
 
 #ifndef CHASSIS_PID_KP
-#define CHASSIS_PID_KP (0.23F)
+#define CHASSIS_PID_KP (0.20F)
 #endif
 
 #ifndef CHASSIS_PID_KI
-#define CHASSIS_PID_KI (0.14F)
+#define CHASSIS_PID_KI (0.0F)
 #endif
 
 #ifndef CHASSIS_PID_KD
@@ -51,7 +56,7 @@ extern "C"
 #endif
 
 #ifndef CHASSIS_MOTOR4_PID_KI
-#define CHASSIS_MOTOR4_PID_KI (0.10F)
+#define CHASSIS_MOTOR4_PID_KI (0.0F)
 #endif
 
 #ifndef CHASSIS_MOTOR4_PID_KD

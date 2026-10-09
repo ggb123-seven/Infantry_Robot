@@ -513,9 +513,30 @@ static Chassis_MotorStatus_t Chassis_MotorControl(Chassis_MotorControl_t *contro
             Chassis_PrimeFeedback(control);
         }
 
+        // 目标方向反转时清除积分项，避免原方向积分在刹车和反向阶段继续叠加
+        if (control->ramped_target_speed_rpm != 0.0F &&
+            feedback->limited_target_speed_rpm != 0.0F &&
+            control->ramped_target_speed_rpm * feedback->limited_target_speed_rpm < 0.0F)
+        {
+            PID_ResetIntegral(&control->pid);
+        }
+
+        // 实际转速未接近零时先保持零目标，避免速度环直接施加反向电流
+        float effective_target_speed_rpm = feedback->limited_target_speed_rpm;
+        if (feedback->actual_speed_rpm > CHASSIS_REVERSAL_ZERO_SPEED_RPM &&
+            effective_target_speed_rpm < 0.0F)
+        {
+            effective_target_speed_rpm = 0.0F;
+        }
+        else if (feedback->actual_speed_rpm < -CHASSIS_REVERSAL_ZERO_SPEED_RPM &&
+                 effective_target_speed_rpm > 0.0F)
+        {
+            effective_target_speed_rpm = 0.0F;
+        }
+
         // 依次执行目标斜坡、反馈滤波、PID 计算和电流滤波
         control->ramped_target_speed_rpm =
-            Chassis_ApplyRamp(control->ramped_target_speed_rpm, feedback->limited_target_speed_rpm,
+            Chassis_ApplyRamp(control->ramped_target_speed_rpm, effective_target_speed_rpm,
                               CHASSIS_RAMP_RATE_RPM_S * control_period_s);
         feedback->filtered_speed_rpm = LowPassFilter2p_Apply(&control->feedback_filter, feedback->actual_speed_rpm);
         const float pid_current_command_a =

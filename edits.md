@@ -264,3 +264,92 @@
 - 验证：`git diff --check` 通过；`cmake --build --preset Debug --parallel 4` 通过并生成 `build/Debug/Infantry_Robot.elf`，RAM 41904 B、FLASH 88184 B；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
 - 上板边界：重新加载 ELF 后低速分别确认左移、右移及下位自旋叠加平动方向
 - 状态：软件修改与构建验证完成，等待本地 Git 快照
+
+## CHASSIS-RAMP-200RPM-20261008
+
+- trace_id：`chassis-ramp-200rpm-20261008`
+- 目标：将底盘目标转速斜坡由 150 rpm/s 调整为 200 rpm/s
+- 源码改动：`User/module/chassis.h` 将 `CHASSIS_RAMP_RATE_RPM_S` 修改为 `200.0F`
+- 行为边界：不修改换向零速门控、速度 PID、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：参数引用保持统一；`git diff --check` 通过；Debug 构建通过并生成
+  `build/Debug/Infantry_Robot.elf`；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：需架空复测快速换向，再触地确认响应和电流冲击
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P1-20261008
+
+- trace_id：`chassis-pid-p1-20261008`
+- 目标：将四个 M3508 的速度环参数统一调整为 `Kp=1`、`Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共参数和 ID4 固化参数
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示新参数
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=1`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=1 A/rpm` 在约 4 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速首次测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P08-20261008
+
+- trace_id：`chassis-pid-p08-20261008`
+- 目标：将四个 M3508 速度环的 `Kp` 从 `1.0` 调整为 `0.8`，保持 `Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共 `Kp` 和 ID4 固化 `Kp`
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示 `Kp=0.8`
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=0.8`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=0.8 A/rpm` 在约 5 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P05-20261008
+
+- trace_id：`chassis-pid-p05-20261008`
+- 目标：将四个 M3508 速度环的 `Kp` 从 `0.8` 调整为 `0.5`，保持 `Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共 `Kp` 和 ID4 固化 `Kp`
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示 `Kp=0.5`
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=0.5`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=0.5 A/rpm` 在约 8 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P03-20261008
+
+- trace_id：`chassis-pid-p03-20261008`
+- 目标：将四个 M3508 速度环的 `Kp` 从 `0.5` 调整为 `0.3`，保持 `Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共 `Kp` 和 ID4 固化 `Kp`
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示 `Kp=0.3`
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=0.3`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=0.3 A/rpm` 在约 13.3 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P025-20261008
+
+- trace_id：`chassis-pid-p025-20261008`
+- 目标：将四个 M3508 速度环的 `Kp` 从 `0.3` 调整为 `0.25`，保持 `Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共 `Kp` 和 ID4 固化 `Kp`
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示 `Kp=0.25`
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=0.25`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=0.25 A/rpm` 在约 16 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
+
+## CHASSIS-PID-P020-20261008
+
+- trace_id：`chassis-pid-p020-20261008`
+- 目标：将四个 M3508 速度环的 `Kp` 从 `0.25` 调整为 `0.20`，保持 `Ki=0`、`Kd=0`
+- 源码改动：`User/module/chassis.h` 同步修改 ID1~3 公共 `Kp` 和 ID4 固化 `Kp`
+- Ozone 行为：公共 PID 和默认 ID4 独立覆盖初值均引用参数宏，重新加载新 ELF 后显示 `Kp=0.20`
+- 行为边界：不修改 PID 算法、目标斜坡、反馈滤波、电流限幅、遥控映射和 CubeMX 配置
+- 验证：四路默认参数均为 `Kp=0.20`、`Ki=0`、`Kd=0`，Ozone 公共参数和 ID4 默认覆盖初值均引用对应宏；
+  `git diff --check` 通过；Debug 构建通过并生成 `build/Debug/Infantry_Robot.elf`；
+  `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 上板边界：`Kp=0.20 A/rpm` 在约 20 rpm 误差时触及 4 A 电流限幅，需架空并以低目标转速测试
+- 状态：软件验证完成，等待用户确认创建本地 Git 快照
