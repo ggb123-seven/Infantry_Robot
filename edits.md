@@ -376,6 +376,28 @@
 - 验证：Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 88 KB / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
 - 状态：软件验证完成，等待用户确认后创建本地 Git 快照
 
+## INS-BMI088-DEVICE-P3-20261009
+
+- trace_id：`ins-bmi088-device-p3-20261009`
+- 目标：完成 BMI088 L3 设备驱动，提供芯片识别、复位、寄存器配置校验、三轴数据读取和状态诊断
+- 源码改动：新增 `User/device/bmi088.h`、`User/device/bmi088.c`；根 `CMakeLists.txt` 登记 `User/device/bmi088.c`
+- 协议行为：加速度计 SPI 读取使用读命令、dummy 和数据阶段；陀螺仪使用读命令和数据阶段；加速度量程为 6G、陀螺仪量程为 2000dps、加速度计配置为 800Hz
+- 来源边界：寄存器定义和初始化配置序列取自 `F:\RM\RoboMaster-C-Board-INS-Example-master\Components\Devices\BMI088reg.h`、`BMI088driver.h` 与 `BMI088driver.c`；本次未收到或查阅 BMI088 数据手册，重力常数 `9.80665F` 为本次实现选用
+- 数据行为：输出加速度单位 m/s²、角速度单位 rad/s、温度单位摄氏度；任一读取事务失败时清零输出并将 `valid` 置为 false
+- 错误处理：芯片 ID、寄存器写回和 SPI/延时失败均保留 `BMI088_Status_t`；避免参考工程陀螺仪错误表索引和 `uint8_t` 索引下溢
+- 边界：本轮不实现 Kalman 矩阵、Quaternion EKF、INS 模块或 `INS_Task`，不接入底盘和云台闭环
+- 验证：参考寄存器序列对照完成；Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 88 KB / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 状态：本轮软件验证完成，直接创建本地 Git 快照，不推送远端
+
+## INS-BMI088-HEADER-MERGE-P4-20261009
+
+- trace_id：`ins-bmi088-header-merge-p4-20261009`
+- 目标：移除仅供 BMI088 驱动使用的独立寄存器头文件，统一由设备头文件承载 BMI088 API 与寄存器定义
+- 源码改动：将 `User/device/bmi088_reg.h` 中的寄存器、量程和换算宏合并至 `User/device/bmi088.h`；移除 `User/device/bmi088.c` 对独立寄存器头文件的包含并删除该文件
+- 来源边界：合并的寄存器定义和换算值来自上述本机参考工程；不代表已依据 BMI088 数据手册核验
+- 验证：全仓 `User` 和 CMake 范围未发现 `bmi088_reg.h` 残余引用；Allman/120 列/行尾扫描通过；`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 88 KB / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 状态：本轮验证完成，创建本地 Git 快照，不推送远端
+
 ## GITHUB-RELEASE-AND-README-20261009
 
 - 目标：建立首个可识别的预发布版本并补充项目入口文档

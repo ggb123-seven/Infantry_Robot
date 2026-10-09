@@ -64,6 +64,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/device 源文件
     User/device/can_devices.c
+    User/device/bmi088.c
     User/device/dr16.c
     User/device/motor.c
     User/device/motor_rm.c
