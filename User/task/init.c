@@ -4,6 +4,7 @@
 #include "device/dr16.h"
 #include "task/can_task.h"
 #include "task/dr16_task.h"
+#include "task/ins_task.h"
 #include "task/motor_chassis.h"
 #include "task/motor_gimbal.h"
 
@@ -111,7 +112,15 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 先创建 CAN 通信任务，使其优先发布底盘控制所需的设备反馈
+    // 创建独立 INS 任务，设备初始化在任务获得调度后执行
+    task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
+    task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
+    if (task_runtime.thread.ins == NULL)
+    {
+        return false;
+    }
+
+    // 创建 CAN 通信任务，使其优先发布底盘控制所需的设备反馈
     task_runtime.init_status = TASK_INIT_CAN_THREAD_FAILED;
     task_runtime.thread.can = osThreadNew(Task_can, NULL, &attr_can);
     if (task_runtime.thread.can == NULL)
@@ -208,6 +217,14 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.thread.can = NULL;
+    }
+    if (task_runtime.thread.ins != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.ins) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.ins = NULL;
     }
     if (task_runtime.msgq.can_gimbal_command != NULL)
     {

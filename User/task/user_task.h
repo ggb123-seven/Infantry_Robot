@@ -31,6 +31,15 @@ extern "C"
 #define MOTOR_GIMBAL_FREQ (500U)
 #define MOTOR_GIMBAL_INIT_DELAY (0U)
 
+/*
+ * INS 任务运行参数：
+ * - INS_TASK_FREQ：BMI088 采集和姿态更新频率，单位赫兹
+ * - INS_TASK_INIT_DELAY：INS 任务启动延时，单位内核节拍
+ * 温控由 INS 模块按二分频执行
+ */
+#define INS_TASK_FREQ (1000U)
+#define INS_TASK_INIT_DELAY (0U)
+
 /**
  * @brief 业务对象初始化结果
  */
@@ -49,6 +58,7 @@ typedef enum
     TASK_INIT_MOTOR_THREAD_FAILED,
     TASK_INIT_MOTOR_GIMBAL_FAILED,
     TASK_INIT_DR16_THREAD_FAILED,
+    TASK_INIT_INS_THREAD_FAILED,
     TASK_INIT_MOTOR_CHASSIS_FAILED,
     TASK_INIT_CLEANUP_FAILED,
     TASK_INIT_KERNEL_UNLOCK_FAILED,
@@ -56,13 +66,15 @@ typedef enum
 
 /*
  * 任务运行时对象：
- * - thread.can：CAN 设备反馈采集和电流发送任务句柄。
- * - thread.motor_chassis：底盘周期控制任务句柄。
- * - thread.dr16：DR16 字节流接收和状态发布任务句柄。
- * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入。
- * - msgq.can_feedback：长度为 1 的 CAN 设备最新反馈邮箱，由 Task_can 写入、Task_motor_chassis 读取。
- * - msgq.can_command：长度为 1 的 CAN 设备最新电流命令邮箱，由 Task_motor_chassis 写入、Task_can 读取。
- * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果。
+ * - thread.can：CAN 设备反馈采集和电流发送任务句柄
+ * - thread.motor_chassis：底盘周期控制任务句柄
+ * - thread.motor_gimbal：云台周期控制任务句柄
+ * - thread.dr16：DR16 字节流接收和状态发布任务句柄
+ * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
+ * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入
+ * - msgq.can_feedback：长度为 1 的 CAN 设备最新反馈邮箱，由 Task_can 写入、Task_motor_chassis 读取
+ * - msgq.can_command：长度为 1 的 CAN 设备最新电流命令邮箱，由 Task_motor_chassis 写入、Task_can 读取
+ * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果
  */
 typedef struct
 {
@@ -72,6 +84,7 @@ typedef struct
         osThreadId_t motor_chassis;
         osThreadId_t motor_gimbal;
         osThreadId_t dr16;
+        osThreadId_t ins;
     } thread;
     struct
     {
@@ -91,6 +104,7 @@ extern const osThreadAttr_t attr_can;
 extern const osThreadAttr_t attr_motor_chassis;
 extern const osThreadAttr_t attr_motor_gimbal;
 extern const osThreadAttr_t attr_dr16;
+extern const osThreadAttr_t attr_ins;
 
 /**
  * @brief 创建业务任务和消息队列

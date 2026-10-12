@@ -69,6 +69,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/component/kalman_filter.c
     User/component/mixer.c
     User/component/pid.c
+    User/component/quaternion_ekf.c
     User/component/user_math.c
 
     # User/device 源文件
@@ -82,11 +83,13 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/module/chassis.c
     User/module/fault_detect.c
     User/module/gimbal.c
+    User/module/ins.c
 
     # User/task 源文件
     User/task/can_task.c
     User/task/dr16_task.c
     User/task/init.c
+    User/task/ins_task.c
     User/task/motor_chassis.c
     User/task/motor_gimbal.c
     User/task/ozone_debug.c
