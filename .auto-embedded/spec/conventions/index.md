@@ -68,3 +68,4 @@ EXECUTE 每完成一个清单项 + 用户确认 → 本地 `git add <具体文�
 - [可复用模式] CAN 等周期状态反馈使用容量为 1 的最新值邮箱：队列满时先移除旧帧再写入新帧；要求顺序和不可丢失的事件继续使用普通保序队列。
 - [坑/gotcha] 使用 LwRB 承载固定长度消息时，底层存储区必须按容量乘以消息大小后额外增加 1 字节；入队和出队必须分别使用 LWRB_FLAG_WRITE_ALL 与 LWRB_FLAG_READ_ALL，禁止接受部分消息。
 - [约定] 任务专用主机测试在记录验证结果后必须清理测试源码和可执行文件，正式回归测试资产不得删除
+- [约定] EmberProbe Skills 可作为项目工具资产纳入版本控制；.agents/skills/_emberprobe/agent-bridge.json 是含用户级绝对路径的本机桥接指针，必须由 .gitignore 排除
