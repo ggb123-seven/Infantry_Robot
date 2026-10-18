@@ -69,3 +69,5 @@ EXECUTE 每完成一个清单项 + 用户确认 → 本地 `git add <具体文�
 - [坑/gotcha] 使用 LwRB 承载固定长度消息时，底层存储区必须按容量乘以消息大小后额外增加 1 字节；入队和出队必须分别使用 LWRB_FLAG_WRITE_ALL 与 LWRB_FLAG_READ_ALL，禁止接受部分消息。
 - [约定] 任务专用主机测试在记录验证结果后必须清理测试源码和可执行文件，正式回归测试资产不得删除
 - [约定] EmberProbe Skills 可作为项目工具资产纳入版本控制；.agents/skills/_emberprobe/agent-bridge.json 是含用户级绝对路径的本机桥接指针，必须由 .gitignore 排除
+- [约定] BMI088 初始化按参考工程执行阻塞式静止校准：连续采样 6000 次，以加速度模长和三轴角速度极差检测运动并整轮重采，10 秒超时后使用参考工程默认机号标定值；正常读取应用 AccelScale 并扣除三轴 GyroOffset
+- [约定] BMI088 加速度计与陀螺仪融合无法提供绝对航向观测，当前 Quaternion EKF 固定 GyroBias[2]=0，Yaw 与 YawTotalAngle 会累计 Z 轴零偏；EmberProbe/Ozone 直接读取 1 kHz 更新中的 INS 结构体会产生跨字段非一致快照，验证姿态曲线应使用带序号的一致性快照或消息发布接口

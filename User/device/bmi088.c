@@ -1,22 +1,51 @@
 #include "device/bmi088.h"
 
+#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
 #include "bsp/imu.h"
+#include "bsp/time.h"
 
 /* BMI088 SPI 读命令使用地址最高位，读事务的填充字节不参与数据解析 */
 #define BMI088_SPI_TIMEOUT_MS (10U)
 #define BMI088_RESET_DELAY_MS (80U)
 #define BMI088_CONFIG_DELAY_MS (1U)
+#define BMI088_CHIP_ID_READ_DELAY_MS (1U)
 #define BMI088_ACCEL_READ_DUMMY (0x55U)
 #define BMI088_GYRO_READ_DUMMY (0x55U)
 #define BMI088_ACCEL_DATA_LENGTH (6U)
-#define BMI088_GYRO_DATA_LENGTH (6U)
+#define BMI088_GYRO_DATA_LENGTH (8U)
 #define BMI088_TEMP_DATA_LENGTH (2U)
+
+/* 校准参数与超时回退值均来自参考工程 BMI088driver.c 和 BMI088driver.h 的默认机号配置 */
+#define BMI088_CALIBRATION_SAMPLE_COUNT (6000U)
+#define BMI088_CALIBRATION_START_DELAY_US (5000U)
+#define BMI088_CALIBRATION_SAMPLE_DELAY_US (500U)
+#define BMI088_CALIBRATION_TIMEOUT_US (10000000ULL)
+#define BMI088_CALIBRATION_GRAVITY_DIFF_LIMIT (0.5F)
+#define BMI088_CALIBRATION_GYRO_DIFF_LIMIT (0.15F)
+#define BMI088_CALIBRATION_GRAVITY_ERROR_LIMIT (0.5F)
+#define BMI088_CALIBRATION_GYRO_OFFSET_LIMIT (0.01F)
+#define BMI088_CALIBRATION_GRAVITY_REFERENCE (9.8F)
+#define BMI088_CALIBRATION_ACCEL_TARGET (9.81F)
+#define BMI088_FALLBACK_GYRO_OFFSET_X (0.00247530174F)
+#define BMI088_FALLBACK_GYRO_OFFSET_Y (0.000393082853F)
+#define BMI088_FALLBACK_GYRO_OFFSET_Z (0.000393082853F)
+#define BMI088_FALLBACK_GRAVITY_NORM (9.69293118F)
+#define BMI088_FALLBACK_TEMPERATURE_C (40.0F)
 
 static BMI088_Status_t bmi088_status = BMI088_ERR_NOT_INITIALIZED;
 static bool bmi088_initialized;
+
+/* 以下全局量对应参考工程的校准结果和运动检测量，可直接在 Ozone 中观察 */
+float BMI088_GyroOffset[3];
+float BMI088_GravityNorm;
+float BMI088_AccelScale = 1.0F;
+float BMI088_TemperatureWhenCalibratedC;
+float BMI088_GyroDiff[3];
+float BMI088_GravityNormDiff;
+int16_t BMI088_CalibrationCount;
 
 static BMI088_Status_t BMI088_MapBspStatus(int8_t status)
 {
@@ -109,6 +138,43 @@ static BMI088_Status_t BMI088_CheckRegister(BSP_IMU_Device_t device, uint8_t reg
     return actual == expected ? BMI088_OK : BMI088_ERR_CONFIGURATION;
 }
 
+/**
+ * @brief 连续读取两次芯片 ID，并使用第二次结果完成校验
+ *
+ * @param[in] device BMI088 加速度计或陀螺仪
+ * @param[in] reg 芯片 ID 寄存器地址
+ * @param[in] expected 期望的芯片 ID
+ * @return 校验通过返回 BMI088_OK，读取失败或 ID 不匹配时返回对应错误状态
+ */
+static BMI088_Status_t BMI088_CheckChipId(BSP_IMU_Device_t device, uint8_t reg, uint8_t expected)
+{
+    // 首次读取用于建立稳定的 SPI 通信
+    uint8_t actual = 0U;
+    BMI088_Status_t status = BMI088_ReadRegister(device, reg, &actual);
+    if (status != BMI088_OK)
+    {
+        return status;
+    }
+    status = BMI088_DelayMs(BMI088_CHIP_ID_READ_DELAY_MS);
+    if (status != BMI088_OK)
+    {
+        return status;
+    }
+
+    // 第二次读取用于正式校验芯片 ID
+    status = BMI088_ReadRegister(device, reg, &actual);
+    if (status != BMI088_OK)
+    {
+        return status;
+    }
+    status = BMI088_DelayMs(BMI088_CHIP_ID_READ_DELAY_MS);
+    if (status != BMI088_OK)
+    {
+        return status;
+    }
+    return actual == expected ? BMI088_OK : BMI088_ERR_CONFIGURATION;
+}
+
 static BMI088_Status_t BMI088_ResetAccelerometer(void)
 {
     BMI088_Status_t status = BMI088_WriteRegister(BSP_IMU_ACCEL, BMI088_ACC_SOFTRESET, BMI088_ACC_SOFTRESET_VALUE);
@@ -132,7 +198,7 @@ static BMI088_Status_t BMI088_ResetGyroscope(void)
 static BMI088_Status_t BMI088_InitAccelerometer(void)
 {
     // 先确认加速度计芯片 ID，避免对不存在的设备执行复位
-    BMI088_Status_t status = BMI088_CheckRegister(BSP_IMU_ACCEL, BMI088_ACC_CHIP_ID, BMI088_ACC_CHIP_ID_VALUE);
+    BMI088_Status_t status = BMI088_CheckChipId(BSP_IMU_ACCEL, BMI088_ACC_CHIP_ID, BMI088_ACC_CHIP_ID_VALUE);
     if (status != BMI088_OK)
     {
         return status == BMI088_ERR_CONFIGURATION ? BMI088_ERR_NO_SENSOR : status;
@@ -144,7 +210,7 @@ static BMI088_Status_t BMI088_InitAccelerometer(void)
     {
         return status;
     }
-    status = BMI088_CheckRegister(BSP_IMU_ACCEL, BMI088_ACC_CHIP_ID, BMI088_ACC_CHIP_ID_VALUE);
+    status = BMI088_CheckChipId(BSP_IMU_ACCEL, BMI088_ACC_CHIP_ID, BMI088_ACC_CHIP_ID_VALUE);
     if (status != BMI088_OK)
     {
         return status == BMI088_ERR_CONFIGURATION ? BMI088_ERR_NO_SENSOR : status;
@@ -190,7 +256,7 @@ static BMI088_Status_t BMI088_InitAccelerometer(void)
 static BMI088_Status_t BMI088_InitGyroscope(void)
 {
     // 先确认陀螺仪芯片 ID，避免对不存在的设备执行复位
-    BMI088_Status_t status = BMI088_CheckRegister(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, BMI088_GYRO_CHIP_ID_VALUE);
+    BMI088_Status_t status = BMI088_CheckChipId(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, BMI088_GYRO_CHIP_ID_VALUE);
     if (status != BMI088_OK)
     {
         return status == BMI088_ERR_CONFIGURATION ? BMI088_ERR_NO_SENSOR : status;
@@ -202,7 +268,7 @@ static BMI088_Status_t BMI088_InitGyroscope(void)
     {
         return status;
     }
-    status = BMI088_CheckRegister(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, BMI088_GYRO_CHIP_ID_VALUE);
+    status = BMI088_CheckChipId(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, BMI088_GYRO_CHIP_ID_VALUE);
     if (status != BMI088_OK)
     {
         return status == BMI088_ERR_CONFIGURATION ? BMI088_ERR_NO_SENSOR : status;
@@ -260,6 +326,169 @@ static int16_t BMI088_ParseTemperature(const uint8_t data[BMI088_TEMP_DATA_LENGT
     return raw;
 }
 
+/**
+ * @brief 阻塞采样 BMI088，计算三轴陀螺仪零偏和加速度计比例系数
+ *
+ * @return 校准或超时回退完成返回 BMI088_OK，通信失败或陀螺仪芯片 ID 异常时返回对应错误状态
+ */
+static BMI088_Status_t BMI088_Calibrate(void)
+{
+    uint8_t accel_data[BMI088_ACCEL_DATA_LENGTH];
+    uint8_t gyro_data[BMI088_GYRO_DATA_LENGTH];
+    uint8_t temperature_data[BMI088_TEMP_DATA_LENGTH];
+    float accel_mps2[3];
+    float gyro_rad_s[3];
+    float gyro_max[3];
+    float gyro_min[3];
+    float gravity_norm_max = 0.0F;
+    float gravity_norm_min = 0.0F;
+    const uint64_t start_time_us = BSP_TIME_Get_us();
+
+    BMI088_CalibrationCount = 0;
+    do
+    {
+        // 超过参考工程规定的校准时间后使用其默认机号标定值
+        if (BSP_TIME_Get_us() - start_time_us > BMI088_CALIBRATION_TIMEOUT_US)
+        {
+            BMI088_GyroOffset[0] = BMI088_FALLBACK_GYRO_OFFSET_X;
+            BMI088_GyroOffset[1] = BMI088_FALLBACK_GYRO_OFFSET_Y;
+            BMI088_GyroOffset[2] = BMI088_FALLBACK_GYRO_OFFSET_Z;
+            BMI088_GravityNorm = BMI088_FALLBACK_GRAVITY_NORM;
+            BMI088_TemperatureWhenCalibratedC = BMI088_FALLBACK_TEMPERATURE_C;
+            break;
+        }
+
+        // 每次重新校准前按参考工程阻塞等待传感器数据稳定
+        BMI088_Status_t status = BMI088_MapBspStatus(BSP_IMU_DelayUs(BMI088_CALIBRATION_START_DELAY_US));
+        if (status != BMI088_OK)
+        {
+            return status;
+        }
+        BMI088_GravityNorm = 0.0F;
+        BMI088_GyroOffset[0] = 0.0F;
+        BMI088_GyroOffset[1] = 0.0F;
+        BMI088_GyroOffset[2] = 0.0F;
+
+        for (uint16_t sample = 0U; sample < BMI088_CALIBRATION_SAMPLE_COUNT; sample++)
+        {
+            // 采集加速度并累计重力模长
+            status = BMI088_ReadRegisters(BSP_IMU_ACCEL, BMI088_ACC_XOUT_L, accel_data, sizeof(accel_data));
+            if (status != BMI088_OK)
+            {
+                return status;
+            }
+            for (uint8_t axis = 0U; axis < 3U; axis++)
+            {
+                const int16_t raw = BMI088_CombineInt16(accel_data[axis * 2U], accel_data[axis * 2U + 1U]);
+                accel_mps2[axis] = (float)raw * BMI088_ACC_SENSITIVITY_MPS2_PER_LSB;
+            }
+            const float gravity_norm = sqrtf(accel_mps2[0] * accel_mps2[0] + accel_mps2[1] * accel_mps2[1] +
+                                             accel_mps2[2] * accel_mps2[2]);
+            BMI088_GravityNorm += gravity_norm;
+
+            // 从芯片 ID 开始读取陀螺仪帧，校验设备后累计三轴零偏
+            status = BMI088_ReadRegisters(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, gyro_data, sizeof(gyro_data));
+            if (status != BMI088_OK)
+            {
+                return status;
+            }
+            if (gyro_data[0] != BMI088_GYRO_CHIP_ID_VALUE)
+            {
+                return BMI088_ERR_NO_SENSOR;
+            }
+            for (uint8_t axis = 0U; axis < 3U; axis++)
+            {
+                const int16_t raw = BMI088_CombineInt16(gyro_data[axis * 2U + 2U], gyro_data[axis * 2U + 3U]);
+                gyro_rad_s[axis] = (float)raw * BMI088_GYRO_SENSITIVITY_RAD_PER_S;
+                BMI088_GyroOffset[axis] += gyro_rad_s[axis];
+            }
+
+            // 记录采样极差，检测校准期间的外界运动
+            if (sample == 0U)
+            {
+                gravity_norm_max = gravity_norm;
+                gravity_norm_min = gravity_norm;
+                for (uint8_t axis = 0U; axis < 3U; axis++)
+                {
+                    gyro_max[axis] = gyro_rad_s[axis];
+                    gyro_min[axis] = gyro_rad_s[axis];
+                }
+            }
+            else
+            {
+                if (gravity_norm > gravity_norm_max)
+                {
+                    gravity_norm_max = gravity_norm;
+                }
+                if (gravity_norm < gravity_norm_min)
+                {
+                    gravity_norm_min = gravity_norm;
+                }
+                for (uint8_t axis = 0U; axis < 3U; axis++)
+                {
+                    if (gyro_rad_s[axis] > gyro_max[axis])
+                    {
+                        gyro_max[axis] = gyro_rad_s[axis];
+                    }
+                    if (gyro_rad_s[axis] < gyro_min[axis])
+                    {
+                        gyro_min[axis] = gyro_rad_s[axis];
+                    }
+                }
+            }
+
+            BMI088_GravityNormDiff = gravity_norm_max - gravity_norm_min;
+            for (uint8_t axis = 0U; axis < 3U; axis++)
+            {
+                BMI088_GyroDiff[axis] = gyro_max[axis] - gyro_min[axis];
+            }
+            if (BMI088_GravityNormDiff > BMI088_CALIBRATION_GRAVITY_DIFF_LIMIT ||
+                BMI088_GyroDiff[0] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT ||
+                BMI088_GyroDiff[1] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT ||
+                BMI088_GyroDiff[2] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT)
+            {
+                break;
+            }
+
+            // 按参考工程在相邻样本之间阻塞等待 500 微秒
+            status = BMI088_MapBspStatus(BSP_IMU_DelayUs(BMI088_CALIBRATION_SAMPLE_DELAY_US));
+            if (status != BMI088_OK)
+            {
+                return status;
+            }
+        }
+
+        // 按固定采样数求平均，运动导致提前退出时通过校验条件触发整轮重采
+        BMI088_GravityNorm /= (float)BMI088_CALIBRATION_SAMPLE_COUNT;
+        for (uint8_t axis = 0U; axis < 3U; axis++)
+        {
+            BMI088_GyroOffset[axis] /= (float)BMI088_CALIBRATION_SAMPLE_COUNT;
+        }
+
+        // 记录本轮校准温度
+        status = BMI088_ReadRegisters(BSP_IMU_ACCEL, BMI088_ACC_TEMP_M, temperature_data, sizeof(temperature_data));
+        if (status != BMI088_OK)
+        {
+            return status;
+        }
+        BMI088_TemperatureWhenCalibratedC =
+            (float)BMI088_ParseTemperature(temperature_data) * BMI088_TEMPERATURE_SENSITIVITY_C +
+            BMI088_TEMPERATURE_OFFSET_C;
+        BMI088_CalibrationCount++;
+    } while (BMI088_GravityNormDiff > BMI088_CALIBRATION_GRAVITY_DIFF_LIMIT ||
+             fabsf(BMI088_GravityNorm - BMI088_CALIBRATION_GRAVITY_REFERENCE) >
+                 BMI088_CALIBRATION_GRAVITY_ERROR_LIMIT ||
+             BMI088_GyroDiff[0] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT ||
+             BMI088_GyroDiff[1] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT ||
+             BMI088_GyroDiff[2] > BMI088_CALIBRATION_GYRO_DIFF_LIMIT ||
+             fabsf(BMI088_GyroOffset[0]) > BMI088_CALIBRATION_GYRO_OFFSET_LIMIT ||
+             fabsf(BMI088_GyroOffset[1]) > BMI088_CALIBRATION_GYRO_OFFSET_LIMIT ||
+             fabsf(BMI088_GyroOffset[2]) > BMI088_CALIBRATION_GYRO_OFFSET_LIMIT);
+
+    BMI088_AccelScale = BMI088_CALIBRATION_ACCEL_TARGET / BMI088_GravityNorm;
+    return BMI088_OK;
+}
+
 BMI088_Status_t BMI088_Init(void)
 {
     bmi088_initialized = false;
@@ -269,6 +498,11 @@ BMI088_Status_t BMI088_Init(void)
     if (status == BMI088_OK)
     {
         status = BMI088_InitGyroscope();
+    }
+    if (status == BMI088_OK)
+    {
+        // 按参考工程在传感器初始化完成后阻塞执行静止校准
+        status = BMI088_Calibrate();
     }
     if (status != BMI088_OK)
     {
@@ -302,7 +536,7 @@ BMI088_Status_t BMI088_Read(BMI088_Data_t *data)
     BMI088_Status_t status = BMI088_ReadRegisters(BSP_IMU_ACCEL, BMI088_ACC_XOUT_L, accel_data, sizeof(accel_data));
     if (status == BMI088_OK)
     {
-        status = BMI088_ReadRegisters(BSP_IMU_GYRO, BMI088_GYRO_XOUT_L, gyro_data, sizeof(gyro_data));
+        status = BMI088_ReadRegisters(BSP_IMU_GYRO, BMI088_GYRO_CHIP_ID, gyro_data, sizeof(gyro_data));
     }
     if (status == BMI088_OK)
     {
@@ -313,14 +547,19 @@ BMI088_Status_t BMI088_Read(BMI088_Data_t *data)
         bmi088_status = status;
         return status;
     }
+    if (gyro_data[0] != BMI088_GYRO_CHIP_ID_VALUE)
+    {
+        bmi088_status = BMI088_ERR_NO_SENSOR;
+        return BMI088_ERR_NO_SENSOR;
+    }
 
-    // 将原始二进制补码转换为 SI 单位，供上层 EKF 直接使用
+    // 按参考工程应用加速度计比例系数和三轴陀螺仪零偏
     for (uint8_t axis = 0U; axis < 3U; axis++)
     {
         const int16_t accel_raw = BMI088_CombineInt16(accel_data[axis * 2U], accel_data[axis * 2U + 1U]);
-        const int16_t gyro_raw = BMI088_CombineInt16(gyro_data[axis * 2U], gyro_data[axis * 2U + 1U]);
-        data->accel_mps2[axis] = (float)accel_raw * BMI088_ACC_SENSITIVITY_G_PER_LSB * BMI088_GRAVITY_MPS2;
-        data->gyro_rad_s[axis] = (float)gyro_raw * BMI088_GYRO_SENSITIVITY_RAD_PER_S;
+        const int16_t gyro_raw = BMI088_CombineInt16(gyro_data[axis * 2U + 2U], gyro_data[axis * 2U + 3U]);
+        data->accel_mps2[axis] = (float)accel_raw * BMI088_ACC_SENSITIVITY_MPS2_PER_LSB * BMI088_AccelScale;
+        data->gyro_rad_s[axis] = (float)gyro_raw * BMI088_GYRO_SENSITIVITY_RAD_PER_S - BMI088_GyroOffset[axis];
     }
     data->temperature_c = (float)BMI088_ParseTemperature(temperature_data) * BMI088_TEMPERATURE_SENSITIVITY_C +
                           BMI088_TEMPERATURE_OFFSET_C;
