@@ -2,7 +2,8 @@
 
 #include "motor.h"
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* Includes ----------------------------------------------------------------- */
@@ -11,17 +12,18 @@ extern "C" {
 #include "bsp/can.h"
 
 /* Exported constants ------------------------------------------------------- */
-#define MOTOR_RM_MAX_MOTORS 11
+#define MOTOR_RM_MAX_MOTORS 8
 
 /* Exported macro ----------------------------------------------------------- */
 /* Exported types ----------------------------------------------------------- */
-typedef enum {
+typedef enum
+{
     MOTOR_M2006,
     MOTOR_M3508,
-    MOTOR_GM6020,
 } MOTOR_RM_Module_t;
 
-typedef enum {
+typedef enum
+{
     MOTOR_RM_C610_ERROR_NONE = 0,
     MOTOR_RM_C610_ERROR_SUPPLY_OVERVOLTAGE = 2,
     MOTOR_RM_C610_ERROR_PHASE_LOSS = 3,
@@ -30,26 +32,29 @@ typedef enum {
     MOTOR_RM_C610_ERROR_CALIBRATION_FAILED = 7,
 } MOTOR_RM_C610_ErrorCode_t;
 
-/*一个can最多控制11个电机*/
-typedef union {
-  int16_t output[MOTOR_RM_MAX_MOTORS];
-  struct {
-    int16_t m3508_m2006_id201;
-    int16_t m3508_m2006_id202;
-    int16_t m3508_m2006_id203;
-    int16_t m3508_m2006_id204;
-    int16_t m3508_m2006_gm6020_id205;
-    int16_t m3508_m2006_gm6020_id206;
-    int16_t m3508_m2006_gm6020_id207;
-    int16_t m3508_m2006_gm6020_id208;
-    int16_t gm6020_id209;
-    int16_t gm6020_id20A;
-    int16_t gm6020_id20B;
-  } named;
+/*
+ * 每条 CAN 总线最多提供八个 M3508 或 M2006 输出槽位
+ * output[0~7] 与 named 的 id201~id208 一一对应，保存协议原始电流指令值
+ */
+typedef union
+{
+    int16_t output[MOTOR_RM_MAX_MOTORS];
+    struct
+    {
+        int16_t m3508_m2006_id201;
+        int16_t m3508_m2006_id202;
+        int16_t m3508_m2006_id203;
+        int16_t m3508_m2006_id204;
+        int16_t m3508_m2006_id205;
+        int16_t m3508_m2006_id206;
+        int16_t m3508_m2006_id207;
+        int16_t m3508_m2006_id208;
+    } named;
 } MOTOR_RM_MsgOutput_t;
 
 /*每个电机需要的参数*/
-typedef struct {
+typedef struct
+{
     BSP_CAN_t can;
     uint16_t id;
     MOTOR_RM_Module_t module;
@@ -62,7 +67,8 @@ typedef MOTOR_Feedback_t MOTOR_RM_Feedback_t;
 /* MOTOR_CPP_ADAPTER_DATA: raw protocol feedback alias used by C++ RM wrapper. */
 typedef MOTOR_RawFeedback_t MOTOR_RM_RawFeedback_t;
 
-typedef struct {
+typedef struct
+{
     MOTOR_RM_Param_t param;
     MOTOR_RM_Feedback_t feedback;
     MOTOR_t motor;
@@ -77,14 +83,15 @@ typedef struct {
 } MOTOR_RM_t;
 
 /*CAN管理器，管理一个CAN总线上所有的电机*/
-typedef struct {
+typedef struct
+{
     BSP_CAN_t can;
     MOTOR_RM_MsgOutput_t output_msg;
     /* 缓存后统一发送：记录哪些 RM 控制帧组已写入缓存。 */
     uint8_t pending_tx_groups;
     MOTOR_RM_t *motors[MOTOR_RM_MAX_MOTORS];
     uint8_t motor_count;
-  /* C++ motor 适配层：由 C++ 对象持有生命周期的外部实例。 */
+    /* C++ motor 适配层：由 C++ 对象持有生命周期的外部实例。 */
     /* MOTOR_CPP_ADAPTER_STATE_BEGIN: external instances owned by C++ wrappers. */
     MOTOR_RM_t *external_motors[MOTOR_RM_MAX_MOTORS];
     uint8_t external_motor_count;
@@ -92,7 +99,8 @@ typedef struct {
 } MOTOR_RM_CANManager_t;
 
 /* MOTOR_CPP_ADAPTER_DEBUG_BEGIN: transmit snapshots consumed by C++ tests/tools. */
-typedef struct {
+typedef struct
+{
     uint8_t valid;
     BSP_CAN_t can;
     uint16_t source_motor_id;
@@ -105,16 +113,17 @@ typedef struct {
     uint32_t flush_count;
 } MOTOR_RM_TxDebug_t;
 
-  typedef struct {
+typedef struct
+{
     uint8_t valid;
     BSP_CAN_t can;
     uint16_t tx_frame_id;
     int8_t logical_index;
     int16_t output_value;
     uint8_t tx_data[8];
-  } MOTOR_RM_SlotTxDebug_t;
+} MOTOR_RM_SlotTxDebug_t;
 
-  extern MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS];
+extern MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS];
 /* MOTOR_CPP_ADAPTER_DEBUG_END */
 
 /* Exported functions prototypes -------------------------------------------- */
@@ -126,14 +135,14 @@ typedef struct {
 /**
  * @brief 注册一个RM电机
  * @param param 电机参数
- * @return 
+ * @return
  */
 int8_t MOTOR_RM_Register(MOTOR_RM_Param_t *param);
 
 /**
  * @brief 更新指定电机数据
  * @param param 电机参数
- * @return 
+ * @return
  */
 int8_t MOTOR_RM_Update(MOTOR_RM_Param_t *param);
 
@@ -143,7 +152,7 @@ int8_t MOTOR_RM_Update(MOTOR_RM_Param_t *param);
  * @param value 输出值，范围[-1.0, 1.0]
  * @note 该接口只写入 CAN 管理器的输出缓存；随后调用 MOTOR_RM_Ctrl()
  *       或 MOTOR_RM_FlushGroup()/MOTOR_RM_FlushCAN() 发送对应控制帧组。
- * @return 
+ * @return
  */
 int8_t MOTOR_RM_SetOutput(MOTOR_RM_Param_t *param, float value);
 
@@ -153,7 +162,7 @@ int8_t MOTOR_RM_SetOutput(MOTOR_RM_Param_t *param, float value);
  * @note 兼容旧代码的立即发送接口。多个 RM 电机同周期控制时，推荐先调用
  *       MOTOR_RM_SetOutput()/MOTOR_RM_SetTorqueCurrent() 写完同组缓存，再调用
  *       MOTOR_RM_FlushGroup()/MOTOR_RM_FlushCAN() 统一发送。
- * @return 
+ * @return
  */
 int8_t MOTOR_RM_Ctrl(MOTOR_RM_Param_t *param);
 
@@ -180,28 +189,28 @@ int8_t MOTOR_RM_FlushAll(void);
 /**
  * @brief 获取指定电机的实例指针
  * @param param 电机参数
- * @return 
+ * @return
  */
-MOTOR_RM_t* MOTOR_RM_GetMotor(MOTOR_RM_Param_t *param);
+MOTOR_RM_t *MOTOR_RM_GetMotor(MOTOR_RM_Param_t *param);
 
 /**
  * @brief 使电机松弛（设置输出为0）
- * @param param 
- * @return 
+ * @param param
+ * @return
  */
 int8_t MOTOR_RM_Relax(MOTOR_RM_Param_t *param);
 
 /**
  * @brief 使电机离线（设置在线状态为false）
- * @param param 
- * @return 
+ * @param param
+ * @return
  */
 int8_t MOTOR_RM_Offine(MOTOR_RM_Param_t *param);
 
 /**
- * @brief 
- * @param  
- * @return 
+ * @brief
+ * @param
+ * @return
  */
 int8_t MOTOR_RM_UpdateAll(void);
 
@@ -229,11 +238,11 @@ int8_t MOTOR_RM_AttachExternal(MOTOR_RM_Param_t *param, MOTOR_RM_t *external_mot
  */
 int8_t MOTOR_RM_SetTorqueCurrent(MOTOR_RM_Param_t *param, float current_a);
 
-const MOTOR_RM_RawFeedback_t* MOTOR_RM_GetRawFeedback(MOTOR_RM_Param_t *param);
+const MOTOR_RM_RawFeedback_t *MOTOR_RM_GetRawFeedback(MOTOR_RM_Param_t *param);
 
-const MOTOR_RM_TxDebug_t* MOTOR_RM_GetTxDebug(void);
+const MOTOR_RM_TxDebug_t *MOTOR_RM_GetTxDebug(void);
 
-const MOTOR_RM_SlotTxDebug_t* MOTOR_RM_GetSlotTxDebug(uint8_t logical_index);
+const MOTOR_RM_SlotTxDebug_t *MOTOR_RM_GetSlotTxDebug(uint8_t logical_index);
 /* MOTOR_CPP_ADAPTER_API_END */
 
 #ifdef __cplusplus

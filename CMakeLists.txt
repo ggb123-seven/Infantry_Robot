@@ -82,7 +82,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # User/module 源文件
     User/module/chassis.c
     User/module/fault_detect.c
-    User/module/gimbal.c
     User/module/ins.c
 
     # User/task 源文件
@@ -91,7 +90,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/task/init.c
     User/task/ins_task.c
     User/task/motor_chassis.c
-    User/task/motor_gimbal.c
     User/task/ozone_debug.c
     User/task/user_task.c
 

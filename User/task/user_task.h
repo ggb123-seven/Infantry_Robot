@@ -26,12 +26,6 @@ extern "C"
 #define MOTOR_CHASSIS_INIT_DELAY (0U)
 
 /*
- * GM6020 速度控制任务运行参数：与 CAN 任务保持 500 Hz 周期，使用 0 栈延时启动
- */
-#define MOTOR_GIMBAL_FREQ (500U)
-#define MOTOR_GIMBAL_INIT_DELAY (0U)
-
-/*
  * INS 任务运行参数：
  * - INS_TASK_FREQ：BMI088 采集和姿态更新频率，单位赫兹
  * - INS_TASK_INIT_DELAY：INS 任务启动延时，单位内核节拍
@@ -52,11 +46,8 @@ typedef enum
     TASK_INIT_DR16_MAILBOX_FAILED,
     TASK_INIT_CAN_FEEDBACK_MAILBOX_FAILED,
     TASK_INIT_CAN_COMMAND_MAILBOX_FAILED,
-    TASK_INIT_GIMBAL_FEEDBACK_MAILBOX_FAILED,
-    TASK_INIT_GIMBAL_COMMAND_MAILBOX_FAILED,
     TASK_INIT_CAN_THREAD_FAILED,
     TASK_INIT_MOTOR_THREAD_FAILED,
-    TASK_INIT_MOTOR_GIMBAL_FAILED,
     TASK_INIT_DR16_THREAD_FAILED,
     TASK_INIT_INS_THREAD_FAILED,
     TASK_INIT_MOTOR_CHASSIS_FAILED,
@@ -68,7 +59,6 @@ typedef enum
  * 任务运行时对象：
  * - thread.can：CAN 设备反馈采集和电流发送任务句柄
  * - thread.motor_chassis：底盘周期控制任务句柄
- * - thread.motor_gimbal：云台周期控制任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入
@@ -82,7 +72,6 @@ typedef struct
     {
         osThreadId_t can;
         osThreadId_t motor_chassis;
-        osThreadId_t motor_gimbal;
         osThreadId_t dr16;
         osThreadId_t ins;
     } thread;
@@ -91,8 +80,6 @@ typedef struct
         osMessageQueueId_t dr16_state;
         osMessageQueueId_t can_feedback;
         osMessageQueueId_t can_command;
-        osMessageQueueId_t can_gimbal_feedback;
-        osMessageQueueId_t can_gimbal_command;
     } msgq;
     volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;
@@ -102,7 +89,6 @@ extern Task_Runtime_t task_runtime;
 extern const osThreadAttr_t attr_init;
 extern const osThreadAttr_t attr_can;
 extern const osThreadAttr_t attr_motor_chassis;
-extern const osThreadAttr_t attr_motor_gimbal;
 extern const osThreadAttr_t attr_dr16;
 extern const osThreadAttr_t attr_ins;
 

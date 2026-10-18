@@ -25,3 +25,6 @@ CHASSIS-MERGE-CONTROL-05 已经用户确认并提交本地快照 ebcd75e；当�
 
 ## #9  task=bmi088与ins姿态解算移植  phase=EXECUTE
 BMI088 与 INS 移植处于 EXECUTE：第 1 轮 SPI1 10.5 Mbit/s 和 PF6/TIM10_CH1 500 Hz PWM、第 2 轮 User/bsp/imu.h 与 imu.c 板级接口、第 3 轮 BMI088 设备驱动及第 4 轮合并 bmi088_reg.h 均已通过 Debug 构建、git diff --check、ARCH/HW/SPEC；当前正在创建第 4 轮本地快照，完成后进入 Kalman 矩阵组件，最终独立任务名为 INS_Task，1000 Hz 解算、500 Hz 温控，不接入底盘或云台闭环。
+
+## #10  task=移除GM6020电机代码  phase=REVIEW
+2026-10-18 按用户明确确认删除 GM6020 专用 task/module 四个文件，清理初始化、独立邮箱、Ozone、CANDevices 和 RM 共用驱动中的专属分支，保留 M3508/M2006 八路槽位与原底盘控制行为。Debug 全量构建、ARCH/HW/SPEC、真实源码前后版本主机回归通过，ELF 无 GM6020/Gimbal 符号，INS/BMI088/BSP/component/.ioc 未改。详细证据见 docs/workflows/2026-10/18_remove_gm6020.md。Keil 原有 RVDS port.c 缺失单独记录，不扩大修复；未提交、未烧录，不据此宣称 Yaw 漂移已解决

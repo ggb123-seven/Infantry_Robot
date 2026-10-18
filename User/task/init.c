@@ -6,7 +6,6 @@
 #include "task/dr16_task.h"
 #include "task/ins_task.h"
 #include "task/motor_chassis.h"
-#include "task/motor_gimbal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -96,22 +95,6 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 创建独立的 GM6020 反馈邮箱，避免云台任务与底盘任务竞争同一快照
-    task_runtime.init_status = TASK_INIT_GIMBAL_FEEDBACK_MAILBOX_FAILED;
-    task_runtime.msgq.can_gimbal_feedback = osMessageQueueNew(1U, sizeof(CANDevices_Snapshot_t), NULL);
-    if (task_runtime.msgq.can_gimbal_feedback == NULL)
-    {
-        return false;
-    }
-
-    // 创建独立的 GM6020 命令邮箱，避免云台命令覆盖底盘四路命令
-    task_runtime.init_status = TASK_INIT_GIMBAL_COMMAND_MAILBOX_FAILED;
-    task_runtime.msgq.can_gimbal_command = osMessageQueueNew(1U, sizeof(CANDevices_GimbalCommand_t), NULL);
-    if (task_runtime.msgq.can_gimbal_command == NULL)
-    {
-        return false;
-    }
-
     // 创建独立 INS 任务，设备初始化在任务获得调度后执行
     task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
     task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
@@ -132,14 +115,6 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
     task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
     if (task_runtime.thread.motor_chassis == NULL)
-    {
-        return false;
-    }
-
-    // 创建独立云台任务，确保其运行前 CAN 反馈和命令邮箱均已存在
-    task_runtime.init_status = TASK_INIT_MOTOR_GIMBAL_FAILED;
-    task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
-    if (task_runtime.thread.motor_gimbal == NULL)
     {
         return false;
     }
@@ -171,9 +146,7 @@ static bool Task_InitModules(void)
         return false;
     }
 
-    // 初始化 GM6020 速度控制器和 Ozone 默认状态
-    task_runtime.init_status = TASK_INIT_MOTOR_GIMBAL_FAILED;
-    return Task_motor_gimbal_Init();
+    return true;
 }
 
 /**
@@ -193,14 +166,6 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.thread.dr16 = NULL;
-    }
-    if (task_runtime.thread.motor_gimbal != NULL)
-    {
-        if (osThreadTerminate(task_runtime.thread.motor_gimbal) != osOK)
-        {
-            success = false;
-        }
-        task_runtime.thread.motor_gimbal = NULL;
     }
     if (task_runtime.thread.motor_chassis != NULL)
     {
@@ -226,14 +191,6 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.ins = NULL;
     }
-    if (task_runtime.msgq.can_gimbal_command != NULL)
-    {
-        if (osMessageQueueDelete(task_runtime.msgq.can_gimbal_command) != osOK)
-        {
-            success = false;
-        }
-        task_runtime.msgq.can_gimbal_command = NULL;
-    }
     if (task_runtime.msgq.can_command != NULL)
     {
         if (osMessageQueueDelete(task_runtime.msgq.can_command) != osOK)
@@ -241,14 +198,6 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.can_command = NULL;
-    }
-    if (task_runtime.msgq.can_gimbal_feedback != NULL)
-    {
-        if (osMessageQueueDelete(task_runtime.msgq.can_gimbal_feedback) != osOK)
-        {
-            success = false;
-        }
-        task_runtime.msgq.can_gimbal_feedback = NULL;
     }
     if (task_runtime.msgq.can_feedback != NULL)
     {
