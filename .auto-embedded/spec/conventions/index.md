@@ -72,3 +72,5 @@ EXECUTE 每完成一个清单项 + 用户确认 → 本地 `git add <具体文�
 - [约定] EmberProbe Skills 可作为项目工具资产纳入版本控制；.agents/skills/_emberprobe/agent-bridge.json 是含用户级绝对路径的本机桥接指针，必须由 .gitignore 排除
 - [约定] BMI088 初始化按参考工程执行阻塞式静止校准：连续采样 6000 次，以加速度模长和三轴角速度极差检测运动并整轮重采，10 秒超时后使用参考工程默认机号标定值；正常读取应用 AccelScale 并扣除三轴 GyroOffset
 - [约定] BMI088 加速度计与陀螺仪融合无法提供绝对航向观测，当前 Quaternion EKF 固定 GyroBias[2]=0，Yaw 与 YawTotalAngle 会累计 Z 轴零偏；EmberProbe/Ozone 直接读取 1 kHz 更新中的 INS 结构体会产生跨字段非一致快照，验证姿态曲线应使用带序号的一致性快照或消息发布接口
+- [约定] INS 公开姿态统一按右手定则命名：Roll 为绕 X 轴横滚，Pitch 为绕 Y 轴俯仰，Yaw 为绕 Z 轴偏航，单位度；算法迁移须用已知正反单轴及组合姿态验证字段映射，禁止沿用旧版 Roll/Pitch 互换约定
+- [坑/gotcha] IMU 实测须将供电异常、温度过渡及更新计数重新起算的记录分段分析；动作段不得用于静止漂移统计，缺少外部角度基准或不同参数对照时不得宣称绝对精度或最佳参数

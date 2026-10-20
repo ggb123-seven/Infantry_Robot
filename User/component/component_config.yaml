@@ -1,10 +1,13 @@
 ahrs:
   dependencies:
   - component/user_math.h
+  enabled: false
+madgwick_ahrs:
+  dependencies: []
   enabled: true
 filter:
   dependencies:
-  - component/ahrs
+  - component/user_math.h
   enabled: true
 pid:
   dependencies:

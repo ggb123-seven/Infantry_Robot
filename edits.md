@@ -438,3 +438,35 @@
 - 授权：用户明确要求修改 ID4 速度环参数
 - 验证：`git diff --check` 通过；Debug 构建成功，RAM 41976 B / 128 KB，FLASH 90104 B / 1 MB；`python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过；尚未上板验证
 - 状态：单独创建本地 Git 快照，不推送远端
+# IMU-XR-003 / IMU-XR-004：替换为 XRobot Madgwick（2026-10-19）
+
+- 用户授权 module/component 与 CMake/Keil 修改，并选择 A：不新增结构体，复用公开姿态字段
+- 固定来源：`xrobot-org/MadgwickAHRS`，`e98a223b84e44ca8718fe8e68b4b63577ec70499`，Apache-2.0
+- 新增 `User/component/madgwick_ahrs.c/.h`，移植六轴梯度计算；补零梯度、数值校验及错误时原值保留
+- `INS_t` 删除 EKF 实例，使用 `ahrs_status` 与 `ahrs_beta`；INS 内展开累计 Yaw，保持原 Pitch/Roll 命名映射
+- 删除旧 Quaternion EKF 与其专属 Kalman 组件，移除矩阵源文件登记，CMake/Keil 接入新核心
+- 保留 BMI088 BSP/Device、CubeMX、任务频率、温控及模块故障停热行为；未烧录或复位
+- ARM Debug 全量构建 85 步通过，RAM 42,176 B，Flash 102,288 B；ARCH/HW/SPEC 与格式检查通过
+- 主机回归包括上游 10,000 组单步与 20,000 步连续对照、水平静止、三轴旋转、变 dt、倾斜、32 例边界输入、累计 Yaw 与 10 例模块故障
+- 说明与证据：`docs/imu_xrobot_port.md`、`docs/validation/imu_xrobot_20261019.json`
+- 临时测试资产保存结果后清理；未执行 Git add/commit/push；实际漂移、轴向和运行耗时待上板确认
+
+## INS-ROLL-PITCH-20261019
+
+- 用户明确授权修改 `User/module/ins.c`、`ins.h`，修正 Roll/Pitch 互换
+- 发布映射改为 `Roll=绕 X 轴横滚`、`Pitch=绕 Y 轴俯仰`，同步集中字段说明与移植记录
+- 主机使用实际 INS/Madgwick/PID/Filter/user_math 代码验证 13 组单轴正反转与组合姿态，最大误差 0.000003815 度
+- GCC C11 严格编译、ARM Debug 构建、ARCH/HW/SPEC、格式与行尾检查通过，RAM 42176 B、Flash 102288 B
+- 验证证据与源码及 ELF 哈希见 `docs/imu_xrobot_port.md` 的映射修正验证节；临时测试资产已清理
+- 未烧录、复位或上板实测；未执行 Git add/commit/push
+
+## INS-LIVE-MEASURE-20261019
+
+- 按用户要求复用已有 EmberProbe 连接实测 C 板 INS，未修改生产源码、硬件配置或固件参数，未烧录或主动复位
+- beta 全程 0.033，静止基线 66.428 秒的 Roll/Pitch 标准差为 0.02468°/0.02548°，温度 39.875℃～40.125℃
+- 分别采到 Roll 与 Pitch 正反转；动作后另采 43.258 秒，Roll/Pitch 标准差为 0.02303°/0.02136°
+- 用户确认明显降温期间电源突然断开，相应数据独立标记；曾出现非用户主动的更新计数重新起算，未核实复位原因
+- 在线 beta 写入预检查被工具拒绝，未执行写入或绕过；没有不同 beta 对照，不宣称获得最优参数或绝对角度精度
+- 原始数据、统计、曲线与调参建议见 `docs/validation/imu_live_20261019.md`，移植文档已追加后续实测链接
+- ARCH/HW/SPEC、Debug 构建与差异空白检查通过；复核本轮无 ISR、临界区或 RTOS 对象改动，临时统计程序已清理
+- 保持用户原有后台采样运行，未执行 Git add/commit/push

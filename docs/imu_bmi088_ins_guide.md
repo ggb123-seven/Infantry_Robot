@@ -1,5 +1,8 @@
 # BMI088 与 INS 姿态解算完整入门
 
+> 本文保留为 XRobot 替换前的历史实现说明，其中的 Quaternion EKF、调试字段和旧单位问题不代表当前源码
+> 当前解算已于 2026-10-19 改为 XRobot Madgwick，来源、接口兼容约定和验证结果见 [当前移植记录](imu_xrobot_port.md)
+
 本文面向第一次接触 IMU、SPI 和姿态解算的读者，说明当前工程如何从 BMI088 读取原始数据，如何通过
 Quaternion EKF 得到姿态，以及 INS 模块最终向上层提供了什么。
 

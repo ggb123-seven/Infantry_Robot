@@ -61,9 +61,10 @@ void INS_Task(void *argument)
         }
         previous_time_us = current_time_us;
 
-        // 采集 BMI088 并更新 EKF、坐标变换、运动加速度和二分频温控
+        // 采集 BMI088 并更新 Madgwick、坐标变换、运动加速度和二分频温控
         if (INS_Update(&INS, dt_s) != INS_STATUS_OK)
         {
+            // 模块已进入安全故障状态，清除运行句柄并结束当前任务
             task_runtime.thread.ins = NULL;
             osThreadExit();
         }

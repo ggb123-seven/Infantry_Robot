@@ -20,15 +20,10 @@
 #define INS_REFERENCE_GRAVITY_MPS2 (9.81F)
 #define INS_RAD_TO_DEG (57.295779513F)
 
-static const QuaternionEKF_Config_t ins_quaternion_ekf_config =
-{
-    .process_noise_quaternion = 10.0F,
-    .process_noise_gyro_bias = 0.001F,
-    .measurement_noise_accel = 10000000.0F,
-    .fading_factor = 1.0F,
-    .accel_lpf_time_constant_s = 0.0F,
-    .chi_square_test_threshold = 1.0e-8F,
-};
+/* 姿态增益取自 XRobot MadgwickAHRS 的 BMI088 示例，角度回绕边界以度为单位 */
+#define INS_AHRS_BETA (0.033F)
+#define INS_YAW_HALF_TURN_DEG (180.0F)
+#define INS_YAW_FULL_TURN_DEG (360.0F)
 
 static const KPID_Params_t ins_temperature_pid_params =
 {
@@ -42,10 +37,22 @@ static const KPID_Params_t ins_temperature_pid_params =
     .range = 0.0F,
 };
 
-static const float ins_body_axis_x[3] = {1.0F, 0.0F, 0.0F};
-static const float ins_body_axis_y[3] = {0.0F, 1.0F, 0.0F};
-static const float ins_body_axis_z[3] = {0.0F, 0.0F, 1.0F};
-static const float ins_gravity_navigation[3] = {0.0F, 0.0F, INS_REFERENCE_GRAVITY_MPS2};
+static const float ins_body_axis_x[3] =
+{
+    1.0F, 0.0F, 0.0F
+};
+static const float ins_body_axis_y[3] =
+{
+    0.0F, 1.0F, 0.0F
+};
+static const float ins_body_axis_z[3] =
+{
+    0.0F, 0.0F, 1.0F
+};
+static const float ins_gravity_navigation[3] =
+{
+    0.0F, 0.0F, INS_REFERENCE_GRAVITY_MPS2
+};
 
 static bool INS_ValuesAreFinite(const float *values, uint8_t length);
 static bool INS_UpdateCorrectionMatrix(INS_t *ins, bool force_update);
@@ -235,18 +242,34 @@ static INS_Status_t INS_EnterFault(INS_t *ins, INS_Status_t status)
 }
 
 /**
- * @brief 将 EKF 姿态及参考工程的角度定义发布到 INS 状态
+ * @brief 按标准横滚与俯仰定义发布 Madgwick 姿态并展开累计偏航角
  *
  * @param[in,out] ins INS 模块实例
  * @return 姿态输出均为有限数时返回 true
  */
 static bool INS_UpdatePublishedAttitude(INS_t *ins)
 {
-    memcpy(ins->state.q, ins->quaternion_ekf.q, sizeof(ins->state.q));
-    ins->state.Roll = ins->quaternion_ekf.Roll;
-    ins->state.Pitch = ins->quaternion_ekf.Pitch;
-    ins->state.Yaw = ins->quaternion_ekf.Yaw;
-    ins->state.YawTotalAngle = ins->quaternion_ekf.YawTotalAngle;
+    // 按右手定则发布姿态：Roll 为绕 X 轴横滚，Pitch 为绕 Y 轴俯仰
+    const float *q = ins->state.q;
+    const float previous_yaw = ins->state.Yaw;
+    const float pitch_argument = fmaxf(-1.0F, fminf(1.0F, 2.0F * (q[0] * q[2] - q[1] * q[3])));
+    ins->state.Roll = atan2f(2.0F * (q[0] * q[1] + q[2] * q[3]),
+                            1.0F - 2.0F * (q[1] * q[1] + q[2] * q[2])) * INS_RAD_TO_DEG;
+    ins->state.Pitch = asinf(pitch_argument) * INS_RAD_TO_DEG;
+    ins->state.Yaw = atan2f(2.0F * (q[0] * q[3] + q[1] * q[2]),
+                           1.0F - 2.0F * (q[2] * q[2] + q[3] * q[3])) * INS_RAD_TO_DEG;
+
+    // 使用相邻偏航主值的最短差累加，不增加圈数或历史姿态结构
+    float yaw_delta = ins->state.Yaw - previous_yaw;
+    if (yaw_delta > INS_YAW_HALF_TURN_DEG)
+    {
+        yaw_delta -= INS_YAW_FULL_TURN_DEG;
+    }
+    else if (yaw_delta < -INS_YAW_HALF_TURN_DEG)
+    {
+        yaw_delta += INS_YAW_FULL_TURN_DEG;
+    }
+    ins->state.YawTotalAngle += yaw_delta;
     ins->state.atanxz = -atan2f(ins->state.Accel[0], ins->state.Accel[2]) * INS_RAD_TO_DEG;
     ins->state.atanyz = atan2f(ins->state.Accel[1], ins->state.Accel[2]) * INS_RAD_TO_DEG;
 
@@ -359,7 +382,7 @@ INS_Status_t INS_Init(INS_t *ins)
     ins->module_state = INS_MODULE_STATE_INITIALIZING;
     ins->status = INS_STATUS_NOT_INITIALIZED;
     ins->bmi088_status = BMI088_ERR_NOT_INITIALIZED;
-    ins->quaternion_ekf_status = QUATERNION_EKF_STATUS_NOT_INITIALIZED;
+    ins->ahrs_status = MADGWICK_AHRS_NOT_INITIALIZED;
     ins->heat_status = BSP_IMU_HeatStop();
     if (ins->heat_status != BSP_OK)
     {
@@ -373,12 +396,10 @@ INS_Status_t INS_Init(INS_t *ins)
         return INS_EnterFault(ins, INS_STATUS_BMI088);
     }
 
-    // 初始化姿态 EKF 和参考工程的 1000 Hz 运动加速度低通参数
-    ins->quaternion_ekf_status = QuaternionEKF_Init(&ins->quaternion_ekf, &ins_quaternion_ekf_config);
-    if (ins->quaternion_ekf_status != QUATERNION_EKF_STATUS_OK)
-    {
-        return INS_EnterFault(ins, INS_STATUS_QUATERNION_EKF);
-    }
+    // 以单位四元数启动 XRobot 解算，设备层负责静止校准后的角速度输入
+    ins->state.q[0] = 1.0F;
+    ins->ahrs_beta = INS_AHRS_BETA;
+    ins->ahrs_status = MADGWICK_AHRS_OK;
     ins->MotionAccelLPF = INS_MOTION_ACCEL_LPF_TIME_CONSTANT_S;
     ins->gyro_scale[0] = 1.0F;
     ins->gyro_scale[1] = 1.0F;
@@ -450,7 +471,10 @@ INS_Status_t INS_Update(INS_t *ins, float dt_s)
     ins->state.valid = false;
 
     // 读取完整 BMI088 样本，设备故障时清除公开姿态并关闭加热
-    BMI088_Data_t sample = {0};
+    BMI088_Data_t sample =
+    {
+        0
+    };
     ins->bmi088_status = BMI088_Read(&sample);
     if (ins->bmi088_status != BMI088_OK || !sample.valid)
     {
@@ -461,17 +485,15 @@ INS_Status_t INS_Update(INS_t *ins, float dt_s)
         return INS_EnterFault(ins, INS_STATUS_NUMERIC);
     }
 
-    // 应用安装修正并将同一组传感器数据送入姿态 EKF
+    // 应用安装修正并用实测周期更新 XRobot 六轴 Madgwick 姿态
     if (!INS_CorrectSensorData(ins, &sample))
     {
         return INS_EnterFault(ins, INS_STATUS_NUMERIC);
     }
-    ins->quaternion_ekf_status = QuaternionEKF_Update(&ins->quaternion_ekf, ins->state.Gyro[0], ins->state.Gyro[1],
-                                                      ins->state.Gyro[2], ins->state.Accel[0], ins->state.Accel[1],
-                                                      ins->state.Accel[2], dt_s);
-    if (ins->quaternion_ekf_status != QUATERNION_EKF_STATUS_OK)
+    ins->ahrs_status = MadgwickAHRS_Update(ins->state.q, ins->state.Gyro, ins->state.Accel, ins->ahrs_beta, dt_s);
+    if (ins->ahrs_status != MADGWICK_AHRS_OK)
     {
-        return INS_EnterFault(ins, INS_STATUS_QUATERNION_EKF);
+        return INS_EnterFault(ins, INS_STATUS_AHRS);
     }
 
     // 发布姿态、导航方向和扣除重力后的运动加速度

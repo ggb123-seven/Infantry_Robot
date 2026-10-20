@@ -8,8 +8,8 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "component/madgwick_ahrs.h"
 #include "component/pid.h"
-#include "component/quaternion_ekf.h"
 #include "device/bmi088.h"
 
 typedef enum
@@ -20,7 +20,7 @@ typedef enum
     INS_STATUS_NOT_READY = -3,
     INS_STATUS_INVALID_ARGUMENT = -4,
     INS_STATUS_BMI088 = -5,
-    INS_STATUS_QUATERNION_EKF = -6,
+    INS_STATUS_AHRS = -6,
     INS_STATUS_PID = -7,
     INS_STATUS_HEATER = -8,
     INS_STATUS_ILLEGAL_STATE = -9,
@@ -42,7 +42,8 @@ typedef enum
  * MotionAccel_b 与 MotionAccel_n 分别为机体系和导航系运动加速度，单位 m/s²
  * xn、yn、zn 为机体系三轴在导航系中的单位方向向量
  * atanxz 与 atanyz 为重力加速度在 XZ、YZ 平面的倾角，单位度
- * Roll、Pitch、Yaw 为姿态角，YawTotalAngle 为累计偏航角，单位度
+ * 按右手定则定义：Roll 为绕 X 轴横滚，Pitch 为绕 Y 轴俯仰，Yaw 为绕 Z 轴偏航，单位度
+ * YawTotalAngle 为按相邻偏航最短差展开的累计偏航角，单位度
  * Temperature 为 BMI088 温度，单位摄氏度
  */
 typedef struct
@@ -68,8 +69,8 @@ typedef struct
 /*
  * INS_t 保存设备滤波组合、温控状态、安装修正参数和诊断结果
  * module_state 为模块生命周期状态；status 为最近一次操作结果
- * bmi088_status、quaternion_ekf_status、pid_status 与 heat_status 保存对应底层操作状态
- * quaternion_ekf 与 temperature_controller 分别保存姿态滤波实例和温控 PID 状态
+ * bmi088_status、ahrs_status、pid_status 与 heat_status 保存对应底层操作状态
+ * ahrs_beta 为姿态校正增益；temperature_controller 保存温控 PID 状态
  * state 保存对外发布数据；gyro_scale 为三轴无量纲陀螺仪比例系数
  * correction_yaw_deg、correction_pitch_deg 与 correction_roll_deg 为安装误差角，单位度
  * correction_matrix 为行优先排列的 3×3 安装修正矩阵；correction_angle_last 保存上次生成矩阵的角度
@@ -81,11 +82,11 @@ typedef struct
     INS_ModuleState_t module_state;
     INS_Status_t status;
     BMI088_Status_t bmi088_status;
-    QuaternionEKF_Status_t quaternion_ekf_status;
+    MadgwickAHRS_Status_t ahrs_status;
     int8_t pid_status;
     int8_t heat_status;
 
-    QuaternionEKF_t quaternion_ekf;
+    float ahrs_beta;
     KPID_t temperature_controller;
     INS_State_t state;
 
