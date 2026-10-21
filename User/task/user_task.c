@@ -7,6 +7,7 @@ Task_Runtime_t task_runtime;
  * - Task_Init：实时优先级，栈空间 2048 字节，初始化业务模块并创建业务对象后退出
  * - can：高于普通优先级，栈空间 1024 字节，执行 500 赫兹 CAN 设备通信
  * - motor_chassis：普通优先级，栈空间 1024 字节，执行 500 赫兹底盘周期控制
+ * - motor_gimbal：普通优先级，栈空间 1024 字节，执行 500 赫兹 yaw 速度控制
  * - dr16：高于普通优先级，栈空间 1024 字节，消费 UART 字节流并发布遥控状态
  * - INS：高于普通优先级，栈空间 2048 字节，执行 1000 赫兹 BMI088 采集和姿态解算
  */
@@ -35,6 +36,13 @@ const osThreadAttr_t attr_dr16 =
 {
     .name = "dr16",
     .priority = osPriorityAboveNormal,
+    .stack_size = 256U * 4U,
+};
+
+const osThreadAttr_t attr_motor_gimbal =
+{
+    .name = "motor_gimbal",
+    .priority = osPriorityNormal,
     .stack_size = 256U * 4U,
 };
 

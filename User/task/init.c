@@ -6,6 +6,7 @@
 #include "task/dr16_task.h"
 #include "task/ins_task.h"
 #include "task/motor_chassis.h"
+#include "task/motor_gimbal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -95,6 +96,28 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 两轴各用一个最新值邮箱，沿用电机反馈类型，先于云台任务完成创建
+    task_runtime.init_status = TASK_INIT_GIMBAL_YAW_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.gimbal_yaw_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.gimbal_yaw_feedback == NULL)
+    {
+        return false;
+    }
+    task_runtime.init_status = TASK_INIT_GIMBAL_PITCH_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.gimbal_pitch_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.gimbal_pitch_feedback == NULL)
+    {
+        return false;
+    }
+
+    // 电流命令直接使用浮点安培值，不额外定义命令结构体
+    task_runtime.init_status = TASK_INIT_GIMBAL_YAW_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.gimbal_yaw_command = osMessageQueueNew(1U, sizeof(float), NULL);
+    if (task_runtime.msgq.gimbal_yaw_command == NULL)
+    {
+        return false;
+    }
+
     // 创建独立 INS 任务，设备初始化在任务获得调度后执行
     task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
     task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
@@ -115,6 +138,14 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
     task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
     if (task_runtime.thread.motor_chassis == NULL)
+    {
+        return false;
+    }
+
+    // 所有反馈与命令邮箱就绪后创建云台速度控制任务
+    task_runtime.init_status = TASK_INIT_GIMBAL_THREAD_FAILED;
+    task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
+    if (task_runtime.thread.motor_gimbal == NULL)
     {
         return false;
     }
@@ -142,6 +173,13 @@ static bool Task_InitModules(void)
     // CAN 总线可运行后初始化底盘速度控制器，失败时不创建业务任务
     task_runtime.init_status = TASK_INIT_MOTOR_CHASSIS_FAILED;
     if (!Task_motor_chassis_Init())
+    {
+        return false;
+    }
+
+    // 云台模块与底盘模块分别初始化，任一失败时都不启动业务任务
+    task_runtime.init_status = TASK_INIT_GIMBAL_MODULE_FAILED;
+    if (!Task_motor_gimbal_Init())
     {
         return false;
     }
@@ -175,6 +213,14 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.motor_chassis = NULL;
     }
+    if (task_runtime.thread.motor_gimbal != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.motor_gimbal) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.motor_gimbal = NULL;
+    }
     if (task_runtime.thread.can != NULL)
     {
         if (osThreadTerminate(task_runtime.thread.can) != osOK)
@@ -198,6 +244,31 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.can_command = NULL;
+    }
+    // 任一后续对象创建失败时，也回收云台命令与两路反馈邮箱
+    if (task_runtime.msgq.gimbal_yaw_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.gimbal_yaw_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.gimbal_yaw_command = NULL;
+    }
+    if (task_runtime.msgq.gimbal_pitch_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.gimbal_pitch_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.gimbal_pitch_feedback = NULL;
+    }
+    if (task_runtime.msgq.gimbal_yaw_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.gimbal_yaw_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.gimbal_yaw_feedback = NULL;
     }
     if (task_runtime.msgq.can_feedback != NULL)
     {

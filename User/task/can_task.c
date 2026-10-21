@@ -13,6 +13,10 @@ static CANDevices_Snapshot_t can_devices_snapshot;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
+static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
+
+// 独立保留云台发送结果，避免覆盖底盘快照的发送状态
+static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -46,6 +50,17 @@ void Task_can(void *argument)
         }
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
 
+        // 只使用本周期取得的 yaw 电流，邮箱为空或读取失败时立即回到零输出
+        float yaw_current_a = 0.0f;
+        if (task_runtime.msgq.gimbal_yaw_command == NULL ||
+            osMessageQueueGet(task_runtime.msgq.gimbal_yaw_command, &yaw_current_a, NULL, 0U) != osOK)
+        {
+            yaw_current_a = 0.0f;
+        }
+
+        // 两轴缓存统一组帧，yaw 使用速度环输出，pitch 保持零电流
+        gimbal_output_status = CANDevices_ApplyGimbalCurrent(yaw_current_a);
+
         // 发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
 
@@ -62,7 +77,7 @@ void Task_can(void *argument)
  */
 bool Task_can_Init(void)
 {
-    // 初始化 CAN 总线和当前实际存在的四个底盘电机，允许单路注册失败后隔离运行
+    // 初始化两条 CAN 总线及底盘、云台电机，允许单路注册失败后隔离运行
     CANDevices_Init(&can_devices_snapshot);
     return can_devices_snapshot.initialized;
 }
@@ -103,5 +118,36 @@ static bool CANTask_PublishSnapshot(void)
         success = false;
     }
 
+    // 两轴分别发布最新有效反馈，任一轴丢帧不会覆盖另一轴邮箱
+    if (!CANTask_PublishGimbalFeedback(CAN_DEVICES_GIMBAL_YAW, task_runtime.msgq.gimbal_yaw_feedback))
+    {
+        success = false;
+    }
+    if (!CANTask_PublishGimbalFeedback(CAN_DEVICES_GIMBAL_PITCH, task_runtime.msgq.gimbal_pitch_feedback))
+    {
+        success = false;
+    }
+
     return success;
+}
+
+/**
+ * @brief 将单轴新反馈发布到对应的最新值邮箱
+ *
+ * @param[in] axis 云台轴索引，yaw 为 0，pitch 为 1
+ * @param[in] queue 对应轴的容量为 1 的 MOTOR_RM_Feedback_t 邮箱
+ * @return 新反馈发布成功时返回 true，没有新反馈或邮箱操作失败时返回 false
+ */
+static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue)
+{
+    MOTOR_RM_Feedback_t feedback;
+
+    // 只接纳新帧，消费者根据反馈中的微秒时间戳识别离线与过期数据
+    if (queue == NULL || CANDevices_UpdateGimbalFeedback(axis, &feedback) != CAN_DEVICES_OK)
+    {
+        return false;
+    }
+
+    // 邮箱保留最新一帧，清空及写入的结果均交给调用方检查
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
 }

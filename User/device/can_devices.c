@@ -66,12 +66,38 @@ typedef struct
 
 static CANDevices_State_t can_devices_state;
 
+/*
+ * CAN2 云台固定参数：索引 0 为 ID5 yaw，索引 1 为 ID6 pitch
+ * 反馈标准帧分别为 0x209、0x20A，电流控制共用 0x2FE，方向暂不反转，无外置减速箱
+ * @datasheet RoboMaster GM6020 使用说明 20231013 的 CAN 电流控制协议
+ */
+static MOTOR_RM_Param_t can_devices_gimbal_param[CAN_DEVICES_GIMBAL_MOTOR_COUNT] =
+{
+    {
+        .can = BSP_CAN_2,
+        .id = 0x209U,
+        .module = MOTOR_GM6020,
+        .reverse = false,
+        .gear = false,
+    },
+    {
+        .can = BSP_CAN_2,
+        .id = 0x20AU,
+        .module = MOTOR_GM6020,
+        .reverse = false,
+        .gear = false,
+    },
+};
+
+static bool can_devices_gimbal_registered[CAN_DEVICES_GIMBAL_MOTOR_COUNT];
+
 static void CANDevices_ResetState(void);
 static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot);
 static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_current_a, float *applied_current_a);
+static int8_t CANDevices_InitGimbal(void);
 
 /**
- * @brief 初始化 CAN1 并注册四个底盘 M3508
+ * @brief 初始化 CAN 总线并注册底盘与云台电机
  *
  * @param[out] snapshot CAN 设备集合初始化结果快照
  * @return 全部设备注册成功返回 CAN_DEVICES_OK，部分失败或总线不可用时返回对应状态码
@@ -116,7 +142,10 @@ int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot)
         }
     }
 
-    can_devices_state.init_status = all_registered ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
+    // 云台初始化结果纳入聚合状态，单路失败仍允许已注册的底盘设备运行
+    const int8_t gimbal_status = CANDevices_InitGimbal();
+    can_devices_state.init_status = all_registered && gimbal_status == CAN_DEVICES_OK ?
+                                    CAN_DEVICES_OK : CAN_DEVICES_ERROR;
     CANDevices_ResetSnapshot(snapshot);
     return can_devices_state.init_status;
 }
@@ -239,6 +268,115 @@ int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_S
     snapshot->tx_status = MOTOR_RM_FlushGroup(&can_devices_chassis_motor_param[0]);
     snapshot->output_status = all_current_set && snapshot->tx_status == DEVICE_OK ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
     return snapshot->output_status;
+}
+
+/**
+ * @brief 注册 CAN2 两路 GM6020，并预置零电流缓存
+ *
+ * @return 两路注册与缓存初始化均成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
+ */
+static int8_t CANDevices_InitGimbal(void)
+{
+    // 总线不可用时不创建设备，防止缺失的 CAN2 配置影响 CAN1 通信
+    for (uint8_t axis = 0U; axis < CAN_DEVICES_GIMBAL_MOTOR_COUNT; axis++)
+    {
+        can_devices_gimbal_registered[axis] = false;
+    }
+    if (BSP_CAN_GetHandle(BSP_CAN_2) == NULL)
+    {
+        return CAN_DEVICES_ERROR;
+    }
+
+    // 两轴分别注册并预置零电流，等待通信任务提交控制输出
+    bool success = true;
+    for (uint8_t axis = 0U; axis < CAN_DEVICES_GIMBAL_MOTOR_COUNT; axis++)
+    {
+        MOTOR_RM_Param_t *param = &can_devices_gimbal_param[axis];
+        if (MOTOR_RM_Register(param) != DEVICE_OK || MOTOR_RM_GetMotor(param) == NULL ||
+            MOTOR_RM_SetTorqueCurrent(param, 0.0f) != DEVICE_OK)
+        {
+            success = false;
+            continue;
+        }
+        can_devices_gimbal_registered[axis] = true;
+    }
+    return success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
+}
+
+/**
+ * @brief 获取单轴新反馈，失败时阻止无效数据进入任务邮箱
+ *
+ * @param[in] axis 云台轴索引，范围 0 至 1
+ * @param[out] feedback 新反馈，速度单位 rpm，时间戳单位微秒，失败时清零
+ * @return 成功返回 CAN_DEVICES_OK，否则返回设备错误码
+ */
+int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedback)
+{
+    if (feedback == NULL)
+    {
+        return CAN_DEVICES_NULL_ERROR;
+    }
+
+    // 失败路径清零输出，并拒绝越界或尚未完成注册的设备
+    *feedback = (MOTOR_RM_Feedback_t)
+    {
+        0,
+    };
+    if (axis >= CAN_DEVICES_GIMBAL_MOTOR_COUNT || !can_devices_gimbal_registered[axis])
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+
+    // 只发布本周期实际取得的新帧，邮箱消费者使用微秒时间戳判断反馈时效
+    MOTOR_RM_Param_t *param = &can_devices_gimbal_param[axis];
+    const int8_t status = MOTOR_RM_Update(param);
+    if (status != DEVICE_OK)
+    {
+        return status;
+    }
+    const MOTOR_RM_t *motor = MOTOR_RM_GetMotor(param);
+    if (motor == NULL)
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+    *feedback = motor->feedback;
+    return CAN_DEVICES_OK;
+}
+
+/**
+ * @brief 写入 yaw 电流并清零 pitch，再统一发送云台控制帧
+ *
+ * @param[in] yaw_current_a yaw 转子侧电流，单位 A，有限值由电机驱动按协议量程限幅
+ * @return 两路缓存写入且发送成功返回 CAN_DEVICES_OK，非法输入归零并返回 CAN_DEVICES_ERROR
+ */
+int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a)
+{
+    bool success = isfinite(yaw_current_a);
+    MOTOR_RM_Param_t *flush_param = NULL;
+
+    // 非法请求使用零电流，先写完两轴缓存再统一发送，pitch 始终不参与控制
+    for (uint8_t axis = 0U; axis < CAN_DEVICES_GIMBAL_MOTOR_COUNT; axis++)
+    {
+        if (!can_devices_gimbal_registered[axis])
+        {
+            success = false;
+            continue;
+        }
+        MOTOR_RM_Param_t *param = &can_devices_gimbal_param[axis];
+        const float current_a = axis == CAN_DEVICES_GIMBAL_YAW && isfinite(yaw_current_a) ? yaw_current_a : 0.0f;
+        if (MOTOR_RM_SetTorqueCurrent(param, current_a) != DEVICE_OK)
+        {
+            success = false;
+        }
+        flush_param = param;
+    }
+
+    // 共用的 0x2FE 每周期只发送一次，未使用的 ID7 与保留字节由驱动清零
+    if (flush_param == NULL || MOTOR_RM_FlushGroup(flush_param) != DEVICE_OK)
+    {
+        return CAN_DEVICES_ERROR;
+    }
+    return success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
 }
 
 /**

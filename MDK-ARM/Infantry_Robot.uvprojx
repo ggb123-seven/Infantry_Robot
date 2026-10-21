@@ -375,7 +375,7 @@
             <ScatterFile></ScatterFile>
             <IncludeLibs></IncludeLibs>
             <IncludeLibsPath></IncludeLibsPath>
-            <Misc></Misc>
+            <Misc>--keep=gimbal.o(*)</Misc>
             <LinkerInputFile></LinkerInputFile>
             <DisabledWarnings></DisabledWarnings>
           </LDads>
@@ -616,6 +616,11 @@
               <FilePath>..\User\task\motor_chassis.c</FilePath>
             </File>
             <File>
+              <FileName>motor_gimbal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\motor_gimbal.c</FilePath>
+            </File>
+            <File>
               <FileName>ins_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\task\ins_task.c</FilePath>
@@ -674,6 +679,11 @@
               <FileName>ins.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\ins.c</FilePath>
+            </File>
+            <File>
+              <FileName>gimbal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\gimbal.c</FilePath>
             </File>
             <File>
               <FileName>motor.c</FileName>

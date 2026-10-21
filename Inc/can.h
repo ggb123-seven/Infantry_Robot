@@ -33,12 +33,20 @@ extern "C" {
 /* USER CODE END Includes */
 
 extern CAN_HandleTypeDef hcan1;
+extern CAN_HandleTypeDef hcan2;
 
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
 void MX_CAN1_Init(void);
+
+/**
+ * @brief 初始化 CAN2，PB5 为接收，PB6 为发送，通信速率为 1 Mbps
+ *
+ * @return 无返回值，初始化失败时进入 Error_Handler
+ */
+void MX_CAN2_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 

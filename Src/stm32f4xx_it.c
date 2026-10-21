@@ -61,6 +61,7 @@ extern void xPortSysTickHandler(void);
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 extern CAN_HandleTypeDef hcan1;
+extern CAN_HandleTypeDef hcan2;
 extern DMA_HandleTypeDef hdma_usart3_rx;
 extern UART_HandleTypeDef huart3;
 extern TIM_HandleTypeDef htim6;
@@ -261,6 +262,26 @@ void OTG_FS_IRQHandler(void)
   /* USER CODE BEGIN OTG_FS_IRQn 1 */
 
   /* USER CODE END OTG_FS_IRQn 1 */
+}
+
+/**
+ * @brief 将 CAN2 FIFO0 接收中断交给 HAL 与 BSP 回调
+ *
+ * @return 无返回值
+ */
+void CAN2_RX0_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&hcan2);
+}
+
+/**
+ * @brief 将 CAN2 发送完成中断交给 HAL 以继续发送排队帧
+ *
+ * @return 无返回值
+ */
+void CAN2_TX_IRQHandler(void)
+{
+    HAL_CAN_IRQHandler(&hcan2);
 }
 
 /* USER CODE BEGIN 1 */

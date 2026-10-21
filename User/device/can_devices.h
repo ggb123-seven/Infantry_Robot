@@ -8,10 +8,16 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "device/motor_rm.h"
+
 /*
- * CAN 设备聚合参数：底盘固定注册四路 M3508
+ * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册 yaw 与 pitch 两路 GM6020
+ * 云台索引 0、1 分别对应 ID5 yaw 和 ID6 pitch，反馈标准帧为 0x209、0x20A
  */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
+#define CAN_DEVICES_GIMBAL_MOTOR_COUNT (2U)
+#define CAN_DEVICES_GIMBAL_YAW (0U)
+#define CAN_DEVICES_GIMBAL_PITCH (1U)
 
 /**
  * @brief 整车 CAN 设备集合状态
@@ -40,8 +46,8 @@ typedef struct
 
 /*
  * 整车 CAN 设备集合快照：
- * - initialized：CAN1 可运行时为 true，允许单个电机注册失败后隔离运行
- * - init_status：CAN1 初始化、四路 M3508 注册的聚合结果
+ * - initialized：CAN 总线初始化成功时为 true，允许单个电机注册失败后隔离运行
+ * - init_status：总线初始化、四路 M3508 与两路 GM6020 注册的聚合结果
  * - feedback_status：四路 M3508 本周期反馈更新的聚合结果
  * - output_status：四路 M3508 本周期电流提交的聚合结果
  * - tx_status：四路 M3508 槽位处理完成后的 0x200 控制帧发送结果
@@ -73,7 +79,7 @@ typedef struct
 } CANDevices_Snapshot_t;
 
 /**
- * @brief 初始化 CAN1 并注册四个底盘 M3508
+ * @brief 初始化 CAN 总线并注册四个底盘 M3508 和两路云台 GM6020
  *
  * 单个电机注册失败时保留其他电机运行能力，并在快照中记录对应注册状态
  *
@@ -100,6 +106,23 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot);
  * @return 四路命令均有效且统一发送成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
 int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_Snapshot_t *snapshot);
+
+/**
+ * @brief 更新单路云台 GM6020 反馈，供 CAN 任务发布至独立邮箱
+ *
+ * @param[in] axis 云台轴索引，yaw 为 CAN_DEVICES_GIMBAL_YAW，pitch 为 CAN_DEVICES_GIMBAL_PITCH
+ * @param[out] feedback 电机最新有效反馈，转速单位 rpm，last_update_time 单位为微秒，失败时清零
+ * @return 取得新反馈返回 CAN_DEVICES_OK，否则返回设备错误码且不得发布本次结果
+ */
+int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedback);
+
+/**
+ * @brief 写入 yaw 电流并保持 pitch 零电流，统一发送一次 0x2FE 帧
+ *
+ * @param[in] yaw_current_a yaw 转子侧电流，单位 A，传入零表示停机，非有限值按零处理
+ * @return 两路缓存更新且发送成功返回 CAN_DEVICES_OK，非法输入、设备不可用或发送失败返回错误码
+ */
+int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a);
 
 #ifdef __cplusplus
 }

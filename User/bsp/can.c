@@ -7,20 +7,14 @@
 #include "FreeRTOS.h"
 #include "ringbuffer/ringbuffer.h"
 #include "task.h"
-
 /* USER INCLUDE BEGIN */
-
 /* USER INCLUDE END */
-
 /* Private define ----------------------------------------------------------- */
 #define CAN_QUEUE_MUTEX_TIMEOUT         100   /* 队列互斥锁超时时间(ms) */
 #define CAN_TX_MAILBOX_NUM              3     /* CAN发送邮箱数量 */
-
 /* LwRB 会保留一个字节区分空队列与满队列，因此存储区额外增加一个字节。 */
 #define BSP_CAN_TX_QUEUE_STORAGE_SIZE   ((BSP_CAN_TX_QUEUE_SIZE * sizeof(BSP_CAN_TxMessage_t)) + 1U)
-
 /* USER DEFINE BEGIN */
-
 /* USER DEFINE END */
 
 /* Private macro ------------------------------------------------------------ */
@@ -73,15 +67,26 @@ static bool BSP_CAN_TxQueueIsEmpty(BSP_CAN_t can);
 /* USER FUNCTION END */
 
 /**
- * @brief 根据CAN句柄获取BSP_CAN实例
+ * @brief 根据 HAL 句柄获取板级 CAN 总线枚举
+ *
+ * @param[in] hcan HAL CAN 句柄
+ * @return 有效句柄返回 CAN1 或 CAN2，无效句柄返回 BSP_CAN_ERR
  */
-static BSP_CAN_t CAN_Get(CAN_HandleTypeDef *hcan) {
-    if (hcan == NULL) return BSP_CAN_ERR;
-    
-    if (hcan->Instance == CAN1)
-        return BSP_CAN_1;
-    else
+static BSP_CAN_t CAN_Get(CAN_HandleTypeDef *hcan)
+{
+    if (hcan == NULL)
+    {
         return BSP_CAN_ERR;
+    }
+    if (hcan->Instance == CAN1)
+    {
+        return BSP_CAN_1;
+    }
+    if (hcan->Instance == CAN2)
+    {
+        return BSP_CAN_2;
+    }
+    return BSP_CAN_ERR;
 }
 
 /**
@@ -203,7 +208,6 @@ static void BSP_CAN_PushRxMessage(BSP_CAN_QueueNode_t *node, const BSP_CAN_Messa
     }
 }
 
-
 /**
  * @brief 获取帧类型
  */
@@ -323,7 +327,6 @@ static void BSP_CAN_TxCompleteCallback(void) {
         }
     }
 }
-
 
 /**
  * @brief FIFO0接收处理函数
@@ -470,15 +473,20 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
 
 /* Exported functions ------------------------------------------------------- */
 
-int8_t BSP_CAN_Init(void) {
-    if (inited) {
+/**
+ * @brief 初始化两条 CAN 总线及共用的软件收发资源
+ *
+ * @return 成功返回 BSP_OK，重复初始化或任一资源启动失败时返回 BSP 错误码
+ */
+int8_t BSP_CAN_Init(void)
+{
+    if (inited)
+    {
         return BSP_ERR_INITED;
     }
-    
-    // 清零回调函数数组
+
+    // 创建同步资源并清空收发状态，尚不允许设备注册
     memset(CAN_Callback, 0, sizeof(CAN_Callback));
-        
-    // 初始化发送队列
     for (int i = 0; i < BSP_CAN_NUM; i++)
     {
         if (!BSP_CAN_TxQueueInit((BSP_CAN_t)i))
@@ -486,57 +494,71 @@ int8_t BSP_CAN_Init(void) {
             return BSP_ERR;
         }
     }
-
-    // 初始化ID解析器为默认解析器
     id_parser = BSP_CAN_DefaultIdParser;
-    
-    // 创建互斥锁
     queue_mutex = osMutexNew(NULL);
-    if (queue_mutex == NULL) {
+    if (queue_mutex == NULL)
+    {
         return BSP_ERR;
     }
-    
-    // 先设置初始化标志，以便后续回调注册能通过检查
     inited = true;
 
-    // 初始化 CAN1 - 使用 FIFO0
-    CAN_FilterTypeDef can1_filter = {0};
-    can1_filter.FilterBank = 0;
-    can1_filter.FilterIdHigh = 0;
-    can1_filter.FilterIdLow = 0;
-    can1_filter.FilterMode = CAN_FILTERMODE_IDMASK;
-    can1_filter.FilterScale = CAN_FILTERSCALE_32BIT;
-    can1_filter.FilterMaskIdHigh = 0;
-    can1_filter.FilterMaskIdLow = 0;
-    can1_filter.FilterActivation = ENABLE;
-    can1_filter.SlaveStartFilterBank = 14;
-    can1_filter.FilterFIFOAssignment = CAN_RX_FIFO0;
-    HAL_CAN_ConfigFilter(&hcan1, &can1_filter);
-    HAL_CAN_Start(&hcan1);
-
-    // 自动注册CAN1接收回调函数
-    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_RX_FIFO0_MSG_PENDING_CB, BSP_CAN_RxFifo0Callback);
-    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX0_CPLT_CB, BSP_CAN_TxCompleteCallback);
-    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX1_CPLT_CB, BSP_CAN_TxCompleteCallback);
-    BSP_CAN_RegisterCallback(BSP_CAN_1, HAL_CAN_TX_MAILBOX2_CPLT_CB, BSP_CAN_TxCompleteCallback);
-
-    // 激活CAN1中断
-    HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY);
-
-    
-    inited = true;
+    // 双 CAN 共用 28 个滤波器组，0 至 13 给 CAN1，14 至 27 给 CAN2，均接收 FIFO0
+    // 当前采用全接收掩码，具体反馈 ID 在 BSP 的设备邮箱路由中筛选
+    for (int i = 0; i < BSP_CAN_NUM; i++)
+    {
+        const BSP_CAN_t can = (BSP_CAN_t)i;
+        CAN_HandleTypeDef *hcan = BSP_CAN_GetHandle(can);
+        CAN_FilterTypeDef filter =
+        {
+            0,
+        };
+        filter.FilterBank = can == BSP_CAN_1 ? 0U : 14U;
+        filter.FilterMode = CAN_FILTERMODE_IDMASK;
+        filter.FilterScale = CAN_FILTERSCALE_32BIT;
+        filter.FilterActivation = ENABLE;
+        filter.SlaveStartFilterBank = 14U;
+        filter.FilterFIFOAssignment = CAN_RX_FIFO0;
+        if (hcan == NULL || HAL_CAN_ConfigFilter(hcan, &filter) != HAL_OK || HAL_CAN_Start(hcan) != HAL_OK ||
+            BSP_CAN_RegisterCallback(can, HAL_CAN_RX_FIFO0_MSG_PENDING_CB, BSP_CAN_RxFifo0Callback) != BSP_OK ||
+            BSP_CAN_RegisterCallback(can, HAL_CAN_TX_MAILBOX0_CPLT_CB, BSP_CAN_TxCompleteCallback) != BSP_OK ||
+            BSP_CAN_RegisterCallback(can, HAL_CAN_TX_MAILBOX1_CPLT_CB, BSP_CAN_TxCompleteCallback) != BSP_OK ||
+            BSP_CAN_RegisterCallback(can, HAL_CAN_TX_MAILBOX2_CPLT_CB, BSP_CAN_TxCompleteCallback) != BSP_OK ||
+            HAL_CAN_ActivateNotification(hcan, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY) != HAL_OK)
+        {
+            // 任一启动步骤失败时停止两条总线，禁止遗留运行一半的中断与队列资源
+            for (int stop_index = 0; stop_index < BSP_CAN_NUM; stop_index++)
+            {
+                CAN_HandleTypeDef *stop_handle = BSP_CAN_GetHandle((BSP_CAN_t)stop_index);
+                if (stop_handle != NULL)
+                {
+                    HAL_CAN_DeactivateNotification(stop_handle, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY);
+                    HAL_CAN_Stop(stop_handle);
+                }
+            }
+            inited = false;
+            osMutexDelete(queue_mutex);
+            queue_mutex = NULL;
+            memset(CAN_Callback, 0, sizeof(CAN_Callback));
+            return BSP_ERR;
+        }
+    }
     return BSP_OK;
 }
 
-
-CAN_HandleTypeDef *BSP_CAN_GetHandle(BSP_CAN_t can) {
-    if (can >= BSP_CAN_NUM) {
-        return NULL;
-    }
-    
-    switch (can) {
-    case BSP_CAN_1:
-      return &hcan1;
+/**
+ * @brief 将板级总线枚举转换为对应 HAL 句柄
+ *
+ * @param[in] can CAN1 或 CAN2 的板级枚举值
+ * @return 成功返回 HAL 句柄，无效枚举返回 NULL
+ */
+CAN_HandleTypeDef *BSP_CAN_GetHandle(BSP_CAN_t can)
+{
+    switch (can)
+    {
+        case BSP_CAN_1:
+            return &hcan1;
+        case BSP_CAN_2:
+            return &hcan2;
         default:
             return NULL;
     }
@@ -699,7 +721,6 @@ int8_t BSP_CAN_RegisterLatestId(BSP_CAN_t can, uint32_t can_id)
     return BSP_CAN_CreateIdQueue(can, can_id, 1, true);
 }
 
-
 int8_t BSP_CAN_GetMessage(BSP_CAN_t can, uint32_t can_id, BSP_CAN_Message_t *msg, uint32_t timeout) {
     if (!inited) {
         return BSP_ERR_INITED;
@@ -776,5 +797,4 @@ uint32_t BSP_CAN_ParseId(uint32_t original_id, BSP_CAN_FrameType_t frame_type) {
     }
     return BSP_CAN_DefaultIdParser(original_id, frame_type);
 }
-
 

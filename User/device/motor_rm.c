@@ -21,10 +21,22 @@
 #define MOTOR_RM_FEEDBACK_TIMEOUT_US (100000u)
 #define MOTOR_RM_TX_GROUP_M3508_M2006_LOW (0u)
 #define MOTOR_RM_TX_GROUP_M3508_M2006_HIGH (1u)
+#define MOTOR_RM_TX_GROUP_GM6020 (2u)
 #define MOTOR_RM_TX_GROUP_MASK(group) ((uint8_t)(1u << (group)))
 #define MOTOR_ENC_RES (8192)  /* 电机编码器分辨率 */
 #define MOTOR_CUR_RES (16384) /* 电机转矩电流分辨率 */
 #define MOTOR_RM_SUSPICIOUS_DELTA_COUNT ((MOTOR_ENC_RES * 9) / 20)
+
+/*
+ * GM6020 电流环兼容协议使用反馈帧 0x209、0x20A 和控制帧 0x2FE
+ * ID 5、6 分别位于控制帧数据字节 0~1、2~3，±3 A 对应原始值 ±16384
+ * @datasheet RoboMaster GM6020 使用说明 20231013，第 7 页电流控制协议
+ */
+#define GM6020_FB_ID_BASE (0x209U)
+#define GM6020_CTRL_ID (0x2FEU)
+#define GM6020_MAX_ABS_CURRENT_A (3.0F)
+#define GM6020_OUTPUT_SLOT_BASE (4U)
+
 static MOTOR_RM_CANManager_t *can_managers[BSP_CAN_NUM] =
 {
     NULL,
@@ -42,8 +54,8 @@ MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS] =
 /**
  * @brief 将反馈标识映射为八路输出槽位
  *
- * @param[in] can_id 反馈标准帧标识，支持 0x201~0x208
- * @param[in] module 电机型号，仅支持 M3508 与 M2006
+ * @param[in] can_id 反馈标准帧标识，M2006/M3508 为 0x201~0x208，GM6020 为 0x209/0x20A
+ * @param[in] module 电机型号，支持 M2006、M3508 和 GM6020
  * @return 成功返回 0~7，否则返回 DEVICE_ERR
  */
 static int8_t MOTOR_RM_GetLogicalIndex(uint16_t can_id, MOTOR_RM_Module_t module)
@@ -55,6 +67,12 @@ static int8_t MOTOR_RM_GetLogicalIndex(uint16_t can_id, MOTOR_RM_Module_t module
         if (can_id >= M3508_M2006_FB_ID_BASE && can_id <= M3508_M2006_FB_ID_BASE + 7)
         {
             return can_id - M3508_M2006_FB_ID_BASE;
+        }
+        break;
+    case MOTOR_GM6020:
+        if (can_id >= GM6020_FB_ID_BASE && can_id <= GM6020_FB_ID_BASE + 1U)
+        {
+            return GM6020_OUTPUT_SLOT_BASE + can_id - GM6020_FB_ID_BASE;
         }
         break;
     default:
@@ -71,27 +89,23 @@ static int8_t MOTOR_RM_GetLogicalIndex(uint16_t can_id, MOTOR_RM_Module_t module
  */
 static int8_t MOTOR_RM_GetTxGroupById(uint16_t can_id)
 {
-    switch (can_id)
+    if (can_id < M3508_M2006_FB_ID_BASE || can_id > M3508_M2006_FB_ID_BASE + 7U)
     {
-    case M3508_M2006_FB_ID_BASE:
-    case M3508_M2006_FB_ID_BASE + 1:
-    case M3508_M2006_FB_ID_BASE + 2:
-    case M3508_M2006_FB_ID_BASE + 3:
-        return MOTOR_RM_TX_GROUP_M3508_M2006_LOW;
-    case M3508_M2006_FB_ID_BASE + 4:
-    case M3508_M2006_FB_ID_BASE + 5:
-    case M3508_M2006_FB_ID_BASE + 6:
-    case M3508_M2006_FB_ID_BASE + 7:
-        return MOTOR_RM_TX_GROUP_M3508_M2006_HIGH;
-    default:
         return DEVICE_ERR;
     }
+    return can_id < M3508_M2006_FB_ID_BASE + 4U ? MOTOR_RM_TX_GROUP_M3508_M2006_LOW :
+           MOTOR_RM_TX_GROUP_M3508_M2006_HIGH;
 }
 static int8_t MOTOR_RM_GetTxGroup(MOTOR_RM_Param_t *param)
 {
     if (param == NULL)
     {
         return DEVICE_ERR_NULL;
+    }
+    if (param->module == MOTOR_GM6020)
+    {
+        return param->id >= GM6020_FB_ID_BASE && param->id <= GM6020_FB_ID_BASE + 1U ?
+               (int8_t)MOTOR_RM_TX_GROUP_GM6020 : DEVICE_ERR;
     }
     return MOTOR_RM_GetTxGroupById(param->id);
 }
@@ -105,10 +119,10 @@ static void MOTOR_RM_MarkPendingGroup(MOTOR_RM_CANManager_t *manager, int8_t gro
 }
 
 /**
- * @brief 将四路缓存电流封装为对应控制帧
+ * @brief 将缓存电流封装为对应控制帧
  *
  * @param[in] manager 当前 CAN 总线的电机管理器
- * @param[in] group 控制帧组索引，0 对应低四路，1 对应高四路
+ * @param[in] group 控制帧组索引，0/1 对应 M3508 或 M2006，2 对应 GM6020
  * @param[out] tx_frame 待发送的八字节标准数据帧
  * @return 成功返回 DEVICE_OK，空指针或无效帧组返回设备错误码
  */
@@ -119,25 +133,34 @@ static int8_t MOTOR_RM_FillTxFrame(const MOTOR_RM_CANManager_t *manager, uint8_t
     {
         return DEVICE_ERR_NULL;
     }
-    // 先完成参数校验，再按帧组打包四路同周期缓存
+    // 清零数据区，确保 GM6020 控制帧未使用的字节保持零
+    // 再按帧组打包同周期缓存电流
     const MOTOR_RM_MsgOutput_t *output_msg = &manager->output_msg;
     tx_frame->dlc = MOTOR_TX_BUF_SIZE;
+    memset(tx_frame->data, 0, sizeof(tx_frame->data));
     switch (group)
     {
     case MOTOR_RM_TX_GROUP_M3508_M2006_LOW:
-        tx_frame->id = M3508_M2006_CTRL_ID_BASE;
-        for (int i = 0; i < 4; i++)
+    case MOTOR_RM_TX_GROUP_M3508_M2006_HIGH:
+    {
+        const uint8_t output_index_base = group == MOTOR_RM_TX_GROUP_M3508_M2006_LOW ? 0U : 4U;
+        tx_frame->id = group == MOTOR_RM_TX_GROUP_M3508_M2006_LOW ? M3508_M2006_CTRL_ID_BASE :
+                       M3508_M2006_CTRL_ID_EXTAND;
+        for (uint8_t slot = 0U; slot < 4U; slot++)
         {
-            tx_frame->data[i * 2] = (uint8_t)((output_msg->output[i] >> 8) & 0xFF);
-            tx_frame->data[i * 2 + 1] = (uint8_t)(output_msg->output[i] & 0xFF);
+            const int16_t current = output_msg->output[output_index_base + slot];
+            tx_frame->data[slot * 2U] = (uint8_t)((current >> 8) & 0xFF);
+            tx_frame->data[slot * 2U + 1U] = (uint8_t)(current & 0xFF);
         }
         return DEVICE_OK;
-    case MOTOR_RM_TX_GROUP_M3508_M2006_HIGH:
-        tx_frame->id = M3508_M2006_CTRL_ID_EXTAND;
-        for (int i = 4; i < 8; i++)
+    }
+    case MOTOR_RM_TX_GROUP_GM6020:
+        tx_frame->id = GM6020_CTRL_ID;
+        for (uint8_t motor_index = 0U; motor_index < 2U; motor_index++)
         {
-            tx_frame->data[(i - 4) * 2] = (uint8_t)((output_msg->output[i] >> 8) & 0xFF);
-            tx_frame->data[(i - 4) * 2 + 1] = (uint8_t)(output_msg->output[i] & 0xFF);
+            const int16_t current = output_msg->output[GM6020_OUTPUT_SLOT_BASE + motor_index];
+            tx_frame->data[motor_index * 2U] = (uint8_t)((current >> 8) & 0xFF);
+            tx_frame->data[motor_index * 2U + 1U] = (uint8_t)(current & 0xFF);
         }
         return DEVICE_OK;
     default:
@@ -208,6 +231,8 @@ static float MOTOR_RM_GetRatio(MOTOR_RM_Module_t module)
         return 36.0f;
     case MOTOR_M3508:
         return 3591.0f / 187.0f;
+    case MOTOR_GM6020:
+        return 1.0f;
     default:
         return 1.0f;
     }
@@ -219,6 +244,8 @@ static int16_t MOTOR_RM_GetLSB(MOTOR_RM_Module_t module)
     case MOTOR_M2006:
         return M2006_MAX_ABS_LSB;
     case MOTOR_M3508:
+        return M3508_MAX_ABS_LSB;
+    case MOTOR_GM6020:
         return M3508_MAX_ABS_LSB;
     default:
         return DEVICE_ERR;
@@ -232,6 +259,8 @@ static float MOTOR_RM_GetCurrentRangeAmp(MOTOR_RM_Module_t module)
         return 10.0f;
     case MOTOR_M3508:
         return 20.0f;
+    case MOTOR_GM6020:
+        return GM6020_MAX_ABS_CURRENT_A;
     default:
         return 0.0f;
     }
@@ -319,9 +348,17 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
     uint64_t now_time = BSP_TIME_Get();
     float rotor_angle = raw_angle / (float)MOTOR_ENC_RES * M_2PI;
     float rotor_speed = raw_speed;
-    // 保留 M3508 与 M2006 的原始反馈换算，避免改变现有底盘控制标度
-    float torque_current = raw_current * lsb / (float)MOTOR_CUR_RES;
-        motor->motor.raw_feedback.raw_angle = raw_angle;
+    // GM6020 电流反馈按电流环量程换算为安培，其他型号维持现有反馈标度
+    float torque_current;
+    if (motor->param.module == MOTOR_GM6020)
+    {
+        torque_current = raw_current * MOTOR_RM_GetCurrentRangeAmp(motor->param.module) / (float)MOTOR_CUR_RES;
+    }
+    else
+    {
+        torque_current = raw_current * lsb / (float)MOTOR_CUR_RES;
+    }
+    motor->motor.raw_feedback.raw_angle = raw_angle;
     motor->motor.raw_feedback.raw_speed = raw_speed;
     motor->motor.raw_feedback.raw_current = raw_current;
     motor->motor.raw_feedback.raw_temp = msg->data[6];
@@ -373,59 +410,53 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
     motor->feedback.last_update_time = (uint32_t)now_time;
     motor->last_feedback_time = (uint32_t)now_time;
 }
-static int8_t MOTOR_RM_BindMotor(MOTOR_RM_CANManager_t *manager, MOTOR_RM_Param_t *param, MOTOR_RM_t *motor)
-{
-    if (manager == NULL || param == NULL || motor == NULL)
-    {
-        return DEVICE_ERR_NULL;
-    }
-    for (int i = 0; i < manager->motor_count; i++)
-    {
-        if (manager->motors[i] && manager->motors[i]->param.id == param->id)
-        {
-            return DEVICE_ERR_INITED;
-        }
-    }
-    if (manager->motor_count >= MOTOR_RM_MAX_MOTORS)
-    {
-        return DEVICE_ERR;
-    }
-    memset(motor, 0, sizeof(MOTOR_RM_t));
-    memcpy(&motor->param, param, sizeof(MOTOR_RM_Param_t));
-    motor->motor.reverse = param->reverse;
-    if (BSP_CAN_RegisterLatestId(param->can, param->id) != BSP_OK)
-    {
-        return DEVICE_ERR;
-    }
-    manager->motors[manager->motor_count] = motor;
-    manager->motor_count++;
-    return DEVICE_OK;
-}
 static MOTOR_RM_t *MOTOR_RM_FindMotorById(const MOTOR_RM_CANManager_t *manager, uint16_t id)
 {
     if (manager == NULL)
     {
         return NULL;
     }
-    for (int i = 0; i < manager->motor_count; i++)
+    const uint8_t motor_total = manager->motor_count + manager->external_motor_count;
+    for (uint8_t i = 0U; i < motor_total; i++)
     {
-        MOTOR_RM_t *motor = manager->motors[i];
-        if (motor && motor->param.id == id)
-        {
-            return motor;
-        }
-    }
-    for (int i = 0; i < manager->external_motor_count; i++)
-    {
-        MOTOR_RM_t *motor = manager->external_motors[i];
-        if (motor && motor->param.id == id)
+        MOTOR_RM_t *motor = i < manager->motor_count ? manager->motors[i] :
+                            manager->external_motors[i - manager->motor_count];
+        if (motor != NULL && motor->param.id == id)
         {
             return motor;
         }
     }
     return NULL;
 }
-static int8_t MOTOR_RM_BindExternalMotor(MOTOR_RM_CANManager_t *manager, MOTOR_RM_Param_t *param, MOTOR_RM_t *motor)
+static MOTOR_RM_Param_t *MOTOR_RM_FindParamByTxGroup(MOTOR_RM_CANManager_t *manager, uint8_t group)
+{
+    if (manager == NULL)
+    {
+        return NULL;
+    }
+    const uint8_t motor_total = manager->motor_count + manager->external_motor_count;
+    for (uint8_t i = 0U; i < motor_total; i++)
+    {
+        MOTOR_RM_t *motor = i < manager->motor_count ? manager->motors[i] :
+                            manager->external_motors[i - manager->motor_count];
+        if (motor != NULL && MOTOR_RM_GetTxGroup(&motor->param) == (int8_t)group)
+        {
+            return &motor->param;
+        }
+    }
+    return NULL;
+}
+/**
+ * @brief 将 RM 电机实例绑定到对应的管理器实例数组
+ *
+ * @param[in] manager 当前 CAN 总线的电机管理器
+ * @param[in] param 待注册电机的 CAN、ID 和型号参数
+ * @param[out] motor 待初始化并绑定的电机实例
+ * @param[in] external 是否由外部对象持有该实例
+ * @return 成功返回 DEVICE_OK，否则返回设备错误码
+ */
+static int8_t MOTOR_RM_BindMotor(MOTOR_RM_CANManager_t *manager, MOTOR_RM_Param_t *param,
+                                  MOTOR_RM_t *motor, bool external)
 {
     if (manager == NULL || param == NULL || motor == NULL)
     {
@@ -435,7 +466,9 @@ static int8_t MOTOR_RM_BindExternalMotor(MOTOR_RM_CANManager_t *manager, MOTOR_R
     {
         return DEVICE_ERR_INITED;
     }
-    if (manager->external_motor_count >= MOTOR_RM_MAX_MOTORS)
+    uint8_t *motor_count = external ? &manager->external_motor_count : &manager->motor_count;
+    MOTOR_RM_t **motors = external ? manager->external_motors : manager->motors;
+    if (*motor_count >= MOTOR_RM_MAX_MOTORS)
     {
         return DEVICE_ERR;
     }
@@ -446,33 +479,9 @@ static int8_t MOTOR_RM_BindExternalMotor(MOTOR_RM_CANManager_t *manager, MOTOR_R
     {
         return DEVICE_ERR;
     }
-    manager->external_motors[manager->external_motor_count] = motor;
-    manager->external_motor_count++;
+    motors[*motor_count] = motor;
+    (*motor_count)++;
     return DEVICE_OK;
-}
-static MOTOR_RM_Param_t *MOTOR_RM_FindParamByTxGroup(MOTOR_RM_CANManager_t *manager, uint8_t group)
-{
-    if (manager == NULL)
-    {
-        return NULL;
-    }
-    for (int i = 0; i < manager->motor_count; i++)
-    {
-        MOTOR_RM_t *motor = manager->motors[i];
-        if (motor != NULL && MOTOR_RM_GetTxGroup(&motor->param) == (int8_t)group)
-        {
-            return &motor->param;
-        }
-    }
-    for (int i = 0; i < manager->external_motor_count; i++)
-    {
-        MOTOR_RM_t *motor = manager->external_motors[i];
-        if (motor != NULL && MOTOR_RM_GetTxGroup(&motor->param) == (int8_t)group)
-        {
-            return &motor->param;
-        }
-    }
-    return NULL;
 }
 int8_t MOTOR_RM_Register(MOTOR_RM_Param_t *param)
 {
@@ -494,7 +503,7 @@ int8_t MOTOR_RM_Register(MOTOR_RM_Param_t *param)
     {
         return DEVICE_ERR;
     }
-    const int8_t ret = MOTOR_RM_BindMotor(manager, param, new_motor);
+    const int8_t ret = MOTOR_RM_BindMotor(manager, param, new_motor, false);
     if (ret != DEVICE_OK)
     {
         BSP_Free(new_motor);
@@ -529,6 +538,11 @@ int8_t MOTOR_RM_Update(MOTOR_RM_Param_t *param)
         }
         return DEVICE_ERR;
     }
+    // 只解析完整的标准数据帧，拒绝远程帧、扩展帧与截断反馈
+    if (rx_msg.frame_type != BSP_CAN_FRAME_STD_DATA || rx_msg.dlc != MOTOR_RX_BUF_SIZE)
+    {
+        return DEVICE_ERR;
+    }
     motor->motor.header.online = true;
     motor->motor.header.last_online_time = BSP_TIME_Get();
     Motor_RM_Decode(motor, &rx_msg);
@@ -545,26 +559,14 @@ int8_t MOTOR_RM_UpdateAll(void)
         {
             continue;
         }
-        for (int i = 0; i < manager->motor_count; i++)
+        const uint8_t motor_total = manager->motor_count + manager->external_motor_count;
+        for (uint8_t i = 0U; i < motor_total; i++)
         {
-            MOTOR_RM_t *motor = manager->motors[i];
-            if (motor != NULL)
+            MOTOR_RM_t *motor = i < manager->motor_count ? manager->motors[i] :
+                                manager->external_motors[i - manager->motor_count];
+            if (motor != NULL && MOTOR_RM_Update(&motor->param) != DEVICE_OK)
             {
-                if (MOTOR_RM_Update(&motor->param) != DEVICE_OK)
-                {
-                    ret = DEVICE_ERR;
-                }
-            }
-        }
-        for (int i = 0; i < manager->external_motor_count; i++)
-        {
-            MOTOR_RM_t *motor = manager->external_motors[i];
-            if (motor != NULL)
-            {
-                if (MOTOR_RM_Update(&motor->param) != DEVICE_OK)
-                {
-                    ret = DEVICE_ERR;
-                }
+                ret = DEVICE_ERR;
             }
         }
     }
@@ -608,9 +610,8 @@ int8_t MOTOR_RM_SetOutput(MOTOR_RM_Param_t *param, float value)
     {
         return DEVICE_ERR;
     }
-    MOTOR_RM_MsgOutput_t *output_msg = &manager->output_msg;
     int16_t output_value = (int16_t)(value * (float)MOTOR_RM_GetLSB(param->module));
-    output_msg->output[logical_index] = output_value;
+    manager->output_msg.output[logical_index] = output_value;
     MOTOR_RM_MarkPendingGroup(manager, MOTOR_RM_GetTxGroup(param));
     return DEVICE_OK;
 }
@@ -657,7 +658,7 @@ int8_t MOTOR_RM_FlushGroup(MOTOR_RM_Param_t *param)
 }
 
 /**
- * @brief 发送指定 CAN 上待提交的两组电流控制帧
+ * @brief 发送指定 CAN 上待提交的电流控制帧
  *
  * @param[in] can CAN 总线编号
  * @return 全部待发送帧提交成功返回 DEVICE_OK，否则返回设备错误码
@@ -670,9 +671,9 @@ int8_t MOTOR_RM_FlushCAN(BSP_CAN_t can)
         return DEVICE_ERR_NO_DEV;
     }
     int8_t ret = DEVICE_OK;
-    // 只提交已写入缓存的底盘电机帧组，失败状态留给调用方处理
+    // 只提交已写入缓存的电机帧组，失败状态留给调用方处理
     const uint8_t pending = manager->pending_tx_groups;
-    for (uint8_t group = MOTOR_RM_TX_GROUP_M3508_M2006_LOW; group <= MOTOR_RM_TX_GROUP_M3508_M2006_HIGH; group++)
+    for (uint8_t group = MOTOR_RM_TX_GROUP_M3508_M2006_LOW; group <= MOTOR_RM_TX_GROUP_GM6020; group++)
     {
         if ((pending & MOTOR_RM_TX_GROUP_MASK(group)) == 0u)
         {
@@ -752,7 +753,7 @@ int8_t MOTOR_RM_AttachExternal(MOTOR_RM_Param_t *param, MOTOR_RM_t *external_mot
     {
         return DEVICE_ERR;
     }
-    return MOTOR_RM_BindExternalMotor(manager, param, external_motor);
+    return MOTOR_RM_BindMotor(manager, param, external_motor, true);
 }
 
 /* C++ RM 驱动的主下发接口：输入为转子侧目标电流，单位 A。 */
