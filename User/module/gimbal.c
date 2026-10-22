@@ -2,7 +2,9 @@
 
 #include <math.h>
 
+#include "bsp/time.h"
 #include "component/pid.h"
+#include "device/motor_rm.h"
 
 volatile GimbalYawSpeed_t gimbal_yaw_speed =
 {
@@ -11,6 +13,16 @@ volatile GimbalYawSpeed_t gimbal_yaw_speed =
     .kd = 0.0f,
     .target_rad_s = 0.0f,
     .actual_rad_s = 0.0f
+};
+
+volatile GimbalYawAngle_t gimbal_yaw_angle =
+{
+    .kp = 0.0f,
+    .ki = 0.0f,
+    .kd = 0.0f,
+    .target_rad = 0.0f,
+    .actual_rad = 0.0f,
+    .enabled = true
 };
 
 /* 控制器未初始化时禁止输出，待机时清空历史量，运行入口使用当前反馈预置微分 */
@@ -29,6 +41,25 @@ static KPID_Params_t yaw_pid_params;
 static GimbalYawState_t yaw_angle_state;
 static KPID_t yaw_angle_pid;
 
+// 反馈缓存与邮箱句柄由云台模块独占使用，邮箱对象仍由系统初始化入口统一管理
+static MOTOR_RM_Feedback_t yaw_feedback;
+static uint64_t yaw_feedback_time_us = UINT64_MAX;
+static osMessageQueueId_t yaw_feedback_queue;
+static osMessageQueueId_t yaw_current_queue;
+
+// 串级外环使用模块内常驻参数，单圈编码器按 2π 环绕，速度限幅与内环一致
+static KPID_Params_t yaw_angle_params =
+{
+    .k = 1.0f,
+    .p = 0.0f,
+    .i = 0.0f,
+    .d = 0.0f,
+    .i_limit = 0.0f,
+    .out_limit = GIMBAL_YAW_SPEED_LIMIT_RAD_S,
+    .d_cutoff_freq = 0.0f,
+    .range = 6.28318530718f
+};
+
 /**
  * @brief 清空控制历史并回到待机状态，供禁用与输入异常路径共用
  *
@@ -44,7 +75,7 @@ static float Gimbal_YawSpeedStop(void)
 }
 
 /**
- * @brief 初始化 yaw 速度控制器并清除上次运行历史
+ * @brief 初始化 yaw 串级控制器并清除两环上次运行历史
  *
  * @param[in] sample_frequency_hz 控制频率，单位 Hz，范围为 10 至 2000
  * @return 成功返回 0，输入非法或控制器初始化失败返回 -1
@@ -53,6 +84,8 @@ int8_t Gimbal_Init(float sample_frequency_hz)
 {
     // 初始化失败时保持未就绪，禁止沿用之前的控制历史
     yaw_state = GIMBAL_YAW_UNINITIALIZED;
+    yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
+    yaw_feedback_time_us = UINT64_MAX;
     if (!isfinite(sample_frequency_hz) || sample_frequency_hz < 10.0f || sample_frequency_hz > 2000.0f)
     {
         return -1;
@@ -72,8 +105,61 @@ int8_t Gimbal_Init(float sample_frequency_hz)
         return -1;
     }
 
+    // 外环参数由模块常驻保存，初始化后由串级入口按全局使能请求进入运行
+    if (Gimbal_YawAngleInit(sample_frequency_hz, &yaw_angle_params) != 0)
+    {
+        return -1;
+    }
     yaw_state = GIMBAL_YAW_READY;
     return 0;
+}
+
+/**
+ * @brief 保存系统创建的邮箱句柄，启动时丢弃模块缓存的旧反馈时效
+ *
+ * @param[in] feedback_queue 有效的最新编码器反馈邮箱，元素为 MOTOR_RM_Feedback_t
+ * @param[in] current_queue 有效的最新电流命令邮箱，元素为 float，单位 A
+ * @return 无返回值，不创建或销毁邮箱，仅在启动或停止后绑定
+ */
+void Gimbal_BindQueues(osMessageQueueId_t feedback_queue, osMessageQueueId_t current_queue)
+{
+    yaw_feedback_queue = feedback_queue;
+    yaw_current_queue = current_queue;
+    yaw_feedback_time_us = UINT64_MAX;
+}
+
+/**
+ * @brief 消费最新反馈并发布串级控制电流，将数据处理与邮箱交互集中在业务模块
+ *
+ * @param[in] period_s 实际控制间隔，单位秒，由任务调度提供
+ * @return 无返回值，发布失败时清空两环历史，CAN 任务按空邮箱路径归零
+ */
+void Gimbal_Update(float period_s)
+{
+    // 读取最新帧并恢复完整微秒时刻，空邮箱保留缓存，读取错误使反馈立即失效
+    const uint64_t now_us = BSP_TIME_Get();
+    const osStatus_t status = osMessageQueueGet(yaw_feedback_queue, &yaw_feedback, NULL, 0U);
+    if (status == osOK)
+    {
+        const uint32_t age_us = (uint32_t)now_us - yaw_feedback.last_update_time;
+        yaw_feedback_time_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
+    }
+    else if (status != osErrorResource)
+    {
+        yaw_feedback_time_us = UINT64_MAX;
+    }
+
+    // 编码器角度和转速进入串级控制，角度环输出速度目标，速度环输出电流
+    const float current_a = Gimbal_YawRunAt(yaw_feedback.rotor_single_angle, yaw_feedback.rotor_speed,
+                                           yaw_feedback_time_us, now_us, true, period_s);
+
+    // 电流邮箱只保留最新命令，发布失败时同步停止两环，避免下周期沿用积分
+    if (osMessageQueueReset(yaw_current_queue) != osOK ||
+        osMessageQueuePut(yaw_current_queue, &current_a, 0U, 0U) != osOK)
+    {
+        Gimbal_YawRunAt(yaw_feedback.rotor_single_angle, yaw_feedback.rotor_speed,
+                       yaw_feedback_time_us, now_us, false, period_s);
+    }
 }
 
 /**
@@ -83,7 +169,7 @@ int8_t Gimbal_Init(float sample_frequency_hz)
  * @param[in] feedback_age_ms 距最近有效帧的时间，单位 ms，尚无反馈时传入 UINT32_MAX
  * @param[in] enabled 是否允许速度控制，false 时输出零电流
  * @param[in] period_s 控制间隔，单位 s，范围为初始化周期至 0.1 s
- * @return 转子侧目标电流，单位 A，限幅为正负 1 A，异常路径返回 0
+ * @return 转子侧目标电流，单位 A，限幅由 GIMBAL_YAW_CURRENT_LIMIT_A 指定，异常路径返回 0
  */
 float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enabled, float period_s)
 {
@@ -175,6 +261,55 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
         feedback_age_ms = (uint32_t)((now_us - feedback_time_us) / 1000U);
     }
     return Gimbal_YawSpeedRun(feedback_rpm, feedback_age_ms, enabled, period_s);
+}
+
+/**
+ * @brief 使用编码器角度和转速执行串级控制，角度外环生成速度内环目标
+ *
+ * @param[in] feedback_rad 编码器单圈角度，单位 rad，范围 [0, 2π)
+ * @param[in] feedback_rpm 编码器转子转速，单位 rpm，有效范围为有符号 16 位反馈范围
+ * @param[in] feedback_time_us 最近有效反馈的完整微秒时刻，无反馈为 UINT64_MAX
+ * @param[in] now_us 当前完整单调时刻，单位微秒
+ * @param[in] enabled 本次调用是否允许控制，false 时停止两环并返回零电流
+ * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
+ * @return 速度内环生成的转子侧电流，单位 A，禁用或反馈无效时为零
+ */
+float Gimbal_YawRunAt(float feedback_rad, float feedback_rpm, uint64_t feedback_time_us,
+                     uint64_t now_us, bool enabled, float period_s)
+{
+    // 沿用速度控制的反馈时效和原始转速范围，阻止外环在同一无效帧上继续积分
+    const bool feedback_valid = feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
+        now_us - feedback_time_us <= (uint64_t)GIMBAL_YAW_FEEDBACK_TIMEOUT_MS * 1000U &&
+        isfinite(feedback_rad) && isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
+    gimbal_yaw_angle.actual_rad = feedback_valid ? feedback_rad : NAN;
+    const bool running = enabled && gimbal_yaw_angle.enabled && feedback_valid && isfinite(period_s) &&
+        period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
+    Gimbal_YawAngleSetEnabled(running);
+
+    // 每周期采纳全局调参，增益改变时清空旧外环历史，避免沿用旧积分
+    float target_rad_s = 0.0f;
+    if (running)
+    {
+        const float kp = gimbal_yaw_angle.kp;
+        const float ki = gimbal_yaw_angle.ki;
+        const float kd = gimbal_yaw_angle.kd;
+        if (kp != yaw_angle_params.p || ki != yaw_angle_params.i || kd != yaw_angle_params.d)
+        {
+            yaw_angle_params.p = kp;
+            yaw_angle_params.i = ki;
+            yaw_angle_params.d = kd;
+            yaw_angle_params.i_limit = ki > 0.000001f ? GIMBAL_YAW_SPEED_LIMIT_RAD_S / ki : 0.0f;
+            PID_Reset(&yaw_angle_pid);
+        }
+
+        // rpm 按每圈 2π 弧度和每分钟 60 秒转换为外环反馈微分，输出单位为 rad/s
+        const float feedback_rad_s = feedback_rpm * 0.10471975512f;
+        target_rad_s = Gimbal_YawAngleRun(gimbal_yaw_angle.target_rad, feedback_rad, feedback_rad_s, period_s);
+    }
+
+    // 外环速度目标直接交给内环，禁用时同步归零目标并清空速度控制历史
+    gimbal_yaw_speed.target_rad_s = target_rad_s;
+    return Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us, running, period_s);
 }
 
 /**

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <cmsis_os2.h>
 
 #include "component/pid.h"
 
@@ -32,6 +33,28 @@ typedef struct gimbal_yaw_speed
 extern volatile GimbalYawSpeed_t gimbal_yaw_speed;
 
 /*
+ * yaw 角度环调试参数与反馈集中区，默认使能，三个增益及角度初值均为零
+ * kp：比例增益，单位 1/s；ki：积分增益，单位 1/s²；kd：反馈角速度增益，无量纲
+ * 三个增益由调用方保证为有限非负数，零增益初值供后续调参
+ * target_rad：目标单圈角度，单位 rad，范围 [0, 2π)，与编码器反馈采用相同零点和正方向
+ * actual_rad：实际单圈角度，单位 rad，由模块刷新，反馈无效时为非数值
+ * enabled：串级控制使能，false 时清空控制历史并输出零电流
+ * 角度环输出写入 gimbal_yaw_speed.target_rad_s，单位 rad/s，不重复保存输出字段
+ * 调试器可修改增益、目标和使能，实际角度只读；同一任务串行调用，volatile 不提供互斥
+ */
+typedef struct gimbal_yaw_angle
+{
+    float kp;
+    float ki;
+    float kd;
+    float target_rad;
+    float actual_rad;
+    bool enabled;
+} GimbalYawAngle_t;
+
+extern volatile GimbalYawAngle_t gimbal_yaw_angle;
+
+/*
  * 初次调参使用 1 A 电流限幅，低于手册所列 1.62 A 额定电流
  * 目标速度限幅依据 GM6020 使用说明 20231013 的 320 rpm 空载转速，以 2π/60 转为 rad/s
  * 反馈超过 100 ms 时禁止计算，控制周期最大 100 ms，均为当前模块的软件保护配置
@@ -42,12 +65,29 @@ extern volatile GimbalYawSpeed_t gimbal_yaw_speed;
 #define GIMBAL_YAW_MAX_PERIOD_S 0.1f
 
 /**
- * @brief 初始化 yaw 速度控制器，保留调试区已有的参数和目标值
+ * @brief 初始化 yaw 角度与速度控制器，保留调试区已有参数、目标和使能请求
  *
  * @param[in] sample_frequency_hz 控制频率，单位 Hz，范围为 10 至 2000
  * @return 成功返回 0，频率非法或控制器初始化失败返回 -1
  */
 int8_t Gimbal_Init(float sample_frequency_hz);
+
+/**
+ * @brief 绑定已创建的云台反馈与电流邮箱，并使旧反馈失效
+ *
+ * @param[in] feedback_queue 容量为 1 的 MOTOR_RM_Feedback_t 邮箱，句柄须有效
+ * @param[in] current_queue 容量为 1 的 float 安培值邮箱，句柄须有效
+ * @return 无返回值，邮箱由系统初始化入口创建和销毁，模块只使用句柄
+ */
+void Gimbal_BindQueues(osMessageQueueId_t feedback_queue, osMessageQueueId_t current_queue);
+
+/**
+ * @brief 读取编码器反馈、执行串级控制并发布最新电流命令
+ *
+ * @param[in] period_s 实际控制间隔，单位秒，由任务周期调度提供
+ * @return 无返回值，须先初始化控制器并绑定邮箱，由同一任务周期调用
+ */
+void Gimbal_Update(float period_s);
 
 /**
  * @brief 根据 yaw 转子反馈计算单周期电流命令，不直接访问总线
@@ -72,6 +112,20 @@ float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enab
  */
 float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64_t now_us,
                          bool enabled, float period_s);
+
+/**
+ * @brief 以编码器反馈执行角度与速度串级控制，角度环输出更新速度环目标
+ *
+ * @param[in] feedback_rad 编码器单圈角度，单位 rad，范围 [0, 2π)，后续可替换为同约定的姿态角
+ * @param[in] feedback_rpm 编码器转子转速，单位 rpm，无有效反馈时传入非数值
+ * @param[in] feedback_time_us 最近反馈的完整微秒时刻，无反馈时传入 UINT64_MAX
+ * @param[in] now_us 当前完整单调时刻，单位微秒
+ * @param[in] enabled 本次调用是否允许控制，与全局角度环使能共同决定运行状态
+ * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
+ * @return 转子侧目标电流，单位 A，禁用或反馈无效时为零，并清空两环历史
+ */
+float Gimbal_YawRunAt(float feedback_rad, float feedback_rpm, uint64_t feedback_time_us,
+                     uint64_t now_us, bool enabled, float period_s);
 
 /**
  * @brief 独立初始化 GM6020 偏航角度外环，初始化后保持禁用，由调用方接入速度环
