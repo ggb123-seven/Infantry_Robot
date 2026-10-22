@@ -142,7 +142,7 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 所有反馈与命令邮箱就绪后创建云台速度控制任务
+    // 所有反馈与命令邮箱就绪后创建云台角度与速度串级控制任务
     task_runtime.init_status = TASK_INIT_GIMBAL_THREAD_FAILED;
     task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
     if (task_runtime.thread.motor_gimbal == NULL)

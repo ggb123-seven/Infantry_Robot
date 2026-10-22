@@ -6,9 +6,13 @@
 #include "component/pid.h"
 #include "device/motor_rm.h"
 
+// 对外角度接口使用度，PID 输入和单圈环绕使用弧度，换算依据为 180 度等于 π 弧度
+#define GIMBAL_RAD_TO_DEG 57.2957795131f
+#define GIMBAL_DEG_TO_RAD 0.0174532925199f
+
 volatile GimbalYawSpeed_t gimbal_yaw_speed =
 {
-    .kp = 0.05f,
+    .kp = 0.06f,
     .ki = 0.177f,
     .kd = 0.0f,
     .target_rad_s = 0.0f,
@@ -20,8 +24,8 @@ volatile GimbalYawAngle_t gimbal_yaw_angle =
     .kp = 0.0f,
     .ki = 0.0f,
     .kd = 0.0f,
-    .target_rad = 0.0f,
-    .actual_rad = 0.0f,
+    .target_deg = 0.0f,
+    .actual_deg = 0.0f,
     .enabled = true
 };
 
@@ -149,15 +153,16 @@ void Gimbal_Update(float period_s)
         yaw_feedback_time_us = UINT64_MAX;
     }
 
-    // 编码器角度和转速进入串级控制，角度环输出速度目标，速度环输出电流
-    const float current_a = Gimbal_YawRunAt(yaw_feedback.rotor_single_angle, yaw_feedback.rotor_speed,
+    // 编码器角度由弧度转为度后进入公开接口，PID 内部继续使用弧度
+    const float feedback_deg = yaw_feedback.rotor_single_angle * GIMBAL_RAD_TO_DEG;
+    const float current_a = Gimbal_YawRunAt(feedback_deg, yaw_feedback.rotor_speed,
                                            yaw_feedback_time_us, now_us, true, period_s);
 
     // 电流邮箱只保留最新命令，发布失败时同步停止两环，避免下周期沿用积分
     if (osMessageQueueReset(yaw_current_queue) != osOK ||
         osMessageQueuePut(yaw_current_queue, &current_a, 0U, 0U) != osOK)
     {
-        Gimbal_YawRunAt(yaw_feedback.rotor_single_angle, yaw_feedback.rotor_speed,
+        Gimbal_YawRunAt(feedback_deg, yaw_feedback.rotor_speed,
                        yaw_feedback_time_us, now_us, false, period_s);
     }
 }
@@ -266,7 +271,7 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
 /**
  * @brief 使用编码器角度和转速执行串级控制，角度外环生成速度内环目标
  *
- * @param[in] feedback_rad 编码器单圈角度，单位 rad，范围 [0, 2π)
+ * @param[in] feedback_deg 编码器单圈角度，单位度，范围 [0, 360)
  * @param[in] feedback_rpm 编码器转子转速，单位 rpm，有效范围为有符号 16 位反馈范围
  * @param[in] feedback_time_us 最近有效反馈的完整微秒时刻，无反馈为 UINT64_MAX
  * @param[in] now_us 当前完整单调时刻，单位微秒
@@ -274,14 +279,14 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
  * @return 速度内环生成的转子侧电流，单位 A，禁用或反馈无效时为零
  */
-float Gimbal_YawRunAt(float feedback_rad, float feedback_rpm, uint64_t feedback_time_us,
+float Gimbal_YawRunAt(float feedback_deg, float feedback_rpm, uint64_t feedback_time_us,
                      uint64_t now_us, bool enabled, float period_s)
 {
     // 沿用速度控制的反馈时效和原始转速范围，阻止外环在同一无效帧上继续积分
     const bool feedback_valid = feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
         now_us - feedback_time_us <= (uint64_t)GIMBAL_YAW_FEEDBACK_TIMEOUT_MS * 1000U &&
-        isfinite(feedback_rad) && isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
-    gimbal_yaw_angle.actual_rad = feedback_valid ? feedback_rad : NAN;
+        isfinite(feedback_deg) && isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
+    gimbal_yaw_angle.actual_deg = feedback_valid ? feedback_deg : NAN;
     const bool running = enabled && gimbal_yaw_angle.enabled && feedback_valid && isfinite(period_s) &&
         period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
     Gimbal_YawAngleSetEnabled(running);
@@ -304,7 +309,7 @@ float Gimbal_YawRunAt(float feedback_rad, float feedback_rpm, uint64_t feedback_
 
         // rpm 按每圈 2π 弧度和每分钟 60 秒转换为外环反馈微分，输出单位为 rad/s
         const float feedback_rad_s = feedback_rpm * 0.10471975512f;
-        target_rad_s = Gimbal_YawAngleRun(gimbal_yaw_angle.target_rad, feedback_rad, feedback_rad_s, period_s);
+        target_rad_s = Gimbal_YawAngleRun(gimbal_yaw_angle.target_deg, feedback_deg, feedback_rad_s, period_s);
     }
 
     // 外环速度目标直接交给内环，禁用时同步归零目标并清空速度控制历史
@@ -365,14 +370,18 @@ void Gimbal_YawAngleSetEnabled(bool enabled)
 /**
  * @brief 执行一次角度外环计算，返回速度目标供调用方选择何时接入
  *
- * @param[in] target_rad 目标角度，单位 rad，须与反馈采用相同坐标约定
- * @param[in] feedback_rad 实际角度，单位 rad，环绕范围由初始化参数指定
+ * @param[in] target_deg 目标角度，单位度，须与反馈采用相同坐标约定
+ * @param[in] feedback_deg 实际角度，单位度，范围与目标角相同
  * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈正方向一致
  * @param[in] period_s 实际控制间隔，单位 s，须为有限正数且不小于初始化周期
  * @return 速度目标，单位 rad/s，未初始化或禁用时为零
  */
-float Gimbal_YawAngleRun(float target_rad, float feedback_rad, float feedback_rad_s, float period_s)
+float Gimbal_YawAngleRun(float target_deg, float feedback_deg, float feedback_rad_s, float period_s)
 {
+    // 接口角度换成弧度，保持 PID 增益、角速度反馈和 2π 环绕配置的单位一致
+    const float target_rad = target_deg * GIMBAL_DEG_TO_RAD;
+    const float feedback_rad = feedback_deg * GIMBAL_DEG_TO_RAD;
+
     // 仅运行状态计算角度到速度的外环输出，反馈有效性由调用方通过使能入口控制
     switch (yaw_angle_state)
     {

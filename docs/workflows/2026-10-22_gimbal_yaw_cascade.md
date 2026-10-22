@@ -4,19 +4,20 @@
 
 ## 控制与调试接口
 
-`gimbal_yaw_angle.target_rad` → 角度 PID → `gimbal_yaw_speed.target_rad_s` → 速度 PID → 电流邮箱 → CAN 任务
+`gimbal_yaw_angle.target_deg` → 角度 PID → `gimbal_yaw_speed.target_rad_s` → 速度 PID → 电流邮箱 → CAN 任务
 
 用户确认的类型为 `GimbalYawAngle_t`，全局变量为 `gimbal_yaw_angle`：
 
 | 字段 | 用途 |
 | --- | --- |
 | `kp`、`ki`、`kd` | 角度外环比例、积分、反馈角速度增益，初值均为 0，供后续调参 |
-| `target_rad` | 目标单圈角度，单位 rad，范围 [0, 2π)，与编码器采用相同零点和方向 |
-| `actual_rad` | 最新有效编码器单圈角度，单位 rad，反馈失效时为非数值 |
+| `target_deg` | 目标单圈角度，单位度，范围 [0, 360)，与编码器采用相同零点和方向 |
+| `actual_deg` | 最新有效编码器单圈角度，单位度，反馈失效时为非数值 |
 | `enabled` | 默认 true，置 false 时串级目标和电流归零，并清空两环历史 |
 
 角度与角速度反馈当前分别取编码器单圈角度和转速；转速在模块内从 rpm 换算为 rad/s
 角度外环使用 2π 环绕误差，输出 rad/s；速度内环输出转子侧电流 A
+公开目标角度和实际角度使用度，编码器 rad 反馈在模块边界转换，进入 PID 前再转换为 rad
 零增益初值不代表已调参，改变目标前须自行设置角度环增益；本轮未进行上板整定
 独立的角度计算接口保留，后续仍可传入 INS 融合角度和陀螺仪角速度
 
@@ -73,3 +74,11 @@ SHA256：`1e8d0fc49621b9c07d0f5bd3ddc38714ed0f776b9700469b8e2f4a0af0442848`
 | `User/task/motor_gimbal.h` | `c04f973c26ff520fbc86396d5abba0223c763fca139e697bcf9ed8ee86ebacab` |
 
 测试源码、可执行文件、模拟头文件和本轮临时快照在证据记录后清理
+
+## 角度接口单位调整（2026-10-22）
+
+- `gimbal_yaw_angle.target_deg`、`actual_deg` 和 `Gimbal_YawAngleRun()` 的目标/反馈角统一使用度，单圈范围为 [0, 360)
+- 编码器 `rotor_single_angle` 在模块边界由 rad 转为度，进入角度 PID 前再转为 rad；角度 PID 内部参数、2π 环绕与 `rad/s` 速度目标保持原单位
+- `python .auto-embedded/scripts/check.py` 的 ARCH、HW、SPEC 全部通过，CMake Debug 增量构建通过
+- 主机使用实际 `gimbal.c`、`pid.c`、`filter.c`、`user_math.c` 验证 90° 转换及 10°/350° 正反跨零最短角差，全部通过；临时测试文件已清理
+- yaw 电流限幅为 0.5 A；速度上限仍为 320 rpm（约 33.51 rad/s），该值来自 GM6020 空载转速资料。电流限制扭矩输出，不能按比例推导速度上限

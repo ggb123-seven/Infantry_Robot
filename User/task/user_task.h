@@ -26,7 +26,7 @@ extern "C"
 #define MOTOR_CHASSIS_INIT_DELAY (0U)
 
 /*
- * 云台任务参数：MOTOR_GIMBAL_FREQ 为 yaw 速度控制频率，单位赫兹
+ * 云台任务参数：MOTOR_GIMBAL_FREQ 为 yaw 角度与速度串级控制频率，单位赫兹
  * MOTOR_GIMBAL_INIT_DELAY 为启动延时，单位内核节拍
  */
 #define MOTOR_GIMBAL_FREQ (500U)
@@ -71,7 +71,7 @@ typedef enum
  * 任务运行时对象：
  * - thread.can：CAN 设备反馈采集和电流发送任务句柄
  * - thread.motor_chassis：底盘周期控制任务句柄
- * - thread.motor_gimbal：yaw 速度环周期控制任务句柄
+ * - thread.motor_gimbal：yaw 角度与速度串级控制任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入

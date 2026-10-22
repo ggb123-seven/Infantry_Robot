@@ -13,13 +13,11 @@ extern "C"
 
 /*
  * yaw 速度环调试参数与反馈集中区，初始值均为零
- * kp：比例增益，单位 A/(rad/s)，有限非负数，上限 1000
- * ki：积分增益，单位 A/rad，有限非负数，上限 1000
- * kd：反馈微分增益，单位 A/(rad/s²)，有限非负数，上限 1000
- * target_rad_s：速度目标，单位 rad/s，计算时限制至电机速度范围
- * actual_rad_s：实际角速度，单位 rad/s，由模块更新，反馈无效时为非数值
- * 调试器可修改前三个增益及目标值，实际值仅供观察；模块应由单个任务串行调用
- * volatile 保证调试器可见性，不提供多个任务同时写入时的同步保护
+ * kp：比例增益
+ * ki：积分增益
+ * kd：反馈微分增益
+ * target_rad_s：速度目标
+ * actual_rad_s：实际角速度
  */
 typedef struct gimbal_yaw_speed
 {
@@ -36,8 +34,8 @@ extern volatile GimbalYawSpeed_t gimbal_yaw_speed;
  * yaw 角度环调试参数与反馈集中区，默认使能，三个增益及角度初值均为零
  * kp：比例增益，单位 1/s；ki：积分增益，单位 1/s²；kd：反馈角速度增益，无量纲
  * 三个增益由调用方保证为有限非负数，零增益初值供后续调参
- * target_rad：目标单圈角度，单位 rad，范围 [0, 2π)，与编码器反馈采用相同零点和正方向
- * actual_rad：实际单圈角度，单位 rad，由模块刷新，反馈无效时为非数值
+ * target_deg：目标单圈角度，单位度，范围 [0, 360)，与编码器反馈采用相同零点和正方向
+ * actual_deg：实际单圈角度，单位度，由模块刷新，反馈无效时为非数值
  * enabled：串级控制使能，false 时清空控制历史并输出零电流
  * 角度环输出写入 gimbal_yaw_speed.target_rad_s，单位 rad/s，不重复保存输出字段
  * 调试器可修改增益、目标和使能，实际角度只读；同一任务串行调用，volatile 不提供互斥
@@ -47,19 +45,19 @@ typedef struct gimbal_yaw_angle
     float kp;
     float ki;
     float kd;
-    float target_rad;
-    float actual_rad;
+    float target_deg;
+    float actual_deg;
     bool enabled;
 } GimbalYawAngle_t;
 
 extern volatile GimbalYawAngle_t gimbal_yaw_angle;
 
 /*
- * 初次调参使用 1 A 电流限幅，低于手册所列 1.62 A 额定电流
+ * yaw 目标电流双向限幅为 0.5 A，低于手册所列 1.62 A 额定电流
  * 目标速度限幅依据 GM6020 使用说明 20231013 的 320 rpm 空载转速，以 2π/60 转为 rad/s
  * 反馈超过 100 ms 时禁止计算，控制周期最大 100 ms，均为当前模块的软件保护配置
  */
-#define GIMBAL_YAW_CURRENT_LIMIT_A 1.0f
+#define GIMBAL_YAW_CURRENT_LIMIT_A 0.5f
 #define GIMBAL_YAW_SPEED_LIMIT_RAD_S (320.0f * 0.10471975512f)
 #define GIMBAL_YAW_FEEDBACK_TIMEOUT_MS 100U
 #define GIMBAL_YAW_MAX_PERIOD_S 0.1f
@@ -96,7 +94,7 @@ void Gimbal_Update(float period_s);
  * @param[in] feedback_age_ms 距最近有效帧的时间，单位 ms，尚无反馈时传入 UINT32_MAX
  * @param[in] enabled 是否允许速度控制，false 时清空控制器并输出零电流
  * @param[in] period_s 控制间隔，单位 s，须不小于初始化周期且不超过 0.1 s
- * @return 转子侧目标电流，单位 A，范围为正负 1 A，未初始化或输入无效时返回 0
+ * @return 转子侧目标电流，单位 A，范围为正负 0.5 A，未初始化或输入无效时返回 0
  */
 float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enabled, float period_s);
 
@@ -108,7 +106,7 @@ float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enab
  * @param[in] now_us 当前单调时间，单位微秒
  * @param[in] enabled 是否允许控制，false 时清空历史并输出零电流
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
- * @return 转子侧目标电流，单位 A，范围为正负 1 A，反馈过期或时间异常时返回零
+ * @return 转子侧目标电流，单位 A，范围为正负 0.5 A，反馈过期或时间异常时返回零
  */
 float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64_t now_us,
                          bool enabled, float period_s);
@@ -116,7 +114,7 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
 /**
  * @brief 以编码器反馈执行角度与速度串级控制，角度环输出更新速度环目标
  *
- * @param[in] feedback_rad 编码器单圈角度，单位 rad，范围 [0, 2π)，后续可替换为同约定的姿态角
+ * @param[in] feedback_deg 编码器单圈角度，单位度，范围 [0, 360)，后续可替换为同约定的姿态角
  * @param[in] feedback_rpm 编码器转子转速，单位 rpm，无有效反馈时传入非数值
  * @param[in] feedback_time_us 最近反馈的完整微秒时刻，无反馈时传入 UINT64_MAX
  * @param[in] now_us 当前完整单调时刻，单位微秒
@@ -124,7 +122,7 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
  * @return 转子侧目标电流，单位 A，禁用或反馈无效时为零，并清空两环历史
  */
-float Gimbal_YawRunAt(float feedback_rad, float feedback_rpm, uint64_t feedback_time_us,
+float Gimbal_YawRunAt(float feedback_deg, float feedback_rpm, uint64_t feedback_time_us,
                      uint64_t now_us, bool enabled, float period_s);
 
 /**
@@ -151,13 +149,13 @@ void Gimbal_YawAngleSetEnabled(bool enabled);
 /**
  * @brief 计算偏航角度外环速度目标，返回值由调用方自行接入速度环
  *
- * @param[in] target_rad 目标角度，单位 rad，与反馈采用相同零点、方向及角度区间
- * @param[in] feedback_rad 实际角度，单位 rad，当前使用 GM6020 编码器角度，后续可使用 INS 融合偏航角
+ * @param[in] target_deg 目标角度，单位度，与反馈采用相同零点、方向及角度区间
+ * @param[in] feedback_deg 实际角度，单位度，当前使用 GM6020 编码器角度，后续可使用 INS 融合偏航角
  * @param[in] feedback_rad_s 实际角速度，单位 rad/s，当前可由编码器转速换算，后续可使用 INS 陀螺仪读数
  * @param[in] period_s 控制间隔，单位 s，须为有限正数且不小于初始化周期
  * @return 速度目标，单位 rad/s，未初始化或禁用时返回零，不写入现有速度环调试区
  */
-float Gimbal_YawAngleRun(float target_rad, float feedback_rad, float feedback_rad_s, float period_s);
+float Gimbal_YawAngleRun(float target_deg, float feedback_deg, float feedback_rad_s, float period_s);
 
 #ifdef __cplusplus
 }
