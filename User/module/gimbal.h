@@ -98,8 +98,8 @@ void Gimbal_YawAngleSetEnabled(bool enabled);
  * @brief 计算偏航角度外环速度目标，返回值由调用方自行接入速度环
  *
  * @param[in] target_rad 目标角度，单位 rad，与反馈采用相同零点、方向及角度区间
- * @param[in] feedback_rad 实际角度，单位 rad，角度来源由调用方选择
- * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈采用相同正方向，供反馈微分使用
+ * @param[in] feedback_rad 实际角度，单位 rad，当前使用 GM6020 编码器角度，后续可使用 INS 融合偏航角
+ * @param[in] feedback_rad_s 实际角速度，单位 rad/s，当前可由编码器转速换算，后续可使用 INS 陀螺仪读数
  * @param[in] period_s 控制间隔，单位 s，须为有限正数且不小于初始化周期
  * @return 速度目标，单位 rad/s，未初始化或禁用时返回零，不写入现有速度环调试区
  */
