@@ -6,11 +6,11 @@
 
 volatile GimbalYawSpeed_t gimbal_yaw_speed =
 {
-    .kp = 0.0f,
-    .ki = 0.0f,
+    .kp = 0.05f,
+    .ki = 0.177f,
     .kd = 0.0f,
-    .target_rpm = 0.0f,
-    .actual_rpm = 0.0f
+    .target_rad_s = 0.0f,
+    .actual_rad_s = 0.0f
 };
 
 /* 控制器未初始化时禁止输出，待机时清空历史量，运行入口使用当前反馈预置微分 */
@@ -89,13 +89,13 @@ float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enab
                                 feedback_age_ms <= GIMBAL_YAW_FEEDBACK_TIMEOUT_MS;
     // 标准反馈单位 rpm，按每分钟 60 秒和每圈 2π 弧度转换为 rad/s
     const float actual_rad_s = feedback_valid ? feedback_rpm * 0.10471975512f : NAN;
-    gimbal_yaw_speed.actual_rpm = actual_rad_s;
+    gimbal_yaw_speed.actual_rad_s = actual_rad_s;
 
     // 每周期读取一次调试输入，实际速度始终来自反馈，不能被调试器写值替代
     const float kp = gimbal_yaw_speed.kp;
     const float ki = gimbal_yaw_speed.ki;
     const float kd = gimbal_yaw_speed.kd;
-    const float requested_rad_s = gimbal_yaw_speed.target_rpm;
+    const float requested_rad_s = gimbal_yaw_speed.target_rad_s;
     if (!enabled || !feedback_valid || !isfinite(period_s) || period_s <= 0.0f ||
         period_s > GIMBAL_YAW_MAX_PERIOD_S)
     {

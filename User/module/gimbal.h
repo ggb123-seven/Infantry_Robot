@@ -13,8 +13,8 @@ extern "C"
  * kp：比例增益，单位 A/(rad/s)，有限非负数，上限 1000
  * ki：积分增益，单位 A/rad，有限非负数，上限 1000
  * kd：反馈微分增益，单位 A/(rad/s²)，有限非负数，上限 1000
- * target_rpm：保留用户指定字段名，实际单位为 rad/s，作为可调目标，计算时限制至电机速度范围
- * actual_rpm：保留用户指定字段名，实际单位为 rad/s，由模块更新，反馈无效时为非数值
+ * target_rad_s：速度目标，单位 rad/s，计算时限制至电机速度范围
+ * actual_rad_s：实际角速度，单位 rad/s，由模块更新，反馈无效时为非数值
  * 调试器可修改前三个增益及目标值，实际值仅供观察；模块应由单个任务串行调用
  * volatile 保证调试器可见性，不提供多个任务同时写入时的同步保护
  */
@@ -23,8 +23,8 @@ typedef struct gimbal_yaw_speed
     float kp;
     float ki;
     float kd;
-    float target_rpm;
-    float actual_rpm;
+    float target_rad_s;
+    float actual_rad_s;
 } GimbalYawSpeed_t;
 
 extern volatile GimbalYawSpeed_t gimbal_yaw_speed;
