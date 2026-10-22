@@ -25,6 +25,10 @@ static GimbalYawState_t yaw_state;
 static KPID_t yaw_pid;
 static KPID_Params_t yaw_pid_params;
 
+// 角度外环独立保存状态与历史，由同一个调用任务串行初始化、使能和计算
+static GimbalYawState_t yaw_angle_state;
+static KPID_t yaw_angle_pid;
+
 /**
  * @brief 清空控制历史并回到待机状态，供禁用与输入异常路径共用
  *
@@ -171,4 +175,78 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
         feedback_age_ms = (uint32_t)((now_us - feedback_time_us) / 1000U);
     }
     return Gimbal_YawSpeedRun(feedback_rpm, feedback_age_ms, enabled, period_s);
+}
+
+/**
+ * @brief 初始化独立角度外环，使用外部角速度作为反馈微分，成功后保持禁用
+ *
+ * @param[in] sample_frequency_hz 控制频率，单位 Hz，须为有限正数
+ * @param[in] params 持续有效的 PID 参数对象，各字段单位和约束见头文件集中说明
+ * @return 成功返回 0，底层 PID 初始化失败返回 -1
+ */
+int8_t Gimbal_YawAngleInit(float sample_frequency_hz, const KPID_Params_t *params)
+{
+    // 单独初始化外环，不改变已有速度控制器或任务调度
+    yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
+    if (PID_Init(&yaw_angle_pid, KPID_MODE_SET_D, sample_frequency_hz, params) != 0)
+    {
+        return -1;
+    }
+
+    yaw_angle_state = GIMBAL_YAW_READY;
+    return 0;
+}
+
+/**
+ * @brief 切换角度外环使能状态，只在状态变化时清空积分与微分历史
+ *
+ * @param[in] enabled true 为运行，false 为待机，未初始化时不生效
+ * @return 无返回值
+ */
+void Gimbal_YawAngleSetEnabled(bool enabled)
+{
+    // 使能入口集中管理外环状态，重复设置相同状态时保留运行历史
+    switch (yaw_angle_state)
+    {
+        case GIMBAL_YAW_READY:
+        case GIMBAL_YAW_RUNNING:
+        {
+            const GimbalYawState_t next_state = enabled ? GIMBAL_YAW_RUNNING : GIMBAL_YAW_READY;
+            if (next_state != yaw_angle_state)
+            {
+                PID_Reset(&yaw_angle_pid);
+                yaw_angle_state = next_state;
+            }
+            break;
+        }
+
+        case GIMBAL_YAW_UNINITIALIZED:
+        default:
+            yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
+            break;
+    }
+}
+
+/**
+ * @brief 执行一次角度外环计算，返回速度目标供调用方选择何时接入
+ *
+ * @param[in] target_rad 目标角度，单位 rad，须与反馈采用相同坐标约定
+ * @param[in] feedback_rad 实际角度，单位 rad，环绕范围由初始化参数指定
+ * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈正方向一致
+ * @param[in] period_s 实际控制间隔，单位 s，须为有限正数且不小于初始化周期
+ * @return 速度目标，单位 rad/s，未初始化或禁用时为零
+ */
+float Gimbal_YawAngleRun(float target_rad, float feedback_rad, float feedback_rad_s, float period_s)
+{
+    // 仅运行状态计算角度到速度的外环输出，反馈有效性由调用方通过使能入口控制
+    switch (yaw_angle_state)
+    {
+        case GIMBAL_YAW_RUNNING:
+            return PID_Calc(&yaw_angle_pid, target_rad, feedback_rad, feedback_rad_s, period_s);
+
+        case GIMBAL_YAW_READY:
+        case GIMBAL_YAW_UNINITIALIZED:
+        default:
+            return 0.0f;
+    }
 }

@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "component/pid.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -70,6 +72,38 @@ float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enab
  */
 float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64_t now_us,
                          bool enabled, float period_s);
+
+/**
+ * @brief 独立初始化 GM6020 偏航角度外环，初始化后保持禁用，由调用方接入速度环
+ *
+ * @param[in] sample_frequency_hz 控制频率，单位 Hz，须为有限正数
+ * @param[in] params 持续有效的现有 PID 参数对象，调用期间不得并发修改
+ * k 通常取 1，p、i、d 分别为比例、积分和反馈角速度增益，单位依次为 1/s、1/s² 和无量纲
+ * i_limit 为积分状态绝对值上限，单位 rad·s，out_limit 为输出速度限幅，单位 rad/s
+ * range 为角度环绕周期，单圈反馈取 2π，多圈连续角度取 0，环绕时目标与反馈须在同一周期区间
+ * d_cutoff_freq 不参与外部角速度微分，所有参数和反馈的有效性由调用方保证
+ * @return 成功返回 0，底层 PID 初始化失败返回 -1
+ */
+int8_t Gimbal_YawAngleInit(float sample_frequency_hz, const KPID_Params_t *params);
+
+/**
+ * @brief 设置偏航角度外环使能，切换时清空控制历史，不操作速度环和电机输出
+ *
+ * @param[in] enabled true 为使能，false 为禁用，初始化前调用不生效
+ * @return 无返回值
+ */
+void Gimbal_YawAngleSetEnabled(bool enabled);
+
+/**
+ * @brief 计算偏航角度外环速度目标，返回值由调用方自行接入速度环
+ *
+ * @param[in] target_rad 目标角度，单位 rad，与反馈采用相同零点、方向及角度区间
+ * @param[in] feedback_rad 实际角度，单位 rad，角度来源由调用方选择
+ * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈采用相同正方向，供反馈微分使用
+ * @param[in] period_s 控制间隔，单位 s，须为有限正数且不小于初始化周期
+ * @return 速度目标，单位 rad/s，未初始化或禁用时返回零，不写入现有速度环调试区
+ */
+float Gimbal_YawAngleRun(float target_rad, float feedback_rad, float feedback_rad_s, float period_s);
 
 #ifdef __cplusplus
 }
