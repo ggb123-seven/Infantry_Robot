@@ -23,11 +23,11 @@ void Task_motor_gimbal(void *argument)
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
-        // 按实际调度间隔驱动业务模块，任务不处理反馈或控制输出
+        // 按实际调度间隔驱动模块，外部角速度暂未接入时沿用编码器转速换算反馈
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
-        Gimbal_Update(period_s);
+        Gimbal_Update(period_s, 0.0f, false);
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
         if ((uint32_t)(now_tick - tick) >= delay_tick)
