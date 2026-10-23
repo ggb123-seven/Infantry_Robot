@@ -5,11 +5,8 @@
 
 #include <stddef.h>
 
-/*
- * CAN 任务私有状态：
- * - can_devices_snapshot：保存 CAN 设备初始化、本周期反馈和电流提交结果。
- */
-static CANDevices_Snapshot_t can_devices_snapshot;
+// CAN 设备观测变量，声明见 can_task.h
+CANDevices_Snapshot_t can_devices_snapshot;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);

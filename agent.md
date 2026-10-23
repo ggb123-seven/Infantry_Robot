@@ -27,7 +27,7 @@
 | 底盘周期调度 | 500 Hz，调用底盘模块，通过反馈邮箱和命令邮箱与 CAN 任务交换数据 | `User/task/motor_chassis.c` |
 | CAN 周期调度 | 统一采集四路底盘反馈并发送底盘电流命令，仅保留底盘反馈与命令邮箱 | `User/task/can_task.c` |
 | DR16 接收 | 字节流接收、协议解析、状态邮箱、100 ms 合法帧超时判断和错误恢复 | `User/task/dr16_task.c`、`User/device/dr16.c` |
-| 调试与诊断 | Ozone 调参和监视，独立故障检测模块汇总故障 | `User/task/ozone_debug.c`、`User/module/fault_detect.c` |
+| 调试与诊断 | 全局观测变量直接调参和监视，独立故障检测模块汇总故障 | `User/task/motor_chassis.h`、`User/task/can_task.h`、`User/module/fault_detect.c` |
 
 当前有效输入路径：
 
@@ -37,7 +37,7 @@ DR16 -> Task_dr16 -> dr16_state 邮箱 -> Task_motor_chassis
   -> Chassis_Run -> Mixer_Apply -> 四轮速度 PID
   -> can_command 邮箱 -> Task_can -> CAN 电流输出
 
-Ozone g_motor_chassis_tune.scale_rpm -> Task_motor_chassis（仅轮速尺度）
+motor_chassis_tune.scale_rpm / pid -> Task_motor_chassis（轮速尺度和 ID1~3 公共 PID）
 ```
 
 - `Task_motor_chassis()` 消费遥控器邮箱并缓存最新状态；未收到有效状态、离线或超过 100 ms 时禁用底盘。
@@ -45,7 +45,7 @@ Ozone g_motor_chassis_tune.scale_rpm -> Task_motor_chassis（仅轮速尺度）
   下位固定 `wz=+0.30F` 并叠加前后和左右平动，回中后继续自旋。
 - 速度环重新使能时斜坡目标从当前滤波转速起步（2026-10-09），避免轮子仍在转动时以零目标产生满幅制动电流。
 - `vx`、`vy`、`wz` 当前为归一化运动量，分别以前向、左向、俯视逆时针为正，不是实际 `m/s` 或 `rad/s`。
-- 当前 Ozone 底盘调参仅保留 `scale_rpm=100` 初值；旧调试使能、方向测试、手动运动量及其生成接口已删除。
+- 底盘调参改为直接修改全局 `motor_chassis_tune`（`scale_rpm=100`、ID1~3 公共 PID）；`ozone_debug.c/h` 和单电机 PID 覆盖已删除（2026-10-24）。
 - 当前底盘参数：输出轴速度上限 300 rpm、斜坡 200 rpm/s、电流上限 4 A；ID1～ID3 速度环为
   `Kp=0.20`、`Ki=0`、`Kd=0`，ID4 固化为 `Kp=0.16`、`Ki=0`、`Kd=0`（2026-10-09）。
 - 速度反馈低通截止频率为 45 Hz，PID 微分滤波截止频率为 20 Hz，电流输出滤波直通。

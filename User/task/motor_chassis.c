@@ -5,7 +5,6 @@
 #include "device/dr16.h"
 #include "module/chassis.h"
 #include "module/fault_detect.h"
-#include "task/ozone_debug.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
@@ -23,20 +22,33 @@
 _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘控制与 CAN 设备数量必须一致");
 
 /*
- * 底盘任务私有状态：
- * - can_devices_snapshot：保存从反馈邮箱取得的最新 CAN 设备快照。
- * - chassis_feedback：保存从 CAN 设备快照映射出的本周期底盘控制反馈。
- * - chassis_output：保存底盘模块本周期计算得到的四路电流命令。
- * - chassis_snapshot：保存底盘运动学与速度控制器的初始化和本周期控制结果
- * - fault_detect_snapshot：保存本周期独立故障检测结果
- * - dr16_state_cache：保存底盘任务最近一次从 DR16 邮箱取得的完整状态快照
- * - dr16_state_cache_valid：表示底盘任务是否至少取得过一帧 DR16 状态
+ * 底盘在线调参初值：轮速尺度 100 rpm，ID1~3 使用固化公共 PID 参数
  */
-static CANDevices_Snapshot_t can_devices_snapshot;
+volatile MotorChassis_Tune_t motor_chassis_tune =
+{
+    .scale_rpm = 100.0F,
+    .pid =
+    {
+        .kp = CHASSIS_PID_KP,
+        .ki = CHASSIS_PID_KI,
+        .kd = CHASSIS_PID_KD,
+    },
+};
+
+Chassis_Snapshot_t chassis_snapshot;
+FaultDetect_Snapshot_t fault_detect_snapshot;
+
+/*
+ * 底盘任务私有状态：
+ * - can_feedback_cache：从反馈邮箱取得的最新 CAN 快照
+ * - chassis_feedback：从 CAN 快照映射出的本周期底盘控制反馈
+ * - chassis_output：底盘模块本周期计算得到的四路电流命令
+ * - dr16_state_cache：最近一次从 DR16 邮箱取得的状态快照
+ * - dr16_state_cache_valid：至少取得过一帧 DR16 状态时为 true
+ */
+static CANDevices_Snapshot_t can_feedback_cache;
 static Chassis_Feedback_t chassis_feedback;
 static Chassis_Output_t chassis_output;
-static Chassis_Snapshot_t chassis_snapshot;
-static FaultDetect_Snapshot_t fault_detect_snapshot;
 static DR16_State_t dr16_state_cache;
 static bool dr16_state_cache_valid;
 
@@ -68,64 +80,19 @@ void Task_motor_chassis(void *argument)
     uint32_t tick = osKernelGetTickCount();
     while (1)
     {
-        // 建立默认禁用的控制输入，并读取 Ozone 的公共速度 PID 参数
+        // 建立默认禁用的控制输入，并读取在线调参
         Chassis_Input_t chassis_input =
         {
             .enabled = false,
-            .scale_rpm = g_motor_chassis_tune.scale_rpm,
+            .scale_rpm = motor_chassis_tune.scale_rpm,
             .pid_tune =
             {
-                .kp = g_motor_chassis_tune.pid_kp,
-                .ki = g_motor_chassis_tune.pid_ki,
-                .kd = g_motor_chassis_tune.pid_kd,
-            },
-            .pid_tune_override_enable =
-            {
-                false,
-                false,
-                false,
-                false,
-            },
-            .pid_tune_override =
-            {
-                {
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                },
-                {
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                },
-                {
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                },
-                {
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                },
+                .kp = motor_chassis_tune.pid.kp,
+                .ki = motor_chassis_tune.pid.ki,
+                .kd = motor_chassis_tune.pid.kd,
             },
             .control_period_s = 1.0F / (float)MOTOR_CHASSIS_FREQ,
         };
-
-        // 仅将合法的独立参数映射到指定电机，非法编号时继续使用公共 PID
-        if (g_motor_chassis_tune.pid_override.pid_override_enable &&
-            g_motor_chassis_tune.pid_override.pid_override_motor_index >= 1U &&
-            g_motor_chassis_tune.pid_override.pid_override_motor_index <= CHASSIS_MOTOR_COUNT)
-        {
-            const uint32_t motor_index = g_motor_chassis_tune.pid_override.pid_override_motor_index - 1U;
-            chassis_input.pid_tune_override_enable[motor_index] = true;
-            chassis_input.pid_tune_override[motor_index] = (Chassis_PidTune_t)
-            {
-                .kp = g_motor_chassis_tune.pid_override.pid_override_kp,
-                .ki = g_motor_chassis_tune.pid_override.pid_override_ki,
-                .kd = g_motor_chassis_tune.pid_override.pid_override_kd,
-            };
-        }
 
         // 取得时间基准，用于拒绝过期遥控状态
         const uint64_t now_us = BSP_TIME_Get();
@@ -143,14 +110,9 @@ void Task_motor_chassis(void *argument)
         Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
         MotorChassis_PublishCommand();
 
-        // 独立汇总本周期设备和控制故障，再发布给 Ozone 调试区
-        FaultDetect_UpdateMotorChassis(feedback_received ? &can_devices_snapshot : NULL, &chassis_snapshot,
+        // 汇总本周期设备和控制故障
+        FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis_snapshot,
                                        &fault_detect_snapshot);
-        OzoneDebug_UpdateFaultDetect(&fault_detect_snapshot);
-
-        // 将设备与控制结果集中发布到独立 Ozone 调试区，不在任务内维护故障判定
-        OzoneDebug_UpdateMotorChassis(&chassis_input, feedback_received ? &can_devices_snapshot : NULL,
-                                      &chassis_snapshot);
 
         tick += delay_tick;
         // 等待至下一个绝对任务周期，保持稳定控制频率
@@ -284,11 +246,9 @@ bool Task_motor_chassis_Init(void)
 {
     // 选择四角 X 型全向轮布局并初始化底盘控制链，CAN 设备集合由独立通信任务负责初始化
     Chassis_Init((float)MOTOR_CHASSIS_FREQ, MIXER_OMNICROSS, &chassis_snapshot);
-    OzoneDebug_UpdateChassisInit(&chassis_snapshot);
 
-    // 发布初始化阶段诊断快照，帮助调试器区分未诊断和启动故障
+    // 生成初始化阶段诊断快照，区分未诊断和启动故障
     FaultDetect_UpdateMotorChassis(NULL, &chassis_snapshot, &fault_detect_snapshot);
-    OzoneDebug_UpdateFaultDetect(&fault_detect_snapshot);
     return chassis_snapshot.initialized;
 }
 
@@ -304,7 +264,7 @@ static bool MotorChassis_ReadLatestFeedback(void)
         0,
     };
     if (task_runtime.msgq.can_feedback == NULL ||
-        osMessageQueueGet(task_runtime.msgq.can_feedback, &can_devices_snapshot, NULL, 0U) != osOK)
+        osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) != osOK)
     {
         return false;
     }
@@ -313,9 +273,9 @@ static bool MotorChassis_ReadLatestFeedback(void)
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
         chassis_feedback.valid[motor_index] =
-            can_devices_snapshot.feedback_update_status[motor_index] == CAN_DEVICES_OK;
-        chassis_feedback.motor_online[motor_index] = can_devices_snapshot.motor_online[motor_index];
-        chassis_feedback.actual_speed_rpm[motor_index] = can_devices_snapshot.actual_speed_rpm[motor_index];
+            can_feedback_cache.feedback_update_status[motor_index] == CAN_DEVICES_OK;
+        chassis_feedback.motor_online[motor_index] = can_feedback_cache.motor_online[motor_index];
+        chassis_feedback.actual_speed_rpm[motor_index] = can_feedback_cache.actual_speed_rpm[motor_index];
     }
     return true;
 }
@@ -329,7 +289,7 @@ static bool MotorChassis_PublishCommand(void)
 {
     CANDevices_Command_t command =
     {
-        .sequence = can_devices_snapshot.sequence,
+        .sequence = can_feedback_cache.sequence,
     };
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {

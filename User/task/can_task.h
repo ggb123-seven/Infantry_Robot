@@ -7,6 +7,11 @@ extern "C"
 
 #include <stdbool.h>
 
+#include "device/can_devices.h"
+
+// CAN 设备观测变量：初始化结果、四路反馈和电流提交状态，由 Task_can 每周期写入
+extern CANDevices_Snapshot_t can_devices_snapshot;
+
 /**
  * @brief 初始化 CAN 设备集合
  *
