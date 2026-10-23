@@ -25,9 +25,24 @@ volatile GimbalYawAngle_t gimbal_yaw_angle =
     .ki = 0.0f,
     .kd = 0.0f,
     .target_deg = 0.0f,
-    .actual_deg = 0.0f,
-    .enabled = true
+    .actual_deg = NAN,
+    .enabled = false
 };
+
+// 零点未标定时禁止串级输出，采样请求由云台任务单次消费
+volatile float gimbal_yaw_zero_deg = NAN;
+volatile bool gimbal_yaw_zero_capture = false;
+volatile float gimbal_yaw_encoder_deg = NAN;
+
+// 等待标定时无有效机械坐标，就绪时采用已校验的固定偏置
+typedef enum
+{
+    GIMBAL_YAW_ZERO_WAITING = 0,
+    GIMBAL_YAW_ZERO_READY
+} GimbalYawZeroState_t;
+
+static GimbalYawZeroState_t yaw_zero_state;
+static float yaw_zero_applied_deg = NAN;
 
 /* 控制器未初始化时禁止输出，待机时清空历史量，运行入口使用当前反馈预置微分 */
 typedef enum
@@ -79,6 +94,79 @@ static float Gimbal_YawSpeedStop(void)
 }
 
 /**
+ * @brief 将有限角度环绕到单圈区间，避免跨零点与多圈目标造成误差跳变
+ *
+ * @param[in] angle_deg 有限角度，单位度
+ * @return 单圈角度，单位度，范围 [0, 360)
+ */
+static float Gimbal_WrapDegrees(float angle_deg)
+{
+    float wrapped_deg = fmodf(angle_deg, 360.0f);
+    if (wrapped_deg < 0.0f)
+    {
+        wrapped_deg += 360.0f;
+    }
+    // 负的极小角度加整圈后可能舍入为 360 度，统一归到零点
+    return wrapped_deg >= 360.0f ? 0.0f : wrapped_deg;
+}
+
+/**
+ * @brief 消费人工标定事件并集中维护机械零点状态，坐标改变时强制停机
+ *
+ * @param[in] feedback_valid 当前编码器角度、转速与反馈时效是否有效
+ * @param[in] feedback_deg 当前原始编码器单圈角度，单位度
+ * @return 固定机械零点有效时返回 true，等待标定或非法状态时返回 false
+ */
+static bool Gimbal_YawZeroUpdate(bool feedback_valid, float feedback_deg)
+{
+    // 停机完成后才允许采样，失败请求当次清除，防止稍后意外修改零点
+    if (gimbal_yaw_zero_capture)
+    {
+        gimbal_yaw_zero_capture = false;
+        if (feedback_valid && !gimbal_yaw_angle.enabled &&
+            yaw_state == GIMBAL_YAW_READY && yaw_angle_state == GIMBAL_YAW_READY)
+        {
+            gimbal_yaw_zero_deg = feedback_deg;
+        }
+    }
+
+    // 对调试输入只读取一次，控制计算使用模块保存的已校验偏置
+    float configured_deg = gimbal_yaw_zero_deg;
+    const bool zero_valid = isfinite(configured_deg) && configured_deg >= 0.0f && configured_deg < 360.0f;
+    GimbalYawZeroState_t next_state;
+    switch (yaw_zero_state)
+    {
+        case GIMBAL_YAW_ZERO_WAITING:
+        case GIMBAL_YAW_ZERO_READY:
+            next_state = zero_valid ? GIMBAL_YAW_ZERO_READY : GIMBAL_YAW_ZERO_WAITING;
+            break;
+
+        default:
+            next_state = GIMBAL_YAW_ZERO_WAITING;
+            configured_deg = NAN;
+            gimbal_yaw_zero_deg = NAN;
+            break;
+    }
+
+    // 零点改变或失效时退出旧坐标，清除两环历史并要求人工重新使能
+    if (next_state != yaw_zero_state ||
+        (next_state == GIMBAL_YAW_ZERO_READY && configured_deg != yaw_zero_applied_deg))
+    {
+        gimbal_yaw_angle.enabled = false;
+        Gimbal_YawAngleSetEnabled(false);
+        Gimbal_YawSpeedStop();
+        yaw_zero_applied_deg = next_state == GIMBAL_YAW_ZERO_READY ? configured_deg : NAN;
+        yaw_zero_state = next_state;
+    }
+    if (yaw_zero_state != GIMBAL_YAW_ZERO_READY)
+    {
+        gimbal_yaw_angle.enabled = false;
+        return false;
+    }
+    return true;
+}
+
+/**
  * @brief 初始化 yaw 串级控制器并清除两环上次运行历史
  *
  * @param[in] sample_frequency_hz 控制频率，单位 Hz，范围为 10 至 2000
@@ -90,6 +178,13 @@ int8_t Gimbal_Init(float sample_frequency_hz)
     yaw_state = GIMBAL_YAW_UNINITIALIZED;
     yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
     yaw_feedback_time_us = UINT64_MAX;
+    yaw_zero_state = GIMBAL_YAW_ZERO_WAITING;
+    yaw_zero_applied_deg = NAN;
+    gimbal_yaw_zero_capture = false;
+    gimbal_yaw_encoder_deg = NAN;
+    gimbal_yaw_angle.actual_deg = NAN;
+    gimbal_yaw_angle.enabled = false;
+    gimbal_yaw_speed.target_rad_s = 0.0f;
     if (!isfinite(sample_frequency_hz) || sample_frequency_hz < 10.0f || sample_frequency_hz > 2000.0f)
     {
         return -1;
@@ -109,7 +204,7 @@ int8_t Gimbal_Init(float sample_frequency_hz)
         return -1;
     }
 
-    // 外环参数由模块常驻保存，初始化后由串级入口按全局使能请求进入运行
+    // 外环参数由模块常驻保存，标定后必须人工使能才允许串级运行
     if (Gimbal_YawAngleInit(sample_frequency_hz, &yaw_angle_params) != 0)
     {
         return -1;
@@ -269,15 +364,15 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
 }
 
 /**
- * @brief 使用编码器角度和转速执行串级控制，角度外环生成速度内环目标
+ * @brief 将编码器角度减去机械零点，再执行角度与速度串级控制
  *
- * @param[in] feedback_deg 编码器单圈角度，单位度，范围 [0, 360)
+ * @param[in] feedback_deg 原始编码器单圈角度，单位度，范围 [0, 360)，未减机械零点
  * @param[in] feedback_rpm 编码器转子转速，单位 rpm，有效范围为有符号 16 位反馈范围
  * @param[in] feedback_time_us 最近有效反馈的完整微秒时刻，无反馈为 UINT64_MAX
  * @param[in] now_us 当前完整单调时刻，单位微秒
  * @param[in] enabled 本次调用是否允许控制，false 时停止两环并返回零电流
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
- * @return 速度内环生成的转子侧电流，单位 A，禁用或反馈无效时为零
+ * @return 速度内环生成的转子侧电流，单位 A，未标定、禁用或输入无效时为零
  */
 float Gimbal_YawRunAt(float feedback_deg, float feedback_rpm, uint64_t feedback_time_us,
                      uint64_t now_us, bool enabled, float period_s)
@@ -285,36 +380,57 @@ float Gimbal_YawRunAt(float feedback_deg, float feedback_rpm, uint64_t feedback_
     // 沿用速度控制的反馈时效和原始转速范围，阻止外环在同一无效帧上继续积分
     const bool feedback_valid = feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
         now_us - feedback_time_us <= (uint64_t)GIMBAL_YAW_FEEDBACK_TIMEOUT_MS * 1000U &&
-        isfinite(feedback_deg) && isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
-    gimbal_yaw_angle.actual_deg = feedback_valid ? feedback_deg : NAN;
-    const bool running = enabled && gimbal_yaw_angle.enabled && feedback_valid && isfinite(period_s) &&
-        period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
-    Gimbal_YawAngleSetEnabled(running);
+        isfinite(feedback_deg) && feedback_deg >= 0.0f && feedback_deg < 360.0f &&
+        isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
+    gimbal_yaw_encoder_deg = feedback_valid ? feedback_deg : NAN;
+
+    // 原生角度只供标定与观察，闭环始终使用相对机械正前方的单圈角度
+    const bool zero_ready = Gimbal_YawZeroUpdate(feedback_valid, feedback_deg);
+    const float actual_deg = feedback_valid && zero_ready ?
+        Gimbal_WrapDegrees(feedback_deg - yaw_zero_applied_deg) : NAN;
+    gimbal_yaw_angle.actual_deg = actual_deg;
+
+    // 拒绝非法目标和增益，避免底层控制器沿用上一周期输出
+    const float requested_deg = gimbal_yaw_angle.target_deg;
+    const float kp = gimbal_yaw_angle.kp;
+    const float ki = gimbal_yaw_angle.ki;
+    const float kd = gimbal_yaw_angle.kd;
+    const bool request_valid = isfinite(requested_deg) && isfinite(kp) && isfinite(ki) && isfinite(kd) &&
+        kp >= 0.0f && ki >= 0.0f && kd >= 0.0f && kp <= 1000.0f && ki <= 1000.0f && kd <= 1000.0f;
+    bool running = enabled && gimbal_yaw_angle.enabled && zero_ready && feedback_valid && request_valid &&
+        isfinite(period_s) && period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
 
     // 每周期采纳全局调参，增益改变时清空旧外环历史，避免沿用旧积分
     float target_rad_s = 0.0f;
     if (running)
     {
-        const float kp = gimbal_yaw_angle.kp;
-        const float ki = gimbal_yaw_angle.ki;
-        const float kd = gimbal_yaw_angle.kd;
         if (kp != yaw_angle_params.p || ki != yaw_angle_params.i || kd != yaw_angle_params.d)
         {
             yaw_angle_params.p = kp;
             yaw_angle_params.i = ki;
             yaw_angle_params.d = kd;
             yaw_angle_params.i_limit = ki > 0.000001f ? GIMBAL_YAW_SPEED_LIMIT_RAD_S / ki : 0.0f;
-            PID_Reset(&yaw_angle_pid);
+            if (PID_Reset(&yaw_angle_pid) != 0)
+            {
+                yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
+            }
         }
+    }
 
+    // 外环未就绪时同时阻止速度内环运行，防止仍在转动时产生非零制动电流
+    running = running && yaw_angle_state != GIMBAL_YAW_UNINITIALIZED;
+    Gimbal_YawAngleSetEnabled(running);
+    if (running && yaw_angle_state == GIMBAL_YAW_RUNNING)
+    {
         // rpm 按每圈 2π 弧度和每分钟 60 秒转换为外环反馈微分，输出单位为 rad/s
         const float feedback_rad_s = feedback_rpm * 0.10471975512f;
-        target_rad_s = Gimbal_YawAngleRun(gimbal_yaw_angle.target_deg, feedback_deg, feedback_rad_s, period_s);
+        target_rad_s = Gimbal_YawAngleRun(requested_deg, actual_deg, feedback_rad_s, period_s);
     }
 
     // 外环速度目标直接交给内环，禁用时同步归零目标并清空速度控制历史
     gimbal_yaw_speed.target_rad_s = target_rad_s;
-    return Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us, running, period_s);
+    return Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us,
+                               running && yaw_angle_state == GIMBAL_YAW_RUNNING, period_s);
 }
 
 /**
@@ -354,8 +470,7 @@ void Gimbal_YawAngleSetEnabled(bool enabled)
             const GimbalYawState_t next_state = enabled ? GIMBAL_YAW_RUNNING : GIMBAL_YAW_READY;
             if (next_state != yaw_angle_state)
             {
-                PID_Reset(&yaw_angle_pid);
-                yaw_angle_state = next_state;
+                yaw_angle_state = PID_Reset(&yaw_angle_pid) == 0 ? next_state : GIMBAL_YAW_UNINITIALIZED;
             }
             break;
         }
@@ -370,17 +485,27 @@ void Gimbal_YawAngleSetEnabled(bool enabled)
 /**
  * @brief 执行一次角度外环计算，返回速度目标供调用方选择何时接入
  *
- * @param[in] target_deg 目标角度，单位度，须与反馈采用相同坐标约定
- * @param[in] feedback_deg 实际角度，单位度，范围与目标角相同
+ * @param[in] target_deg 目标角度，单位度，单圈模式下有限值按 360 度环绕
+ * @param[in] feedback_deg 实际角度，单位度，与目标采用相同零点和方向
  * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈正方向一致
  * @param[in] period_s 实际控制间隔，单位 s，须为有限正数且不小于初始化周期
- * @return 速度目标，单位 rad/s，未初始化或禁用时为零
+ * @return 速度目标，单位 rad/s，未初始化、禁用或输入无效时为零，不执行零点换算
  */
 float Gimbal_YawAngleRun(float target_deg, float feedback_deg, float feedback_rad_s, float period_s)
 {
-    // 接口角度换成弧度，保持 PID 增益、角速度反馈和 2π 环绕配置的单位一致
-    const float target_rad = target_deg * GIMBAL_DEG_TO_RAD;
-    const float feedback_rad = feedback_deg * GIMBAL_DEG_TO_RAD;
+    // 直接调用也校验输入，防止非数值目标触发底层保留旧输出的路径
+    if (!isfinite(target_deg) || !isfinite(feedback_deg) || !isfinite(feedback_rad_s) ||
+        !isfinite(period_s) || period_s < yaw_angle_pid.dt_min || period_s <= 0.0f ||
+        period_s > GIMBAL_YAW_MAX_PERIOD_S || yaw_angle_state != GIMBAL_YAW_RUNNING)
+    {
+        Gimbal_YawAngleSetEnabled(false);
+        return 0.0f;
+    }
+
+    // 单圈目标与反馈先归一化再转弧度，独立连续角度模式保留原有范围约定
+    const bool circular = yaw_angle_pid.param->range > 0.0f;
+    const float target_rad = (circular ? Gimbal_WrapDegrees(target_deg) : target_deg) * GIMBAL_DEG_TO_RAD;
+    const float feedback_rad = (circular ? Gimbal_WrapDegrees(feedback_deg) : feedback_deg) * GIMBAL_DEG_TO_RAD;
 
     // 仅运行状态计算角度到速度的外环输出，反馈有效性由调用方通过使能入口控制
     switch (yaw_angle_state)
