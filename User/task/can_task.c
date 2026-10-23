@@ -11,9 +11,7 @@ CANDevices_Snapshot_t can_devices_snapshot;
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
 static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
-
-// 独立保留云台发送结果，避免覆盖底盘快照的发送状态
-static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
+static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;// 独立保留云台发送结果，避免覆盖底盘快照的发送状态
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -24,21 +22,16 @@ static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
 void Task_can(void *argument)
 {
     (void)argument;
-
     const uint32_t delay_tick = osKernelGetTickFreq() / CAN_TASK_FREQ;
-
-    // 等待业务初始化完成后再进入 CAN 周期通信
-    osDelay(CAN_TASK_INIT_DELAY);
+    osDelay(CAN_TASK_INIT_DELAY);// 等待业务初始化完成后再进入 CAN 周期通信
 
     // 建立绝对周期基准，避免通信周期累计漂移
     uint32_t tick = osKernelGetTickCount();
     while (true)
     {
         CANDevices_Command_t command;
-
         // 只读取本周期可用的最新命令，邮箱为空或异常时保留四路零电流默认值
         const bool command_received = CANTask_ReadLatestCommand(&command);
-
         // 刷新四路底盘反馈后应用本周期电流命令，保持同组命令一致提交
         CANDevices_UpdateFeedback(&can_devices_snapshot);
         if (!command_received)
@@ -46,7 +39,6 @@ void Task_can(void *argument)
             command.sequence = can_devices_snapshot.sequence;
         }
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
-
         // 只使用本周期取得的 yaw 电流，邮箱为空或读取失败时立即回到零输出
         float yaw_current_a = 0.0f;
         if (task_runtime.msgq.gimbal_yaw_command == NULL ||
@@ -54,13 +46,10 @@ void Task_can(void *argument)
         {
             yaw_current_a = 0.0f;
         }
-
         // 两轴缓存统一组帧，yaw 使用速度环输出，pitch 保持零电流
         gimbal_output_status = CANDevices_ApplyGimbalCurrent(yaw_current_a);
-
         // 发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
-
         tick += delay_tick;
         // 等待至下一个绝对任务周期，保持稳定 CAN 通信频率
         osDelayUntil(tick);
@@ -124,7 +113,6 @@ static bool CANTask_PublishSnapshot(void)
     {
         success = false;
     }
-
     return success;
 }
 

@@ -10,6 +10,9 @@
 #define GIMBAL_RAD_TO_DEG 57.2957795131f
 #define GIMBAL_DEG_TO_RAD 0.0174532925199f
 
+// 机械正前方对应的编码器单圈角度，单位度，范围 [0, 360)，取自用户实测，安装关系改变后须重新标定
+#define GIMBAL_YAW_DEFAULT_ZERO_DEG 97.0752f
+
 // 320 rpm 对应每秒 1920 度，90 ms 内的最大位移小于半圈，可唯一展开编码器角度
 #define GIMBAL_YAW_POSITION_MAX_SAMPLE_GAP_US 90000U
 
@@ -42,8 +45,8 @@ volatile GimbalYawAngle_t gimbal_yaw_angle =
     .enabled = false
 };
 
-// 零点未标定时禁止串级输出，采样请求由云台任务单次消费
-volatile float gimbal_yaw_zero_deg = NAN;
+// 已标定的机械零点随固件加载，反馈失效只丢弃连续位置，采样请求由云台任务单次消费
+volatile float gimbal_yaw_zero_deg = GIMBAL_YAW_DEFAULT_ZERO_DEG;
 volatile bool gimbal_yaw_zero_capture = false;
 volatile float gimbal_yaw_encoder_deg = NAN;
 
@@ -379,12 +382,14 @@ int8_t Gimbal_Init(float sample_frequency_hz)
         return -1;
     }
 
-    // 外环参数由模块常驻保存，标定后必须人工使能才允许串级运行
+    // 外环参数由模块常驻保存，初始化后必须人工使能才允许串级运行
     if (Gimbal_YawAngleInit(sample_frequency_hz, &yaw_angle_params) != 0)
     {
         return -1;
     }
     yaw_state = GIMBAL_YAW_READY;
+    // 在初始化阶段采纳固定零点，避免首次控制周期撤销随后写入的人工使能
+    Gimbal_YawZeroUpdate(false, NAN);
     return 0;
 }
 
@@ -548,7 +553,7 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
  * @brief 将编码器角度展开为连续机械位置，再执行角度与速度串级控制
  *
  * @param[in] feedback_deg 原始编码器单圈角度，单位度，范围 [0, 360)，未减机械零点
- * @param[in] angle_valid 电机反馈中的角度跟踪有效标志，false 时停止并要求重新标定
+ * @param[in] angle_valid 电机反馈中的角度跟踪有效标志，false 时停止并要求确认位置后人工重新使能
  * @param[in] feedback_rpm 编码器转子转速，单位 rpm，有效范围为有符号 16 位反馈范围
  * @param[in] yaw_rate_feedback_rad_s 外部偏航角速度，单位 rad/s，正方向须与角度增大方向一致
  * @param[in] yaw_rate_feedback_valid 外部角速度有效且未过期时为 true，false 时由反馈转速换算
@@ -580,11 +585,13 @@ float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, 
     float actual_deg = NAN;
     bool position_valid = feedback_valid && zero_ready &&
         Gimbal_YawPositionUpdate(feedback_deg, feedback_time_us, &actual_deg);
-    // 反馈连续性丢失后撤销原零点，避免按未知圈数继续闭环
+    // 反馈连续性丢失时停机并丢弃圈数，保留固定零点，恢复后须确认位置并人工重新使能
     if (zero_ready && position_was_initialized && (!feedback_valid || !position_valid))
     {
-        gimbal_yaw_zero_deg = NAN;
-        Gimbal_YawZeroUpdate(false, NAN);
+        gimbal_yaw_angle.enabled = false;
+        Gimbal_YawAngleSetEnabled(false);
+        Gimbal_YawSpeedStop();
+        Gimbal_YawPositionReset();
         actual_deg = NAN;
         position_valid = false;
     }
