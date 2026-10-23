@@ -2,6 +2,7 @@
 
 #include "device/can_devices.h"
 #include "device/dr16.h"
+#include "module/gimbal.h"
 #include "task/can_task.h"
 #include "task/dr16_task.h"
 #include "task/ins_task.h"
@@ -177,9 +178,16 @@ static bool Task_InitModules(void)
         return false;
     }
 
-    // 云台模块与底盘模块分别初始化，任一失败时都不启动业务任务
+    // 创建云台任务前确认内核节拍能精确表达控制周期，避免零周期或频率截断
     task_runtime.init_status = TASK_INIT_GIMBAL_MODULE_FAILED;
-    if (!Task_motor_gimbal_Init())
+    const uint32_t tick_frequency = osKernelGetTickFreq();
+    if (tick_frequency < MOTOR_GIMBAL_FREQ || tick_frequency % MOTOR_GIMBAL_FREQ != 0U)
+    {
+        return false;
+    }
+
+    // 在统一装配入口直接调用云台模块初始化，失败时不创建任何业务任务
+    if (Gimbal_Init((float)MOTOR_GIMBAL_FREQ) != 0)
     {
         return false;
     }

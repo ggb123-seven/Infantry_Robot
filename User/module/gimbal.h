@@ -38,7 +38,7 @@ extern volatile GimbalYawSpeed_t gimbal_yaw_speed;
  * actual_deg：相对机械正前方的连续位置，单位度，启动时在 [0, 360)，跨编码器零点后保持连续
  * 未标定、反馈无效或连续位置丢失时 actual_deg 为非数值
  * enabled：串级控制使能，标定完成后手动置 true；零点改变或失效时自动置 false
- * 角度环输出写入 gimbal_yaw_speed.target_rad_s，单位 rad/s，不重复保存输出字段
+ * 角度环输出与目标角速度前馈相加并限幅后写入 gimbal_yaw_speed.target_rad_s，单位 rad/s
  * 调试器可修改增益、目标和使能，实际角度只读；同一任务串行调用，volatile 不提供互斥
  */
 typedef struct gimbal_yaw_angle
@@ -66,6 +66,19 @@ extern volatile GimbalYawAngle_t gimbal_yaw_angle;
 extern volatile float gimbal_yaw_zero_deg;
 extern volatile bool gimbal_yaw_zero_capture;
 extern volatile float gimbal_yaw_encoder_deg;
+
+/*
+ * 正弦跟随测试使用独立调试变量，沿用现有结构体布局
+ * gimbal_yaw_sine_test_enabled：默认 false，true 时以 180° 为中心、30° 为振幅、6 rad/s 为相位角速度
+ * 测试只在串级控制有效时推进，停止或反馈异常后相位归零，重新使能时从 180° 开始
+ * gimbal_yaw_sine_feedforward_enabled：默认 true，仅控制正弦测试的前馈，可在同一轨迹中切换比较
+ * gimbal_yaw_feedforward_rad_s：只读本周期采用的前馈，单位 rad/s，合成限幅前的值，停机时为零
+ * 正弦测试覆盖 target_deg 和接口前馈输入，关闭测试后保持最后目标并恢复接口前馈输入
+ * 参数由同一云台任务消费，volatile 仅保证调试可见性，不提供互斥或多字段原子快照
+ */
+extern volatile bool gimbal_yaw_sine_test_enabled;
+extern volatile bool gimbal_yaw_sine_feedforward_enabled;
+extern volatile float gimbal_yaw_feedforward_rad_s;
 
 /*
  * yaw 目标电流双向限幅为 0.5 A，低于手册所列 1.62 A 额定电流
@@ -101,9 +114,11 @@ void Gimbal_BindQueues(osMessageQueueId_t feedback_queue, osMessageQueueId_t cur
  * @param[in] period_s 实际控制间隔，单位秒，由任务周期调度提供
  * @param[in] yaw_rate_feedback_rad_s 外部偏航角速度，单位 rad/s，正方向须与角度增大方向一致
  * @param[in] yaw_rate_feedback_valid 外部角速度有效且未过期时为 true，角速度须为有限值；false 时使用编码器换算值
+ * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭，正方向与目标角度一致
  * @return 无返回值，须先初始化控制器并绑定邮箱，由同一任务周期调用
  */
-void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_feedback_valid);
+void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_feedback_valid,
+                   float yaw_rate_feedforward_rad_s);
 
 /**
  * @brief 根据 yaw 转子反馈计算单周期电流命令，不直接访问总线
@@ -141,11 +156,12 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
  * @param[in] now_us 当前完整单调时刻，单位微秒
  * @param[in] enabled 本次调用是否允许控制，与全局角度环使能共同决定运行状态
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
+ * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭，正方向与目标角度一致
  * @return 转子侧目标电流，单位 A，未标定、禁用或输入无效时为零，并清空两环历史
  */
 float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, float yaw_rate_feedback_rad_s,
                      bool yaw_rate_feedback_valid, uint64_t feedback_time_us, uint64_t now_us, bool enabled,
-                     float period_s);
+                     float period_s, float yaw_rate_feedforward_rad_s);
 
 /**
  * @brief 独立初始化 GM6020 偏航角度外环，初始化后保持禁用，由调用方接入速度环

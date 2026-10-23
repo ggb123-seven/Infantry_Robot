@@ -23,11 +23,11 @@ void Task_motor_gimbal(void *argument)
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
-        // 按实际调度间隔驱动模块，外部角速度暂未接入时沿用编码器转速换算反馈
+        // 按实际调度间隔驱动模块，外部角速度未接入时沿用编码器反馈，测试轨迹与前馈由模块生成
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
-        Gimbal_Update(period_s, 0.0f, false);
+        Gimbal_Update(period_s, 0.0f, false, 0.0f);
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
         if ((uint32_t)(now_tick - tick) >= delay_tick)
@@ -37,19 +37,4 @@ void Task_motor_gimbal(void *argument)
         tick += delay_tick;
         osDelayUntil(tick);
     }
-}
-
-/**
- * @brief 初始化 yaw 角度与速度串级控制，失败时阻止业务任务创建
- *
- * @return 控制器初始化成功且内核节拍支持目标频率时返回 true，否则返回 false
- */
-bool Task_motor_gimbal_Init(void)
-{
-    const uint32_t tick_frequency = osKernelGetTickFreq();
-    if (tick_frequency < MOTOR_GIMBAL_FREQ || tick_frequency % MOTOR_GIMBAL_FREQ != 0U)
-    {
-        return false;
-    }
-    return Gimbal_Init((float)MOTOR_GIMBAL_FREQ) == 0;
 }

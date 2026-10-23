@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stdbool.h>
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -14,13 +12,6 @@ extern "C"
  * @return 本任务不会返回
  */
 void Task_motor_gimbal(void *argument);
-
-/**
- * @brief 初始化云台 yaw 角度与速度串级控制并校验内核节拍
- *
- * @return 控制器初始化和周期校验成功时返回 true，否则返回 false
- */
-bool Task_motor_gimbal_Init(void);
 
 #ifdef __cplusplus
 }

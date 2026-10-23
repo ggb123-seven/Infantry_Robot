@@ -13,6 +13,16 @@
 // 320 rpm 对应每秒 1920 度，90 ms 内的最大位移小于半圈，可唯一展开编码器角度
 #define GIMBAL_YAW_POSITION_MAX_SAMPLE_GAP_US 90000U
 
+/*
+ * 正弦测试参数来自本次跟随实验方案，角度单位为度，相位角速度单位为 rad/s
+ * 中心 180 度、振幅 30 度使目标保持在 150 至 210 度，前馈峰值为 π rad/s
+ * 2π 用于周期归一化，避免长时间累计相位导致浮点分辨率下降
+ */
+#define GIMBAL_YAW_SINE_CENTER_DEG 180.0f
+#define GIMBAL_YAW_SINE_AMPLITUDE_DEG 30.0f
+#define GIMBAL_YAW_SINE_OMEGA_RAD_S 6.0f
+#define GIMBAL_TWO_PI 6.28318530718f
+
 volatile GimbalYawSpeed_t gimbal_yaw_speed =
 {
     .kp = 0.06f,
@@ -36,6 +46,21 @@ volatile GimbalYawAngle_t gimbal_yaw_angle =
 volatile float gimbal_yaw_zero_deg = NAN;
 volatile bool gimbal_yaw_zero_capture = false;
 volatile float gimbal_yaw_encoder_deg = NAN;
+
+// 测试默认关闭，前馈开关仅在测试启用后生效，观测值由控制任务每周期刷新
+volatile bool gimbal_yaw_sine_test_enabled = false;
+volatile bool gimbal_yaw_sine_feedforward_enabled = true;
+volatile float gimbal_yaw_feedforward_rad_s = 0.0f;
+
+// 测试待机时相位归零，运行时按实际周期推进，异常入口统一回到待机
+typedef enum
+{
+    GIMBAL_YAW_SINE_IDLE = 0,
+    GIMBAL_YAW_SINE_RUNNING
+} GimbalYawSineState_t;
+
+static GimbalYawSineState_t yaw_sine_state;
+static float yaw_sine_phase_rad;
 
 // 等待标定时无有效机械坐标，就绪时采用已校验的固定偏置
 typedef enum
@@ -85,6 +110,55 @@ static KPID_Params_t yaw_angle_params =
     .d_cutoff_freq = 0.0f,
     .range = 0.0f
 };
+
+/**
+ * @brief 根据测试开关和控制有效性生成同一相位的正弦目标及解析角速度前馈
+ *
+ * @param[in] control_valid 控制器、反馈、零点、增益和周期均有效且允许控制时为 true
+ * @param[in] period_s 实际控制间隔，单位秒，由调用方完成合法性校验
+ * @param[in,out] target_deg 目标角度，单位度，测试运行时替换并发布到调试区
+ * @param[in,out] feedforward_rad_s 目标角速度前馈，单位 rad/s，测试运行时替换
+ * @return 正常返回 true，非法测试状态返回 false 并禁止控制
+ */
+static bool Gimbal_YawSineUpdate(bool control_valid, float period_s, float *target_deg, float *feedforward_rad_s)
+{
+    // 待机或异常时不产生轨迹，保留最后角度供普通定点控制使用
+    if (!gimbal_yaw_sine_test_enabled || !control_valid)
+    {
+        yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
+        yaw_sine_phase_rad = 0.0f;
+        return true;
+    }
+
+    // 首次运行从中心位置开始，非法状态强制停用，恢复需要人工重新使能
+    switch (yaw_sine_state)
+    {
+        case GIMBAL_YAW_SINE_IDLE:
+            yaw_sine_phase_rad = 0.0f;
+            yaw_sine_state = GIMBAL_YAW_SINE_RUNNING;
+            break;
+
+        case GIMBAL_YAW_SINE_RUNNING:
+            yaw_sine_phase_rad = fmodf(yaw_sine_phase_rad + GIMBAL_YAW_SINE_OMEGA_RAD_S * period_s, GIMBAL_TWO_PI);
+            break;
+
+        default:
+            yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
+            yaw_sine_phase_rad = 0.0f;
+            gimbal_yaw_sine_test_enabled = false;
+            gimbal_yaw_angle.enabled = false;
+            *feedforward_rad_s = 0.0f;
+            return false;
+    }
+
+    // 用同一相位计算角度与其解析导数，前馈开关不重置轨迹以便连续对比
+    *target_deg = GIMBAL_YAW_SINE_CENTER_DEG + GIMBAL_YAW_SINE_AMPLITUDE_DEG * sinf(yaw_sine_phase_rad);
+    *feedforward_rad_s = gimbal_yaw_sine_feedforward_enabled ?
+        GIMBAL_YAW_SINE_AMPLITUDE_DEG * GIMBAL_DEG_TO_RAD * GIMBAL_YAW_SINE_OMEGA_RAD_S *
+        cosf(yaw_sine_phase_rad) : 0.0f;
+    gimbal_yaw_angle.target_deg = *target_deg;
+    return true;
+}
 
 /**
  * @brief 清空控制历史并回到待机状态，供禁用与输入异常路径共用
@@ -282,6 +356,10 @@ int8_t Gimbal_Init(float sample_frequency_hz)
     gimbal_yaw_angle.actual_deg = NAN;
     gimbal_yaw_angle.enabled = false;
     gimbal_yaw_speed.target_rad_s = 0.0f;
+    gimbal_yaw_feedforward_rad_s = 0.0f;
+    gimbal_yaw_sine_test_enabled = false;
+    yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
+    yaw_sine_phase_rad = 0.0f;
     if (!isfinite(sample_frequency_hz) || sample_frequency_hz < 10.0f || sample_frequency_hz > 2000.0f)
     {
         return -1;
@@ -330,9 +408,11 @@ void Gimbal_BindQueues(osMessageQueueId_t feedback_queue, osMessageQueueId_t cur
  * @param[in] period_s 实际控制间隔，单位秒，由任务调度提供
  * @param[in] yaw_rate_feedback_rad_s 外部偏航角速度，单位 rad/s，正方向须与角度增大方向一致
  * @param[in] yaw_rate_feedback_valid 外部角速度有效且未过期时为 true，false 时使用编码器换算值
+ * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭
  * @return 无返回值，发布失败时清空两环历史，CAN 任务按空邮箱路径归零
  */
-void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_feedback_valid)
+void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_feedback_valid,
+                   float yaw_rate_feedforward_rad_s)
 {
     // 读取最新帧并恢复完整微秒时刻，空邮箱保留缓存，读取错误使反馈立即失效
     const uint64_t now_us = BSP_TIME_Get();
@@ -351,7 +431,7 @@ void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_
     const float feedback_deg = yaw_feedback.rotor_single_angle * GIMBAL_RAD_TO_DEG;
     const float current_a = Gimbal_YawRunAt(feedback_deg, yaw_feedback.angle_valid, yaw_feedback.rotor_speed,
                                            yaw_rate_feedback_rad_s, yaw_rate_feedback_valid, yaw_feedback_time_us,
-                                           now_us, true, period_s);
+                                           now_us, true, period_s, yaw_rate_feedforward_rad_s);
 
     // 电流邮箱只保留最新命令，发布失败时同步停止两环，避免下周期沿用积分
     if (osMessageQueueReset(yaw_current_queue) != osOK ||
@@ -359,7 +439,7 @@ void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_
     {
         Gimbal_YawRunAt(feedback_deg, yaw_feedback.angle_valid, yaw_feedback.rotor_speed,
                        yaw_rate_feedback_rad_s, yaw_rate_feedback_valid, yaw_feedback_time_us,
-                       now_us, false, period_s);
+                       now_us, false, period_s, yaw_rate_feedforward_rad_s);
     }
 }
 
@@ -476,11 +556,12 @@ float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64
  * @param[in] now_us 当前完整单调时刻，单位微秒
  * @param[in] enabled 本次调用是否允许控制，false 时停止两环并返回零电流
  * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
+ * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭
  * @return 速度内环生成的转子侧电流，单位 A，未标定、禁用或输入无效时为零
  */
 float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, float yaw_rate_feedback_rad_s,
                      bool yaw_rate_feedback_valid, uint64_t feedback_time_us, uint64_t now_us, bool enabled,
-                     float period_s)
+                     float period_s, float yaw_rate_feedforward_rad_s)
 {
     // 沿用速度控制的反馈时效和原始转速范围，阻止外环在同一无效帧上继续积分
     const bool feedback_valid = angle_valid && feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
@@ -509,18 +590,24 @@ float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, 
     }
     gimbal_yaw_angle.actual_deg = actual_deg;
 
-    // 拒绝非法外部角速度、目标和增益，避免底层控制器沿用上一周期输出
+    // 校验反馈角速度、前馈、增益和周期，异常时不允许推进测试轨迹
     const bool rate_input_valid = !yaw_rate_feedback_valid || isfinite(yaw_rate_feedback_rad_s);
-    const float requested_deg = gimbal_yaw_angle.target_deg;
+    float requested_deg = gimbal_yaw_angle.target_deg;
+    float feedforward_rad_s = yaw_rate_feedforward_rad_s;
     const float kp = gimbal_yaw_angle.kp;
     const float ki = gimbal_yaw_angle.ki;
     const float kd = gimbal_yaw_angle.kd;
-    const bool request_valid = isfinite(requested_deg) && requested_deg >= 0.0f && requested_deg <= 360.0f &&
-        isfinite(kp) && isfinite(ki) && isfinite(kd) &&
+    const bool gains_valid = isfinite(kp) && isfinite(ki) && isfinite(kd) &&
         kp >= 0.0f && ki >= 0.0f && kd >= 0.0f && kp <= 1000.0f && ki <= 1000.0f && kd <= 1000.0f;
-    bool running = enabled && gimbal_yaw_angle.enabled && zero_ready && feedback_valid && position_valid &&
-        rate_input_valid && request_valid &&
+    const bool control_valid = enabled && gimbal_yaw_angle.enabled && zero_ready && feedback_valid && position_valid &&
+        rate_input_valid && isfinite(feedforward_rad_s) && gains_valid &&
+        yaw_state != GIMBAL_YAW_UNINITIALIZED && yaw_angle_state != GIMBAL_YAW_UNINITIALIZED &&
         isfinite(period_s) && period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
+
+    // 测试模式统一生成角度与前馈，普通模式继续采用调用方输入和调试目标
+    const bool sine_valid = Gimbal_YawSineUpdate(control_valid, period_s, &requested_deg, &feedforward_rad_s);
+    bool running = control_valid && sine_valid && isfinite(requested_deg) &&
+        requested_deg >= 0.0f && requested_deg <= 360.0f;
 
     // 每周期采纳全局调参，增益改变时清空旧外环历史，避免沿用旧积分
     float target_rad_s = 0.0f;
@@ -542,17 +629,41 @@ float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, 
     // 外环未就绪时同时阻止速度内环运行，防止仍在转动时产生非零制动电流
     running = running && yaw_angle_state != GIMBAL_YAW_UNINITIALIZED;
     Gimbal_YawAngleSetEnabled(running);
-    if (running && yaw_angle_state == GIMBAL_YAW_RUNNING)
+    running = running && yaw_angle_state == GIMBAL_YAW_RUNNING;
+    if (running)
     {
         // 有效外部角速度供外环反馈微分，未提供时按每圈 2π 弧度和每分钟 60 秒换算编码器转速
         const float feedback_rad_s = yaw_rate_feedback_valid ? yaw_rate_feedback_rad_s : feedback_rpm * 0.10471975512f;
-        target_rad_s = Gimbal_YawAngleRun(requested_deg, actual_deg, feedback_rad_s, period_s);
+        const float previous_integral = yaw_angle_pid.i;
+        const float correction_rad_s = Gimbal_YawAngleRun(requested_deg, actual_deg, feedback_rad_s, period_s);
+
+        // 先限制前馈到可用速度范围，再与角度修正相加，避免有限大输入相加溢出
+        feedforward_rad_s = fmaxf(-GIMBAL_YAW_SPEED_LIMIT_RAD_S,
+                                  fminf(feedforward_rad_s, GIMBAL_YAW_SPEED_LIMIT_RAD_S));
+        const float combined_rad_s = correction_rad_s + feedforward_rad_s;
+        target_rad_s = fmaxf(-GIMBAL_YAW_SPEED_LIMIT_RAD_S, fminf(combined_rad_s, GIMBAL_YAW_SPEED_LIMIT_RAD_S));
+
+        // 合成速度饱和且误差继续推向饱和方向时撤销本周期积分，保留反向退饱和能力
+        if ((combined_rad_s > GIMBAL_YAW_SPEED_LIMIT_RAD_S && requested_deg > actual_deg) ||
+            (combined_rad_s < -GIMBAL_YAW_SPEED_LIMIT_RAD_S && requested_deg < actual_deg))
+        {
+            yaw_angle_pid.i = previous_integral;
+        }
     }
 
-    // 外环速度目标直接交给内环，禁用时同步归零目标并清空速度控制历史
+    // 发布实际采用的前馈和合成速度，禁用时归零，速度内环继续使用编码器反馈
+    gimbal_yaw_feedforward_rad_s = running ? feedforward_rad_s : 0.0f;
     gimbal_yaw_speed.target_rad_s = target_rad_s;
-    return Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us,
-                               running && yaw_angle_state == GIMBAL_YAW_RUNNING, period_s);
+    const float current_a = Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us, running, period_s);
+    // 内环未运行时同步撤销调试输出与轨迹相位，避免观测值保留未执行的前馈
+    if (yaw_state != GIMBAL_YAW_RUNNING || yaw_angle_state != GIMBAL_YAW_RUNNING)
+    {
+        gimbal_yaw_feedforward_rad_s = 0.0f;
+        gimbal_yaw_speed.target_rad_s = 0.0f;
+        yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
+        yaw_sine_phase_rad = 0.0f;
+    }
+    return current_a;
 }
 
 /**
