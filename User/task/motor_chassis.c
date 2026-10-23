@@ -14,19 +14,28 @@
  * - MOTOR_CHASSIS_DR16_CHANNEL_LIMIT：摇杆去中心后的有效计数上限
  * - MOTOR_CHASSIS_DR16_DEADZONE：摇杆中心死区比例
  * - MOTOR_CHASSIS_DR16_SPIN_WZ：左拨杆下位时的固定自旋角速度归一化值，正值为俯视逆时针
+ * - MOTOR_CHASSIS_SCALE_RPM：归一化轮速尺度，沿用原调参默认值 100 rpm
  */
 #define MOTOR_CHASSIS_DR16_CHANNEL_LIMIT (660.0F)
 #define MOTOR_CHASSIS_DR16_DEADZONE (0.05F)
 #define MOTOR_CHASSIS_DR16_SPIN_WZ (0.30F)
+#define MOTOR_CHASSIS_SCALE_RPM (100.0F)
 
 _Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘控制与 CAN 设备数量必须一致");
 
 /*
- * 底盘在线调参初值：轮速尺度 100 rpm，ID1~3 使用固化公共 PID 参数
+ * 底盘调参与观测初值：反馈和目标转速清零，ID1~3 使用固化公共 PID 参数
  */
-volatile MotorChassis_Tune_t motor_chassis_tune =
+volatile MotorChassis_Tune_t motor_chassis_watch =
 {
-    .scale_rpm = 100.0F,
+    .actual_speed_rpm =
+    {
+        0.0F,
+    },
+    .target_speed_rpm =
+    {
+        0.0F,
+    },
     .pid =
     {
         .kp = CHASSIS_PID_KP,
@@ -84,12 +93,12 @@ void Task_motor_chassis(void *argument)
         Chassis_Input_t chassis_input =
         {
             .enabled = false,
-            .scale_rpm = motor_chassis_tune.scale_rpm,
+            .scale_rpm = MOTOR_CHASSIS_SCALE_RPM,
             .pid_tune =
             {
-                .kp = motor_chassis_tune.pid.kp,
-                .ki = motor_chassis_tune.pid.ki,
-                .kd = motor_chassis_tune.pid.kd,
+                .kp = motor_chassis_watch.pid.kp,
+                .ki = motor_chassis_watch.pid.ki,
+                .kd = motor_chassis_watch.pid.kd,
             },
             .control_period_s = 1.0F / (float)MOTOR_CHASSIS_FREQ,
         };
@@ -109,6 +118,13 @@ void Task_motor_chassis(void *argument)
         // 完成运动学和速度控制，再发布最新电流命令
         Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
         MotorChassis_PublishCommand();
+
+        // 同步同一控制周期的反馈和实际目标，供调试器逐轮对比转速
+        for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
+        {
+            motor_chassis_watch.actual_speed_rpm[motor_index] = chassis_snapshot.actual_speed_rpm[motor_index];
+            motor_chassis_watch.target_speed_rpm[motor_index] = chassis_snapshot.ramped_target_speed_rpm[motor_index];
+        }
 
         // 汇总本周期设备和控制故障
         FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis_snapshot,
@@ -272,8 +288,7 @@ static bool MotorChassis_ReadLatestFeedback(void)
     // 只把本周期成功更新且在线的设备反馈标记为可用于速度控制
     for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
     {
-        chassis_feedback.valid[motor_index] =
-            can_feedback_cache.feedback_update_status[motor_index] == CAN_DEVICES_OK;
+        chassis_feedback.valid[motor_index] = can_feedback_cache.feedback_update_status[motor_index] == CAN_DEVICES_OK;
         chassis_feedback.motor_online[motor_index] = can_feedback_cache.motor_online[motor_index];
         chassis_feedback.actual_speed_rpm[motor_index] = can_feedback_cache.actual_speed_rpm[motor_index];
     }

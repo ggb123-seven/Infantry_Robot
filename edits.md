@@ -470,3 +470,13 @@
 - 原始数据、统计、曲线与调参建议见 `docs/validation/imu_live_20261019.md`，移植文档已追加后续实测链接
 - ARCH/HW/SPEC、Debug 构建与差异空白检查通过；复核本轮无 ISR、临界区或 RTOS 对象改动，临时统计程序已清理
 - 保持用户原有后台采样运行，未执行 Git add/commit/push
+
+# 2026-10-23 底盘调参结构体转速观测更新
+
+- 需求：将 `MotorChassis_Tune_t.scale_rpm` 替换为反馈和目标转速，保留 PID
+- 源码：仅修改 `User/task/motor_chassis.h`、`User/task/motor_chassis.c`；四路 `actual_speed_rpm` 与 `target_speed_rpm` 每周期从模块快照刷新，目标为限幅和缓启动后的速度环目标；轮速尺度固定为原默认值 100 rpm，修正全局变量声明与定义不一致
+- 构建：`python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug` 返回 0，配置与构建成功，产物为 `build/Debug/Infantry_Robot.elf`
+- 门禁：`python .auto-embedded/scripts/check.py` 返回 0，ARCH、HW、SPEC 均为 PASS；两份源码的花括号、控制块、120 列、行尾空白及机械拆行扫描通过
+- 人工复核：任务仅复制模块快照，无新增控制状态、硬件配置、ISR 访问或临界区；观测量保留 volatile，调试器多字段读取不保证同周期一致性；原有控制安全路径保持，未新增 RTOS 对象
+- 证据边界：未烧录、未进行实机转速验证；没有创建临时测试源码或测试程序
+- 协作规则：按用户要求在 `agent.md` 写入每个独立步骤先验证、通过后立即本地提交的流程，并同步 spec 中的 Git 快照约定；仅提交本步骤相关差异，不推送远端
