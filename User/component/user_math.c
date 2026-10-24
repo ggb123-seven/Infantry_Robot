@@ -29,6 +29,33 @@ inline float AbsClip(float in, float limit) {
   return (in < -limit) ? -limit : ((in > limit) ? limit : in);
 }
 
+/**
+ * @brief 按单周期最大步长逼近目标值
+ *
+ * @param[in] current 当前值，与目标值单位一致
+ * @param[in] target 目标值
+ * @param[in] max_step 单周期允许的最大变化量，须为有限非负值
+ * @return 更新后的数值，步长非法时保持当前值
+ */
+float RampTo(float current, float target, float max_step)
+{
+    if (!isfinite(max_step) || max_step < 0.0F)
+    {
+        return current;
+    }
+
+    const float difference = target - current;
+    if (difference > max_step)
+    {
+        return current + max_step;
+    }
+    if (difference < -max_step)
+    {
+        return current - max_step;
+    }
+    return target;
+}
+
 float fAbs(float in){
   return (in > 0) ? in : -in;
 }
