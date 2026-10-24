@@ -2,27 +2,26 @@
 
 #include <stddef.h>
 
-_Static_assert(FAULT_DETECT_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT,
-               "故障检测与 CAN 设备数量必须一致");
-_Static_assert(FAULT_DETECT_MOTOR_COUNT == CHASSIS_MOTOR_COUNT, "故障检测与底盘控制电机数量必须一致");
+_Static_assert(FAULT_DETECT_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "故障检测与 CAN 设备数量必须一致");
+_Static_assert(FAULT_DETECT_MOTOR_COUNT == CHASSIS_WHEEL_COUNT, "故障检测与底盘控制电机数量必须一致");
 
 static void FaultDetect_ResetSnapshot(FaultDetect_Snapshot_t *fault_snapshot);
 static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_snapshot);
-static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_Snapshot_t *chassis_snapshot);
+static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis);
 static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_snapshot, uint32_t motor_index);
-static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_Snapshot_t *chassis_snapshot, uint32_t motor_index);
+static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_t *chassis, uint32_t motor_index);
 static void FaultDetect_UpdateMotorCounters(FaultDetect_Snapshot_t *fault_snapshot, uint32_t motor_fault_flags);
 
 /**
- * @brief 汇总底盘 CAN 设备与速度控制快照中的故障状态
+ * @brief 汇总底盘 CAN 设备快照与控制实例中的故障状态
  *
  * @param[in] can_snapshot 本周期 CAN 设备快照，允许为 NULL
- * @param[in] chassis_snapshot 本周期底盘控制快照，允许为 NULL
+ * @param[in] chassis 本周期底盘控制实例，允许为 NULL
  * @param[out] fault_snapshot 待写入的故障检测快照
  * @return 无返回值
  */
 void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
-                                    const Chassis_Snapshot_t *chassis_snapshot,
+                                    const Chassis_t *chassis,
                                     FaultDetect_Snapshot_t *fault_snapshot)
 {
     if (fault_snapshot == NULL)
@@ -34,13 +33,13 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
     FaultDetect_ResetSnapshot(fault_snapshot);
     fault_snapshot->evaluated = true;
     fault_snapshot->system_fault_flags = FaultDetect_EvaluateCanSystem(can_snapshot) |
-                                         FaultDetect_EvaluateChassisSystem(chassis_snapshot);
+                                         FaultDetect_EvaluateChassisSystem(chassis);
 
     // 逐电机合并设备、反馈、输出和控制状态，供调试器直接定位故障槽位
     for (uint32_t motor_index = 0U; motor_index < FAULT_DETECT_MOTOR_COUNT; motor_index++)
     {
         const uint32_t motor_fault_flags = FaultDetect_EvaluateCanMotor(can_snapshot, motor_index) |
-                                           FaultDetect_EvaluateChassisMotor(chassis_snapshot, motor_index);
+                                           FaultDetect_EvaluateChassisMotor(chassis, motor_index);
         fault_snapshot->motor_fault_flags[motor_index] = motor_fault_flags;
         FaultDetect_UpdateMotorCounters(fault_snapshot, motor_fault_flags);
     }
@@ -145,30 +144,31 @@ static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_s
 /**
  * @brief 汇总底盘速度控制的系统级故障位
  *
- * @param[in] chassis_snapshot 本周期底盘控制快照，允许为 NULL
+ * @param[in] chassis 本周期底盘控制实例，允许为 NULL
  * @return 系统级底盘控制故障位
  */
-static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_Snapshot_t *chassis_snapshot)
+static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis)
 {
-    if (chassis_snapshot == NULL)
+    if (chassis == NULL)
     {
-        return FAULT_DETECT_SYSTEM_CHASSIS_INIT | FAULT_DETECT_SYSTEM_CHASSIS_CONTROL;
+        return FAULT_DETECT_SYSTEM_CHASSIS_INIT | FAULT_DETECT_SYSTEM_CONFIG;
     }
 
     uint32_t fault_flags = FAULT_DETECT_SYSTEM_NONE;
-    if (!chassis_snapshot->initialized || chassis_snapshot->control_init_status != CHASSIS_OK)
+    if (!chassis->initialized)
     {
         fault_flags |= FAULT_DETECT_SYSTEM_CHASSIS_INIT;
     }
-    if (chassis_snapshot->chassis_status != CHASSIS_OK &&
-        chassis_snapshot->chassis_status != CHASSIS_NOT_INITIALIZED)
-    {
-        fault_flags |= FAULT_DETECT_SYSTEM_CHASSIS_CONTROL;
-    }
-    if (chassis_snapshot->control_init_status == CHASSIS_CONFIG_ERROR ||
-        chassis_snapshot->chassis_status == CHASSIS_CONFIG_ERROR)
+    if (!chassis->config_valid)
     {
         fault_flags |= FAULT_DETECT_SYSTEM_CONFIG;
+    }
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        if (chassis->mode != CHASSIS_MODE_RELAX && chassis->wheel[i].state == CHASSIS_WHEEL_OFFLINE)
+        {
+            fault_flags |= FAULT_DETECT_SYSTEM_CHASSIS_CONTROL;
+        }
     }
     return fault_flags;
 }
@@ -214,43 +214,29 @@ static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_sn
 /**
  * @brief 汇总单路底盘速度控制故障位
  *
- * @param[in] chassis_snapshot 本周期底盘控制快照，允许为 NULL
+ * @param[in] chassis 本周期底盘控制实例，允许为 NULL
  * @param[in] motor_index 电机索引，范围 0~3
  * @return 单电机控制相关故障位
  */
-static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_Snapshot_t *chassis_snapshot, uint32_t motor_index)
+static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_t *chassis, uint32_t motor_index)
 {
-    if (chassis_snapshot == NULL)
+    if (chassis == NULL)
     {
-        return FAULT_DETECT_MOTOR_CONTROL_INIT | FAULT_DETECT_MOTOR_CONTROL;
+        return FAULT_DETECT_MOTOR_CONTROL_INIT | FAULT_DETECT_MOTOR_CONFIG;
     }
 
     uint32_t fault_flags = FAULT_DETECT_MOTOR_NONE;
-    if (chassis_snapshot->motor_init_status[motor_index] != CHASSIS_MOTOR_OK)
+    if (!chassis->initialized)
     {
         fault_flags |= FAULT_DETECT_MOTOR_CONTROL_INIT;
     }
-    if (chassis_snapshot->motor_init_status[motor_index] == CHASSIS_MOTOR_CONFIG_ERROR)
+    if (!chassis->config_valid)
     {
         fault_flags |= FAULT_DETECT_MOTOR_CONFIG;
     }
-    if (chassis_snapshot->chassis_status == CHASSIS_NOT_INITIALIZED)
-    {
-        return fault_flags;
-    }
-
-    const Chassis_MotorStatus_t control_status = chassis_snapshot->control_status[motor_index];
-    if (control_status != CHASSIS_MOTOR_OK && control_status != CHASSIS_MOTOR_DISABLED)
+    if (chassis->mode != CHASSIS_MODE_RELAX && chassis->wheel[motor_index].state == CHASSIS_WHEEL_OFFLINE)
     {
         fault_flags |= FAULT_DETECT_MOTOR_CONTROL;
-    }
-    if (control_status == CHASSIS_MOTOR_CONFIG_ERROR)
-    {
-        fault_flags |= FAULT_DETECT_MOTOR_CONFIG;
-    }
-    if (control_status == CHASSIS_MOTOR_INVALID_VALUE)
-    {
-        fault_flags |= FAULT_DETECT_MOTOR_VALUE;
     }
     return fault_flags;
 }

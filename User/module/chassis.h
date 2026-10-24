@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #ifdef __cplusplus
 extern "C"
@@ -6,217 +6,145 @@ extern "C"
 #endif
 
 #include "component/mixer.h"
+#include "component/pid.h"
+#include "device/can_devices.h"
 
-#include <stdbool.h>
-#include <stdint.h>
+#define CHASSIS_WHEEL_COUNT (4U)
 
-#define CHASSIS_MOTOR_COUNT (4U)
-
-/*
- * 底盘速度控制参数：
- * - CHASSIS_SPEED_LIMIT_RPM：输出轴目标转速的正负对称限幅，单位 rpm。
- * - CHASSIS_RAMP_RATE_RPM_S：目标转速最大变化斜率，单位 rpm/s。
- * - CHASSIS_PID_KP、CHASSIS_PID_KI、CHASSIS_PID_KD：速度 PID 默认参数。
- * - CHASSIS_MOTOR4_PID_KP、CHASSIS_MOTOR4_PID_KI、CHASSIS_MOTOR4_PID_KD：ID4 电机固化速度 PID 参数。
- * - CHASSIS_PID_D_CUTOFF_HZ：反馈微分低通截止频率，单位 Hz；小于等于 0 时直通。
- * - CHASSIS_FEEDBACK_LPF_CUTOFF_HZ：速度反馈二阶低通截止频率，单位 Hz；小于等于 0 时直通。
- * - CHASSIS_CURRENT_LPF_CUTOFF_HZ：电流指令二阶低通截止频率，单位 Hz；小于等于 0 时直通。
- * - CHASSIS_PID_INTEGRAL_LIMIT：积分状态限幅，单位 rpm*s。
- * - CHASSIS_CURRENT_LIMIT_A：转子侧电流指令正负对称限幅，单位 A。
- * - CHASSIS_REVERSAL_ZERO_SPEED_RPM：换向时允许放行反向目标的实际转速阈值，单位 rpm。
- * 当前四路速度 PID 参数均为 Kp=0.20、Ki=0、Kd=0，PID 微分滤波截止频率为 20 Hz
- * 速度反馈二阶低通截止频率为 45 Hz，电流输出二阶滤波保持直通。
- */
-#ifndef CHASSIS_SPEED_LIMIT_RPM
-#define CHASSIS_SPEED_LIMIT_RPM (300.0F)
-#endif
-
-#ifndef CHASSIS_RAMP_RATE_RPM_S
-#define CHASSIS_RAMP_RATE_RPM_S (200.0F)
-#endif
-
-#ifndef CHASSIS_REVERSAL_ZERO_SPEED_RPM
-#define CHASSIS_REVERSAL_ZERO_SPEED_RPM (10.0F)
-#endif
-
-#ifndef CHASSIS_PID_KP
-#define CHASSIS_PID_KP (0.20F)
-#endif
-
-#ifndef CHASSIS_PID_KI
-#define CHASSIS_PID_KI (0.0F)
-#endif
-
-#ifndef CHASSIS_PID_KD
-#define CHASSIS_PID_KD (0.0F)
-#endif
-
-#ifndef CHASSIS_MOTOR4_PID_KP
-#define CHASSIS_MOTOR4_PID_KP (0.16F)
-#endif
-
-#ifndef CHASSIS_MOTOR4_PID_KI
-#define CHASSIS_MOTOR4_PID_KI (0.0F)
-#endif
-
-#ifndef CHASSIS_MOTOR4_PID_KD
-#define CHASSIS_MOTOR4_PID_KD (0.0F)
-#endif
-
-#ifndef CHASSIS_PID_D_CUTOFF_HZ
-#define CHASSIS_PID_D_CUTOFF_HZ (20.0F)
-#endif
-
-#ifndef CHASSIS_FEEDBACK_LPF_CUTOFF_HZ
-#define CHASSIS_FEEDBACK_LPF_CUTOFF_HZ (45.0F)
-#endif
-
-#ifndef CHASSIS_CURRENT_LPF_CUTOFF_HZ
-#define CHASSIS_CURRENT_LPF_CUTOFF_HZ (-1.0F)
-#endif
-
-#ifndef CHASSIS_PID_INTEGRAL_LIMIT
-#define CHASSIS_PID_INTEGRAL_LIMIT (20.0F)
-#endif
-
-#ifndef CHASSIS_CURRENT_LIMIT_A
-#define CHASSIS_CURRENT_LIMIT_A (4.0F)
-#endif
-
-/**
- * @brief 底盘完整控制链状态
- */
+// 底盘模式：待机复位并输出零电流，独立模式按归一化向量运行
 typedef enum
 {
-    CHASSIS_OK = 0,
-    CHASSIS_ERROR = -1,
-    CHASSIS_NULL_ERROR = -2,
-    CHASSIS_NOT_INITIALIZED = -3,
-    CHASSIS_CONTROL_INIT_ERROR = -5,
-    CHASSIS_CONFIG_ERROR = -6,
-} Chassis_Status_t;
+    CHASSIS_MODE_RELAX = 0,
+    CHASSIS_MODE_INDEPENDENT,
+} Chassis_Mode_t;
 
-/**
- * @brief 底盘单路速度控制器状态
- */
+// 单轮状态：待机、闭环运行、反馈离线；离线恢复后自动重新预置
 typedef enum
 {
-    CHASSIS_MOTOR_OK = 0,
-    CHASSIS_MOTOR_INIT_ERROR = -1,
-    CHASSIS_MOTOR_DISABLED = -2,
-    CHASSIS_MOTOR_INVALID_VALUE = -3,
-    CHASSIS_MOTOR_CONFIG_ERROR = -4,
-    CHASSIS_MOTOR_NULL_ERROR = -5,
-    CHASSIS_MOTOR_UNKNOWN_ERROR = -6,
-} Chassis_MotorStatus_t;
+    CHASSIS_WHEEL_RELAX = 0,
+    CHASSIS_WHEEL_RUNNING,
+    CHASSIS_WHEEL_OFFLINE,
+} Chassis_WheelState_t;
 
 /*
- * 底盘速度 PID 在线参数：
- * - kp：速度环比例增益，单位 A/rpm。
- * - ki：速度环积分增益，单位 A/(rpm*s)。
- * - kd：速度环反馈微分增益。
+ * 底盘配置，运行中可由调试器修改，模块每周期校验并采纳：
+ * - layout：机械布局，仅初始化时生效，当前为 MIXER_OMNICROSS
+ * - max_wheel_speed_rpm：输出轴目标转速绝对值上限，单位 rpm，须大于 0
+ * - wheel_accel_rpm_s：目标斜坡变化率，单位 rpm/s，须大于 0
+ * - reverse_release_speed_rpm：允许反向目标的实测转速绝对值阈值，单位 rpm，须非负
+ * - speed_filter_cutoff_hz：反馈二阶低通截止频率，单位 Hz，非正时直通，仅初始化时生效
+ * - current_filter_cutoff_hz：电流二阶低通截止频率，单位 Hz，非正时直通，仅初始化时生效
+ * - max_current_a：最终转子侧电流绝对值上限，单位 A，须大于 0
+ * - wheel_speed_pid：四轮共用速度 PID，输入 rpm、输出 A，运行中修改后四轮同时生效
+ *   k 须大于 0，p/i/d/i_limit/out_limit/range 须非负，截止频率须小于采样频率一半
  */
 typedef struct
 {
-    float kp;
-    float ki;
-    float kd;
-} Chassis_PidTune_t;
+    Mixer_Mode_t layout;
+    float max_wheel_speed_rpm;
+    float wheel_accel_rpm_s;
+    float reverse_release_speed_rpm;
+    float speed_filter_cutoff_hz;
+    float current_filter_cutoff_hz;
+    float max_current_a;
+    KPID_Params_t wheel_speed_pid;
+} Chassis_Config_t;
 
 /*
- * 底盘单周期输入：
- * - enabled：四路速度控制统一使能，false 时所有电流输出清零。
- * - move_vector：归一化底盘运动向量，前向、左向和俯视逆时针分别为正
- * - scale_rpm：归一化轮速对应的输出轴转速尺度，单位 rpm，模块内限制到 CHASSIS_SPEED_LIMIT_RPM
- * - pid_tune：ID1~3 公共速度 PID 参数，ID4 使用固化参数
- * - control_period_s：本周期控制间隔，单位 s，必须大于 0。
- */
-typedef struct Chassis_Input
-{
-    bool enabled;
-    MoveVector_t move_vector;
-    float scale_rpm;
-    Chassis_PidTune_t pid_tune;
-    float control_period_s;
-} Chassis_Input_t;
-
-/*
- * 底盘单周期反馈输入：
- * - valid[0~3]：本周期对应电机反馈可用于控制时为 true。
- * - motor_online[0~3]：对应电机处于在线状态时为 true。
- * - actual_speed_rpm[0~3]：四个输出轴实际转速，单位 rpm。
+ * 底盘命令：
+ * - mode：控制模式，未知值按待机处理
+ * - move：归一化运动向量，vx 前向、vy 左向、wz 俯视逆时针为正，约定范围 [-1, 1]
+ * - wheel_speed_scale_rpm：归一化轮速 1 对应的输出轴 rpm，须非负，超过配置上限时限幅
  */
 typedef struct
 {
-    bool valid[CHASSIS_MOTOR_COUNT];
-    bool motor_online[CHASSIS_MOTOR_COUNT];
-    float actual_speed_rpm[CHASSIS_MOTOR_COUNT];
-} Chassis_Feedback_t;
+    Chassis_Mode_t mode;
+    MoveVector_t move;
+    float wheel_speed_scale_rpm;
+} Chassis_Command_t;
 
 /*
- * 底盘单周期控制输出：
- * - current_command_a[0~3]：四路速度控制计算得到的转子侧电流命令，单位 A；异常路径为 0。
+ * 单轮运行数据，调试器可直接观察：
+ * - state：单轮状态，非运行状态电流为 0
+ * - measured_speed_rpm：本周期输出轴实测转速，单位 rpm，反馈无效时为 NaN
+ * - filtered_speed_rpm：送入速度环的滤波转速，单位 rpm
+ * - requested_speed_rpm：运动学解算目标，单位 rpm
+ * - target_speed_rpm：限幅、换向保护和斜坡后实际进入速度环的目标，单位 rpm
+ * - output_current_a：本周期转子侧电流，单位 A
+ * - speed_pid：本轮独立的积分和微分历史，参数指向实例中的公共副本
+ * - speed_filter、current_filter：本轮反馈和电流二阶低通状态
  */
 typedef struct
 {
-    float current_command_a[CHASSIS_MOTOR_COUNT];
-} Chassis_Output_t;
+    Chassis_WheelState_t state;
+    float measured_speed_rpm;
+    float filtered_speed_rpm;
+    float requested_speed_rpm;
+    float target_speed_rpm;
+    float output_current_a;
+    KPID_t speed_pid;
+    LowPassFilter2p_t speed_filter;
+    LowPassFilter2p_t current_filter;
+} Chassis_Wheel_t;
 
 /*
- * 底盘速度控制初始化与单周期结果快照：
- * - initialized：四路速度控制器均可运行时为 true。
- * - mixer_init_status：运动学混合器初始化结果，取值见 Mixer_Status_t
- * - mixer_status：本周期运动学解算结果，取值见 Mixer_Status_t
- * - control_init_status：四路速度控制器的聚合初始化结果。
- * - chassis_status：本周期四路速度控制的聚合结果。
- * - motor_init_status[0~3]、control_status[0~3]：四路速度控制器的初始化和本周期运行结果，
- *   取值见 Chassis_MotorStatus_t。
- * - motor_enabled[0~3]：本周期对应速度控制器实际使能状态。
- * - requested_speed_rpm[0~3]：运动学解算后的四路输出轴目标转速，单位 rpm
- * - limited_target_speed_rpm[0~3]、ramped_target_speed_rpm[0~3]：限幅和缓启动后的目标转速，单位 rpm。
- * - actual_speed_rpm[0~3]：本周期参与速度控制的输出轴实际转速，单位 rpm。
- * - current_command_a[0~3]：本周期计算得到的转子侧电流命令，单位 A；对应路径异常时为 0。
+ * 底盘实例，初始化后不得整体复制，避免内部 PID 参数指针失效：
+ * - config：默认配置的可调副本
+ * - initialized：混合器、四路 PID 和滤波器全部初始化成功时为 true
+ * - config_valid：本周期配置校验结果，非法时四轮零输出
+ * - applied_wheel_speed_pid：四路 PID 共同引用的参数副本，变更时清空四轮积分
+ * - mode：本周期实际采用的控制模式
+ * - mixer：运动学混合器，仅初始化时选择布局
+ * - wheel[0~3]：电调 ID1~4 的单轮状态，依次为左前、左后、右后、右前
  */
-typedef struct Chassis_Snapshot
+typedef struct
 {
+    Chassis_Config_t config;
     bool initialized;
-    int8_t mixer_init_status;
-    int8_t mixer_status;
-    int8_t control_init_status;
-    int8_t chassis_status;
-    Chassis_MotorStatus_t motor_init_status[CHASSIS_MOTOR_COUNT];
-    Chassis_MotorStatus_t control_status[CHASSIS_MOTOR_COUNT];
-    bool motor_enabled[CHASSIS_MOTOR_COUNT];
-    float actual_speed_rpm[CHASSIS_MOTOR_COUNT];
-    float requested_speed_rpm[CHASSIS_MOTOR_COUNT];
-    float limited_target_speed_rpm[CHASSIS_MOTOR_COUNT];
-    float ramped_target_speed_rpm[CHASSIS_MOTOR_COUNT];
-    float current_command_a[CHASSIS_MOTOR_COUNT];
-} Chassis_Snapshot_t;
+    bool config_valid;
+    KPID_Params_t applied_wheel_speed_pid;
+    Chassis_Mode_t mode;
+    Mixer_t mixer;
+    Chassis_Wheel_t wheel[CHASSIS_WHEEL_COUNT];
+} Chassis_t;
 
 /**
- * @brief 初始化底盘运动学混合器和四个相互独立的 M3508 速度控制器
+ * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
  *
- * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
- * @param[in] mixer_mode 底盘机械布局，当前任务应传入 MIXER_OMNICROSS
- * @param[out] snapshot 底盘初始化结果快照
- * @return 混合器和全部速度控制器初始化成功返回 CHASSIS_OK，否则返回对应状态码
+ * @param[out] chassis 待初始化的底盘实例，初始化后不得整体复制
+ * @param[in] config 默认配置，允许为 NULL，空指针时初始化失败
+ * @param[in] frequency_hz 控制采样频率，单位 Hz，须为有限正值
+ * @return 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
-int8_t Chassis_Init(float sample_frequency_hz, Mixer_Mode_t mixer_mode, Chassis_Snapshot_t *snapshot);
+int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float frequency_hz);
 
 /**
- * @brief 根据反馈执行一次四路速度控制计算
+ * @brief 从 CAN 快照更新四轮实测转速
  *
- * 单路反馈无效、离线或控制计算失败时只清零对应输出，其他合法控制器继续运行。
- *
- * @param[in] input 本周期控制输入快照
- * @param[in] feedback 本周期四路电机反馈快照
- * @param[out] output 本周期四路电流计算结果
- * @param[out] snapshot 本周期速度控制结果快照
- * @return 控制正常或安全禁用时返回 CHASSIS_OK，运动学或速度控制异常时返回对应状态码
+ * @param[in,out] chassis 底盘实例
+ * @param[in] can 本周期 CAN 快照，允许为 NULL，缺失或无效反馈写入 NaN
+ * @return 无返回值
  */
-int8_t Chassis_Run(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback, Chassis_Output_t *output,
-                   Chassis_Snapshot_t *snapshot);
+void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can);
+
+/**
+ * @brief 推进底盘模式和每轮状态机并计算电流
+ *
+ * @param[in,out] chassis 底盘实例
+ * @param[in] command 归一化控制命令，允许为 NULL，非法命令按待机处理
+ * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
+ * @return 无返回值
+ */
+void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float period_s);
+
+/**
+ * @brief 导出四路电流，保留调用方设置的命令序号
+ *
+ * @param[in] chassis 底盘实例，允许为 NULL，未初始化时输出全零
+ * @param[out] output CAN 电流命令，仅写 current_a[0~3]
+ * @return 无返回值
+ */
+void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output);
 
 #ifdef __cplusplus
 }

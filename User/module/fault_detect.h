@@ -12,7 +12,7 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
-#define FAULT_DETECT_MOTOR_COUNT (CHASSIS_MOTOR_COUNT)
+#define FAULT_DETECT_MOTOR_COUNT (CHASSIS_WHEEL_COUNT)
 
 /*
  * 故障检测系统级故障位：
@@ -20,9 +20,9 @@ extern "C"
  * - CAN_FEEDBACK：本周期 CAN 反馈聚合状态异常。
  * - CAN_OUTPUT：本周期电流命令写入聚合状态异常。
  * - CAN_TX：本周期统一 CAN 控制帧发送异常。
- * - CHASSIS_INIT：底盘速度控制器初始化聚合状态异常。
- * - CHASSIS_CONTROL：本周期底盘四路控制聚合状态异常。
- * - CONFIG：底盘固定参数或在线控制参数异常。
+ * - CHASSIS_INIT：底盘实例尚未初始化成功
+ * - CHASSIS_CONTROL：非待机模式下至少一轮反馈离线
+ * - CONFIG：本周期底盘配置校验失败
  * - FEEDBACK_MISSING：本周期没有取得可诊断的 CAN 反馈快照。
  * - MOTOR：至少一路电机存在故障位。
  */
@@ -46,10 +46,10 @@ typedef enum
  * - OFFLINE：对应电机在线标志为 false。
  * - FEEDBACK：对应电机本周期反馈更新失败或缺少 CAN 快照。
  * - CURRENT：对应电机电流命令校验、缓存写入或安全归零路径异常。
- * - CONTROL_INIT：对应速度控制器初始化失败。
- * - CONTROL：对应速度控制器本周期运行异常，不包含主动安全禁用。
- * - CONFIG：对应速度控制器固定参数或在线 PID 参数异常。
- * - VALUE：对应反馈、命令或控制周期存在非有限值等非法数值。
+ * - CONTROL_INIT：底盘实例尚未初始化成功
+ * - CONTROL：非待机模式下对应轮处于离线状态
+ * - CONFIG：本周期底盘配置校验失败
+ * - VALUE：仅由 CAN 侧非法电流命令判定
  */
 typedef enum
 {
@@ -117,15 +117,15 @@ typedef struct
 } FaultDetect_Snapshot_t;
 
 /**
- * @brief 汇总底盘 CAN 设备与速度控制快照中的故障状态
+ * @brief 汇总底盘 CAN 设备快照与控制实例中的故障状态
  *
  * @param[in] can_snapshot 本周期 CAN 设备快照，允许为 NULL
- * @param[in] chassis_snapshot 本周期底盘控制快照，允许为 NULL
+ * @param[in] chassis 本周期底盘控制实例，允许为 NULL
  * @param[out] fault_snapshot 待写入的故障检测快照
  * @return 无返回值
  */
 void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
-                                    const Chassis_Snapshot_t *chassis_snapshot,
+                                    const Chassis_t *chassis,
                                     FaultDetect_Snapshot_t *fault_snapshot);
 
 /**

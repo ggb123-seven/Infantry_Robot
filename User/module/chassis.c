@@ -1,714 +1,378 @@
-#include "module/chassis.h"
-
-#include "component/pid.h"
+﻿#include "module/chassis.h"
 
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
-/*
- * 底盘单路电机速度控制反馈：
- * - initialized：速度 PID 初始化成功时为 true。
- * - enabled：本周期允许输出非零电流时为 true。
- * - status：本周期运行状态，取值见 Chassis_MotorStatus_t。
- * - requested_speed_rpm：调用者请求的输出轴目标转速，单位 rpm。
- * - limited_target_speed_rpm：限幅后的输出轴目标转速，单位 rpm。
- * - target_speed_rpm：限幅并经过斜坡后的输出轴目标转速，单位 rpm。
- * - actual_speed_rpm：调用者提供的输出轴实际转速，单位 rpm。
- * - filtered_speed_rpm：送入 PID 的滤波后输出轴转速，单位 rpm。
- * - speed_error_rpm：目标转速与滤波后转速之差，单位 rpm。
- * - current_command_a：滤波并限幅后的转子侧电流指令，单位 A。
- * - pid_kp、pid_ki、pid_kd：本周期实际采用的 PID 参数。
- */
-typedef struct
-{
-    bool initialized;
-    bool enabled;
-    Chassis_MotorStatus_t status;
-    float requested_speed_rpm;
-    float limited_target_speed_rpm;
-    float target_speed_rpm;
-    float actual_speed_rpm;
-    float filtered_speed_rpm;
-    float speed_error_rpm;
-    float current_command_a;
-    float pid_kp;
-    float pid_ki;
-    float pid_kd;
-} Chassis_MotorFeedback_t;
+// 控制周期上限取自底盘重构方案，超过 100 ms 时禁止追赶计算
+#define CHASSIS_MAX_PERIOD_S (0.1F)
 
-/*
- * 底盘单路电机速度控制上下文：
- * - pid_param：PID 配置参数。
- * - pid：PID 运行状态。
- * - feedback_filter：速度反馈二阶低通滤波器。
- * - current_filter：电流指令二阶低通滤波器。
- * - feedback：目标、反馈、误差、电流指令和运行状态。
- * - ramped_target_speed_rpm：斜坡内部目标转速，单位 rpm。
- * - was_enabled：上一周期速度控制是否使能。
- */
-typedef struct
-{
-    KPID_Params_t pid_param;
-    KPID_t pid;
-    LowPassFilter2p_t feedback_filter;
-    LowPassFilter2p_t current_filter;
-    Chassis_MotorFeedback_t feedback;
-    float ramped_target_speed_rpm;
-    bool was_enabled;
-} Chassis_MotorControl_t;
+_Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
-/*
- * 底盘模块私有运行状态：
- * - initialized：运动学混合器和四路速度控制器均可运行时为 true
- * - mixer：当前底盘机械布局对应的运动学混合器
- * - mixer_init_status：运动学混合器初始化及四路输出兼容性检查结果
- * - mixer_status：本周期运动学解算结果
- * - control_init_status：四路速度控制器的聚合初始化结果。
- * - motor_init_status[0~3]：四个速度控制器的初始化结果。
- * - motor_control[0~3]：四个相互独立的单电机速度控制上下文。
- */
-typedef struct
-{
-    bool initialized;
-    Mixer_t mixer;
-    int8_t mixer_init_status;
-    int8_t mixer_status;
-    int8_t control_init_status;
-    Chassis_MotorStatus_t motor_init_status[CHASSIS_MOTOR_COUNT];
-    Chassis_MotorControl_t motor_control[CHASSIS_MOTOR_COUNT];
-} Chassis_State_t;
-
-static Chassis_State_t chassis_state;
-
-static void Chassis_ResetState(void);
-static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot);
-static int8_t Chassis_InitControllers(float sample_frequency_hz);
-static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback,
-                                Chassis_Output_t *output, Chassis_Snapshot_t *snapshot);
-static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz,
-                                                uint32_t motor_index);
-static Chassis_MotorStatus_t Chassis_MotorUpdateFeedback(Chassis_MotorControl_t *control, float actual_speed_rpm);
-static Chassis_MotorStatus_t Chassis_MotorControl(Chassis_MotorControl_t *control, float requested_speed_rpm,
-                                                  const Chassis_PidTune_t *pid_tune, bool enabled,
-                                                  float control_period_s);
-static Chassis_MotorStatus_t Chassis_MotorDumpOutput(const Chassis_MotorControl_t *control,
-                                                     float *current_command_a);
-static float Chassis_Clamp(float value, float absolute_limit);
-static float Chassis_ApplyRamp(float current, float target, float maximum_step);
-static bool Chassis_IsConfigurationValid(float sample_frequency_hz);
-static bool Chassis_ApplyPidTune(Chassis_MotorControl_t *control, const Chassis_PidTune_t *pid_tune);
-static void Chassis_ResetMotorControl(Chassis_MotorControl_t *control);
-static void Chassis_PrimeFeedback(Chassis_MotorControl_t *control);
+static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
+static void Chassis_ResetWheel(Chassis_Wheel_t *wheel);
+static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm);
+static void Chassis_ApplyPidConfig(Chassis_t *chassis);
+static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run, float period_s);
+static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s);
 
 /**
- * @brief 初始化底盘运动学混合器和四个相互独立的 M3508 速度控制器
+ * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
  *
- * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
- * @param[in] mixer_mode 底盘机械布局，当前任务应传入 MIXER_OMNICROSS
- * @param[out] snapshot 底盘初始化结果快照
- * @return 混合器和全部速度控制器初始化成功返回 CHASSIS_OK，否则返回对应状态码
+ * @param[out] chassis 待初始化的底盘实例，初始化后不得整体复制
+ * @param[in] config 默认配置，允许为 NULL，空指针时初始化失败
+ * @param[in] frequency_hz 控制采样频率，单位 Hz，须为有限正值
+ * @return 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
-int8_t Chassis_Init(float sample_frequency_hz, Mixer_Mode_t mixer_mode, Chassis_Snapshot_t *snapshot)
+int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float frequency_hz)
 {
-    if (snapshot == NULL)
+    if (chassis == NULL)
     {
-        return CHASSIS_NULL_ERROR;
+        return -1;
     }
 
-    // 先清除全部跨周期状态，保证任一初始化失败路径都不能进入周期控制
-    Chassis_ResetState();
-    Chassis_ResetSnapshot(snapshot);
-    if (!isfinite(sample_frequency_hz) || sample_frequency_hz <= 0.0F)
+    // 清空旧状态并标记缺失反馈，保证所有初始化失败路径输出零电流
+    memset(chassis, 0, sizeof(*chassis));
+    Chassis_UpdateFeedback(chassis, NULL);
+    if (config == NULL)
     {
-        chassis_state.control_init_status = CHASSIS_CONFIG_ERROR;
-        for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
+        return -1;
+    }
+    chassis->config = *config;
+    chassis->config_valid = Chassis_IsConfigValid(config, frequency_hz);
+    if (!chassis->config_valid)
+    {
+        return -1;
+    }
+
+    // 用零向量验证布局支持四轮输出，避免二轮布局被错误用于底盘
+    const MoveVector_t zero_move =
+    {
+        0,
+    };
+    float zero_speed[CHASSIS_WHEEL_COUNT];
+    if (Mixer_Init(&chassis->mixer, config->layout) != MIXER_OK ||
+        Mixer_Apply(&chassis->mixer, &zero_move, zero_speed, CHASSIS_WHEEL_COUNT, 0.0F) != MIXER_OK)
+    {
+        chassis->config_valid = false;
+        return -1;
+    }
+
+    // 四轮引用同一份参数，各自持有独立积分、微分及两级滤波状态
+    chassis->applied_wheel_speed_pid = config->wheel_speed_pid;
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        Chassis_Wheel_t *wheel = &chassis->wheel[i];
+        if (PID_Init(&wheel->speed_pid, KPID_MODE_CALC_D, frequency_hz, &chassis->applied_wheel_speed_pid) != 0)
         {
-            chassis_state.motor_init_status[motor_index] = CHASSIS_MOTOR_CONFIG_ERROR;
+            return -1;
         }
-        Chassis_ResetSnapshot(snapshot);
-        return CHASSIS_CONFIG_ERROR;
+        LowPassFilter2p_Init(&wheel->speed_filter, frequency_hz, config->speed_filter_cutoff_hz);
+        LowPassFilter2p_Init(&wheel->current_filter, frequency_hz, config->current_filter_cutoff_hz);
     }
-
-    // 初始化运动学混合器，并用零输入确认当前布局支持四路电机输出
-    const MoveVector_t zero_move_vector =
-    {
-        0,
-    };
-    float zero_speed_rpm[CHASSIS_MOTOR_COUNT] =
-    {
-        0,
-    };
-    chassis_state.mixer_init_status = Mixer_Init(&chassis_state.mixer, mixer_mode);
-    if (chassis_state.mixer_init_status == MIXER_OK)
-    {
-        chassis_state.mixer_init_status = Mixer_Apply(&chassis_state.mixer, &zero_move_vector, zero_speed_rpm,
-                                                      CHASSIS_MOTOR_COUNT, 0.0F);
-    }
-    chassis_state.mixer_status = chassis_state.mixer_init_status;
-    if (chassis_state.mixer_init_status != MIXER_OK)
-    {
-        chassis_state.control_init_status = CHASSIS_CONFIG_ERROR;
-        Chassis_ResetSnapshot(snapshot);
-        return CHASSIS_CONFIG_ERROR;
-    }
-
-    // 混合器可用后初始化四路速度控制器，任一路初始化失败都禁止模块进入运行态
-    const int8_t control_status = Chassis_InitControllers(sample_frequency_hz);
-    chassis_state.initialized = control_status == CHASSIS_OK;
-    Chassis_ResetSnapshot(snapshot);
-    if (!chassis_state.initialized)
-    {
-        return CHASSIS_CONTROL_INIT_ERROR;
-    }
-    return CHASSIS_OK;
+    chassis->initialized = true;
+    return 0;
 }
 
 /**
- * @brief 根据反馈执行一次四路速度控制计算
+ * @brief 从 CAN 快照更新四轮实测转速
  *
- * @param[in] input 本周期控制输入快照
- * @param[in] feedback 本周期四路电机反馈快照
- * @param[out] output 本周期四路电流计算结果
- * @param[out] snapshot 本周期速度控制结果快照
- * @return 控制正常或安全禁用时返回 CHASSIS_OK，运动学或速度控制异常时返回对应状态码
- */
-int8_t Chassis_Run(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback, Chassis_Output_t *output,
-                   Chassis_Snapshot_t *snapshot)
-{
-    // 先清除调用方提供的非空结果对象，任一非法调用都不得沿用上一周期数据
-    if (output != NULL)
-    {
-        *output = (Chassis_Output_t)
-        {
-            0,
-        };
-    }
-    if (snapshot != NULL)
-    {
-        Chassis_ResetSnapshot(snapshot);
-    }
-    if (output == NULL || snapshot == NULL)
-    {
-        return CHASSIS_NULL_ERROR;
-    }
-
-    if (input == NULL || feedback == NULL)
-    {
-        return CHASSIS_NULL_ERROR;
-    }
-    if (!chassis_state.initialized)
-    {
-        return CHASSIS_NOT_INITIALIZED;
-    }
-
-    // 使用调用方提供的一致反馈完成速度控制，设备读写由上层任务负责
-    snapshot->chassis_status = Chassis_Calculate(input, feedback, output, snapshot);
-    return snapshot->chassis_status;
-}
-
-/**
- * @brief 恢复底盘模块私有状态的安全默认值
- *
+ * @param[in,out] chassis 底盘实例
+ * @param[in] can 本周期 CAN 快照，允许为 NULL，缺失或无效反馈写入 NaN
  * @return 无返回值
  */
-static void Chassis_ResetState(void)
+void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can)
 {
-    chassis_state = (Chassis_State_t)
+    if (chassis == NULL)
     {
-        0,
-    };
-    chassis_state.mixer_init_status = MIXER_ERROR;
-    chassis_state.mixer_status = MIXER_ERROR;
-    chassis_state.control_init_status = CHASSIS_NOT_INITIALIZED;
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
+        return;
+    }
+
+    // 仅接纳本周期更新成功且在线的有限反馈，不沿用历史转速
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
-        chassis_state.motor_init_status[motor_index] = CHASSIS_MOTOR_INIT_ERROR;
+        chassis->wheel[i].measured_speed_rpm =
+            can != NULL && can->feedback_update_status[i] == CAN_DEVICES_OK && can->motor_online[i] &&
+            isfinite(can->actual_speed_rpm[i]) ? can->actual_speed_rpm[i] : NAN;
     }
 }
 
 /**
- * @brief 使用模块私有状态建立安全一致的公开快照
+ * @brief 推进底盘模式和每轮状态机并计算电流
  *
- * @param[out] snapshot 待复位的底盘结果快照
+ * @param[in,out] chassis 底盘实例
+ * @param[in] command 归一化控制命令，允许为 NULL，非法命令按待机处理
+ * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
-static void Chassis_ResetSnapshot(Chassis_Snapshot_t *snapshot)
+void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float period_s)
 {
-    *snapshot = (Chassis_Snapshot_t)
+    if (chassis == NULL)
+    {
+        return;
+    }
+
+    // 依据初始化的采样周期校验在线配置，未初始化的实例始终处于安全输出
+    const float frequency_hz = chassis->initialized ? 1.0F / chassis->wheel[0].speed_pid.dt_min : 0.0F;
+    chassis->config_valid = Chassis_IsConfigValid(&chassis->config, frequency_hz);
+    if (chassis->initialized && chassis->config_valid)
+    {
+        Chassis_ApplyPidConfig(chassis);
+    }
+
+    // 默认整组待机，只有合法独立命令和有效周期才能请求运动学计算
+    Chassis_Mode_t next_mode = CHASSIS_MODE_RELAX;
+    float requested_speed[CHASSIS_WHEEL_COUNT] =
     {
         0,
     };
-    snapshot->initialized = chassis_state.initialized;
-    snapshot->mixer_init_status = chassis_state.mixer_init_status;
-    snapshot->mixer_status = chassis_state.mixer_status;
-    snapshot->control_init_status = chassis_state.control_init_status;
-    snapshot->chassis_status = CHASSIS_NOT_INITIALIZED;
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
+    if (chassis->initialized && chassis->config_valid && command != NULL &&
+        command->mode == CHASSIS_MODE_INDEPENDENT && isfinite(period_s) &&
+        period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S)
     {
-        snapshot->motor_init_status[motor_index] = chassis_state.motor_init_status[motor_index];
-        snapshot->control_status[motor_index] = CHASSIS_MOTOR_INIT_ERROR;
-    }
-}
-
-/**
- * @brief 初始化四个相互独立的单电机速度控制器
- *
- * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
- * @return 全部速度控制器初始化成功返回 CHASSIS_OK，否则返回 CHASSIS_CONTROL_INIT_ERROR
- */
-static int8_t Chassis_InitControllers(float sample_frequency_hz)
-{
-    bool all_initialized = true;
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        chassis_state.motor_init_status[motor_index] =
-            Chassis_MotorInit(&chassis_state.motor_control[motor_index], sample_frequency_hz, motor_index);
-        if (chassis_state.motor_init_status[motor_index] != CHASSIS_MOTOR_OK)
+        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, chassis->config.max_wheel_speed_rpm);
+        if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
+            Mixer_Apply(&chassis->mixer, &command->move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
         {
-            all_initialized = false;
+            next_mode = CHASSIS_MODE_INDEPENDENT;
         }
     }
 
-    chassis_state.control_init_status = all_initialized ? CHASSIS_OK : CHASSIS_CONTROL_INIT_ERROR;
-    return chassis_state.control_init_status;
+    // 模式切换统一清除动态历史，随后由单轮状态机决定是否从实测转速起步
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        Chassis_Wheel_t *wheel = &chassis->wheel[i];
+        if (chassis->mode != next_mode)
+        {
+            Chassis_ResetWheel(wheel);
+            wheel->state = CHASSIS_WHEEL_RELAX;
+        }
+        wheel->requested_speed_rpm = next_mode == CHASSIS_MODE_INDEPENDENT ? requested_speed[i] : 0.0F;
+        Chassis_ControlWheel(wheel, &chassis->config, next_mode == CHASSIS_MODE_INDEPENDENT, period_s);
+    }
+    chassis->mode = next_mode;
 }
 
 /**
- * @brief 根据本周期反馈独立计算四路安全电流指令
+ * @brief 导出四路电流，保留调用方设置的命令序号
  *
- * @param[in] input 本周期控制输入快照
- * @param[in] feedback 本周期四路电机反馈快照
- * @param[out] output 本周期四路电流计算结果
- * @param[in,out] snapshot 本周期底盘结果快照
- * @return 全部活动控制器正常返回 CHASSIS_OK，存在控制异常返回 CHASSIS_ERROR
- */
-static int8_t Chassis_Calculate(const Chassis_Input_t *input, const Chassis_Feedback_t *feedback,
-                                Chassis_Output_t *output, Chassis_Snapshot_t *snapshot)
-{
-    // 先按底盘布局整组解算轮速，限制统一尺度以保持四轮之间的合成比例
-    float requested_speed_rpm[CHASSIS_MOTOR_COUNT] =
-    {
-        0,
-    };
-    float scale_rpm = input->scale_rpm;
-    if (isfinite(scale_rpm) && scale_rpm > CHASSIS_SPEED_LIMIT_RPM)
-    {
-        scale_rpm = CHASSIS_SPEED_LIMIT_RPM;
-    }
-    chassis_state.mixer_status = Mixer_Apply(&chassis_state.mixer, &input->move_vector, requested_speed_rpm,
-                                             CHASSIS_MOTOR_COUNT, scale_rpm);
-    snapshot->mixer_status = chassis_state.mixer_status;
-    const bool mixer_valid = chassis_state.mixer_status == MIXER_OK;
-
-    // 使用解算后的四路目标分别执行反馈校验、斜坡和速度闭环
-    bool all_control_valid = true;
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        Chassis_MotorControl_t *motor_control = &chassis_state.motor_control[motor_index];
-        const bool feedback_available = feedback->valid[motor_index] && feedback->motor_online[motor_index];
-        const float actual_speed_rpm = feedback_available ? feedback->actual_speed_rpm[motor_index] : 0.0F;
-        const Chassis_MotorStatus_t feedback_status = Chassis_MotorUpdateFeedback(motor_control, actual_speed_rpm);
-        const bool motor_enabled =
-            input->enabled && mixer_valid && feedback_available && feedback_status == CHASSIS_MOTOR_OK;
-        // ID4 使用固化参数，其余电机使用公共参数
-        const Chassis_PidTune_t motor_pid_tune =
-        {
-            .kp = motor_index == 3U ? CHASSIS_MOTOR4_PID_KP : input->pid_tune.kp,
-            .ki = motor_index == 3U ? CHASSIS_MOTOR4_PID_KI : input->pid_tune.ki,
-            .kd = motor_index == 3U ? CHASSIS_MOTOR4_PID_KD : input->pid_tune.kd,
-        };
-
-        const Chassis_MotorStatus_t control_status =
-            Chassis_MotorControl(motor_control, requested_speed_rpm[motor_index], &motor_pid_tune, motor_enabled,
-                                 input->control_period_s);
-        float current_command_a = 0.0F;
-        const Chassis_MotorStatus_t output_status = Chassis_MotorDumpOutput(motor_control, &current_command_a);
-
-        // 汇总本路状态，异常反馈或计算结果只清零本路电流
-        Chassis_MotorStatus_t published_status = control_status;
-        if (feedback_status != CHASSIS_MOTOR_OK)
-        {
-            published_status = feedback_status;
-            all_control_valid = false;
-        }
-        else if (output_status != CHASSIS_MOTOR_OK)
-        {
-            published_status = output_status;
-            all_control_valid = false;
-        }
-        else if (control_status != CHASSIS_MOTOR_OK && control_status != CHASSIS_MOTOR_DISABLED)
-        {
-            all_control_valid = false;
-        }
-        if (published_status != CHASSIS_MOTOR_OK)
-        {
-            current_command_a = 0.0F;
-        }
-
-        // 保存统一结果快照，调用方不再读取控制器内部状态
-        snapshot->control_status[motor_index] = published_status;
-        snapshot->motor_enabled[motor_index] = motor_control->feedback.enabled;
-        snapshot->requested_speed_rpm[motor_index] = requested_speed_rpm[motor_index];
-        snapshot->limited_target_speed_rpm[motor_index] = motor_control->feedback.limited_target_speed_rpm;
-        snapshot->ramped_target_speed_rpm[motor_index] = motor_control->feedback.target_speed_rpm;
-        snapshot->actual_speed_rpm[motor_index] = motor_control->feedback.actual_speed_rpm;
-        snapshot->current_command_a[motor_index] = current_command_a;
-        output->current_command_a[motor_index] = current_command_a;
-    }
-    if (!mixer_valid)
-    {
-        return CHASSIS_CONFIG_ERROR;
-    }
-    return all_control_valid ? CHASSIS_OK : CHASSIS_ERROR;
-}
-
-/**
- * @brief 初始化底盘单路电机速度控制器
- *
- * @param[in,out] control 单路电机速度控制上下文
- * @param[in] sample_frequency_hz 控制采样频率，单位 Hz，必须大于 0
- * @param[in] motor_index 底盘电机数组下标，ID4 对应 3
- * @return 成功返回 CHASSIS_MOTOR_OK，失败返回对应状态码
- */
-static Chassis_MotorStatus_t Chassis_MotorInit(Chassis_MotorControl_t *control, float sample_frequency_hz,
-                                                uint32_t motor_index)
-{
-    if (control == NULL)
-    {
-        return CHASSIS_MOTOR_NULL_ERROR;
-    }
-
-    // 清除单路上下文，保证初始化失败路径保持零输出
-    *control = (Chassis_MotorControl_t)
-    {
-        0,
-    };
-    const bool is_motor4 = motor_index == 3U;
-    const Chassis_PidTune_t default_pid_tune =
-    {
-        .kp = is_motor4 ? CHASSIS_MOTOR4_PID_KP : CHASSIS_PID_KP,
-        .ki = is_motor4 ? CHASSIS_MOTOR4_PID_KI : CHASSIS_PID_KI,
-        .kd = is_motor4 ? CHASSIS_MOTOR4_PID_KD : CHASSIS_PID_KD,
-    };
-    control->pid_param = (KPID_Params_t)
-    {
-        .k = 1.0F,
-        .p = default_pid_tune.kp,
-        .i = default_pid_tune.ki,
-        .d = default_pid_tune.kd,
-        .i_limit = CHASSIS_PID_INTEGRAL_LIMIT,
-        .out_limit = CHASSIS_CURRENT_LIMIT_A,
-        .d_cutoff_freq = CHASSIS_PID_D_CUTOFF_HZ,
-        .range = 0.0F,
-    };
-
-    // 在创建 PID 和滤波器状态前拒绝非法固定参数
-    if (!Chassis_IsConfigurationValid(sample_frequency_hz) || !Chassis_ApplyPidTune(control, &default_pid_tune))
-    {
-        control->feedback.status = CHASSIS_MOTOR_CONFIG_ERROR;
-        return control->feedback.status;
-    }
-
-    // 初始化 PID 与两级滤波器，使控制器从零输出安全启动
-    if (PID_Init(&control->pid, KPID_MODE_CALC_D, sample_frequency_hz, &control->pid_param) != 0)
-    {
-        control->feedback.status = CHASSIS_MOTOR_INIT_ERROR;
-        return control->feedback.status;
-    }
-    LowPassFilter2p_Init(&control->feedback_filter, sample_frequency_hz, CHASSIS_FEEDBACK_LPF_CUTOFF_HZ);
-    LowPassFilter2p_Init(&control->current_filter, sample_frequency_hz, CHASSIS_CURRENT_LPF_CUTOFF_HZ);
-
-    control->feedback.initialized = true;
-    control->feedback.status = CHASSIS_MOTOR_OK;
-    return control->feedback.status;
-}
-
-/**
- * @brief 更新底盘单路电机实际转速反馈
- *
- * @param[in,out] control 单路电机速度控制上下文
- * @param[in] actual_speed_rpm 输出轴实际转速，单位 rpm
- * @return 成功返回 CHASSIS_MOTOR_OK，失败返回对应状态码
- */
-static Chassis_MotorStatus_t Chassis_MotorUpdateFeedback(Chassis_MotorControl_t *control, float actual_speed_rpm)
-{
-    if (control == NULL)
-    {
-        return CHASSIS_MOTOR_NULL_ERROR;
-    }
-
-    // 非有限反馈不得覆盖上一份合法转速
-    if (!isfinite(actual_speed_rpm))
-    {
-        return CHASSIS_MOTOR_INVALID_VALUE;
-    }
-
-    control->feedback.actual_speed_rpm = actual_speed_rpm;
-    return CHASSIS_MOTOR_OK;
-}
-
-/**
- * @brief 执行一次底盘单路电机速度控制计算
- *
- * @param[in,out] control 单路电机速度控制上下文
- * @param[in] requested_speed_rpm 请求的输出轴目标转速，单位 rpm
- * @param[in] pid_tune 本周期速度 PID 参数
- * @param[in] enabled 是否允许产生非零电流指令
- * @param[in] control_period_s 本周期控制间隔，单位 s，必须大于 0
- * @return 本周期速度控制状态，取值见 Chassis_MotorStatus_t
- */
-static Chassis_MotorStatus_t Chassis_MotorControl(Chassis_MotorControl_t *control, float requested_speed_rpm,
-                                                  const Chassis_PidTune_t *pid_tune, bool enabled,
-                                                  float control_period_s)
-{
-    if (control == NULL || pid_tune == NULL)
-    {
-        return CHASSIS_MOTOR_NULL_ERROR;
-    }
-
-    // 复制本周期输入并优先建立安全的零电流输出
-    Chassis_MotorFeedback_t *feedback = &control->feedback;
-    feedback->enabled = enabled;
-    feedback->requested_speed_rpm = requested_speed_rpm;
-    feedback->current_command_a = 0.0F;
-
-    // 校验并应用在线 PID 参数，非法配置必须清除控制状态
-    const bool pid_tune_valid = Chassis_ApplyPidTune(control, pid_tune);
-    feedback->pid_kp = control->pid_param.p;
-    feedback->pid_ki = control->pid_param.i;
-    feedback->pid_kd = control->pid_param.d;
-    feedback->limited_target_speed_rpm =
-        isfinite(requested_speed_rpm) ? Chassis_Clamp(requested_speed_rpm, CHASSIS_SPEED_LIMIT_RPM) : 0.0F;
-
-    if (!feedback->initialized)
-    {
-        feedback->status = CHASSIS_MOTOR_INIT_ERROR;
-        Chassis_ResetMotorControl(control);
-    }
-    else if (!pid_tune_valid)
-    {
-        feedback->status = CHASSIS_MOTOR_CONFIG_ERROR;
-        Chassis_ResetMotorControl(control);
-    }
-    else if (!isfinite(requested_speed_rpm) || !isfinite(control_period_s) || control_period_s <= 0.0F)
-    {
-        feedback->status = CHASSIS_MOTOR_INVALID_VALUE;
-        Chassis_ResetMotorControl(control);
-    }
-    else if (!enabled)
-    {
-        feedback->status = CHASSIS_MOTOR_DISABLED;
-        Chassis_ResetMotorControl(control);
-    }
-    else
-    {
-        // 使能恢复时预置反馈状态，避免反馈微分产生突跳
-        if (!control->was_enabled)
-        {
-            Chassis_PrimeFeedback(control);
-        }
-
-        // 目标方向反转时清除积分项，避免原方向积分在刹车和反向阶段继续叠加
-        if (control->ramped_target_speed_rpm != 0.0F &&
-            feedback->limited_target_speed_rpm != 0.0F &&
-            control->ramped_target_speed_rpm * feedback->limited_target_speed_rpm < 0.0F)
-        {
-            PID_ResetIntegral(&control->pid);
-        }
-
-        // 实际转速未接近零时先保持零目标，避免速度环直接施加反向电流
-        float effective_target_speed_rpm = feedback->limited_target_speed_rpm;
-        if (feedback->actual_speed_rpm > CHASSIS_REVERSAL_ZERO_SPEED_RPM &&
-            effective_target_speed_rpm < 0.0F)
-        {
-            effective_target_speed_rpm = 0.0F;
-        }
-        else if (feedback->actual_speed_rpm < -CHASSIS_REVERSAL_ZERO_SPEED_RPM &&
-                 effective_target_speed_rpm > 0.0F)
-        {
-            effective_target_speed_rpm = 0.0F;
-        }
-
-        // 依次执行目标斜坡、反馈滤波、PID 计算和电流滤波
-        control->ramped_target_speed_rpm =
-            Chassis_ApplyRamp(control->ramped_target_speed_rpm, effective_target_speed_rpm,
-                              CHASSIS_RAMP_RATE_RPM_S * control_period_s);
-        feedback->filtered_speed_rpm = LowPassFilter2p_Apply(&control->feedback_filter, feedback->actual_speed_rpm);
-        const float pid_current_command_a =
-            PID_Calc(&control->pid, control->ramped_target_speed_rpm, feedback->filtered_speed_rpm, 0.0F,
-                     control_period_s);
-        feedback->current_command_a = LowPassFilter2p_Apply(&control->current_filter, pid_current_command_a);
-
-        // 拒绝异常计算结果，仅发布有限且已限幅的电流指令
-        if (!isfinite(feedback->current_command_a))
-        {
-            feedback->status = CHASSIS_MOTOR_INVALID_VALUE;
-            Chassis_ResetMotorControl(control);
-        }
-        else
-        {
-            feedback->current_command_a = Chassis_Clamp(feedback->current_command_a, CHASSIS_CURRENT_LIMIT_A);
-            feedback->status = CHASSIS_MOTOR_OK;
-        }
-    }
-
-    // 汇总本周期目标与误差，供任务发布诊断快照
-    feedback->target_speed_rpm = control->ramped_target_speed_rpm;
-    feedback->speed_error_rpm =
-        feedback->status == CHASSIS_MOTOR_OK ? feedback->target_speed_rpm - feedback->filtered_speed_rpm : 0.0F;
-    return feedback->status;
-}
-
-/**
- * @brief 导出底盘单路电机转子侧电流指令
- *
- * @param[in] control 单路电机速度控制上下文
- * @param[out] current_command_a 转子侧电流指令，单位 A
- * @return 成功返回 CHASSIS_MOTOR_OK，失败返回对应状态码
- */
-static Chassis_MotorStatus_t Chassis_MotorDumpOutput(const Chassis_MotorControl_t *control,
-                                                     float *current_command_a)
-{
-    if (control == NULL || current_command_a == NULL)
-    {
-        return CHASSIS_MOTOR_NULL_ERROR;
-    }
-
-    *current_command_a = control->feedback.current_command_a;
-    return CHASSIS_MOTOR_OK;
-}
-
-/**
- * @brief 对浮点值执行正负对称限幅
- *
- * @param[in] value 待限幅数值
- * @param[in] absolute_limit 正数形式的绝对值上限
- * @return 限幅后的数值
- */
-static float Chassis_Clamp(float value, float absolute_limit)
-{
-    if (value > absolute_limit)
-    {
-        return absolute_limit;
-    }
-    if (value < -absolute_limit)
-    {
-        return -absolute_limit;
-    }
-    return value;
-}
-
-/**
- * @brief 按单周期最大变化量逼近目标值
- *
- * @param[in] current 当前值
- * @param[in] target 目标值
- * @param[in] maximum_step 单周期允许的最大变化量
- * @return 本周期更新后的数值
- */
-static float Chassis_ApplyRamp(float current, float target, float maximum_step)
-{
-    const float difference = target - current;
-    if (difference > maximum_step)
-    {
-        return current + maximum_step;
-    }
-    if (difference < -maximum_step)
-    {
-        return current - maximum_step;
-    }
-    return target;
-}
-
-/**
- * @brief 校验底盘速度控制固定参数
- *
- * @param[in] sample_frequency_hz 控制采样频率，单位 Hz
- * @return 所有参数合法时返回 true，否则返回 false
- */
-static bool Chassis_IsConfigurationValid(float sample_frequency_hz)
-{
-    return isfinite(sample_frequency_hz) && sample_frequency_hz > 0.0F && isfinite(CHASSIS_SPEED_LIMIT_RPM) &&
-           CHASSIS_SPEED_LIMIT_RPM > 0.0F && isfinite(CHASSIS_RAMP_RATE_RPM_S) &&
-           CHASSIS_RAMP_RATE_RPM_S > 0.0F && isfinite(CHASSIS_PID_D_CUTOFF_HZ) &&
-           CHASSIS_PID_D_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
-           isfinite(CHASSIS_FEEDBACK_LPF_CUTOFF_HZ) &&
-           CHASSIS_FEEDBACK_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
-           isfinite(CHASSIS_CURRENT_LPF_CUTOFF_HZ) &&
-           CHASSIS_CURRENT_LPF_CUTOFF_HZ < sample_frequency_hz * 0.5F &&
-           isfinite(CHASSIS_PID_INTEGRAL_LIMIT) && CHASSIS_PID_INTEGRAL_LIMIT >= 0.0F &&
-           isfinite(CHASSIS_CURRENT_LIMIT_A) && CHASSIS_CURRENT_LIMIT_A > 0.0F;
-}
-
-/**
- * @brief 校验并应用底盘速度 PID 在线参数
- *
- * @param[in,out] control 单路电机速度控制上下文
- * @param[in] pid_tune 待应用的速度 PID 参数
- * @return 参数合法并成功应用时返回 true，否则返回 false
- */
-static bool Chassis_ApplyPidTune(Chassis_MotorControl_t *control, const Chassis_PidTune_t *pid_tune)
-{
-    if (control == NULL || pid_tune == NULL)
-    {
-        return false;
-    }
-
-    const float kp = pid_tune->kp;
-    const float ki = pid_tune->ki;
-    const float kd = pid_tune->kd;
-    if (!isfinite(kp) || kp < 0.0F || !isfinite(ki) || ki < 0.0F || !isfinite(kd) || kd < 0.0F)
-    {
-        return false;
-    }
-
-    control->pid_param.p = kp;
-    control->pid_param.i = ki;
-    control->pid_param.d = kd;
-    return true;
-}
-
-/**
- * @brief 清除底盘单路电机的动态控制状态
- *
- * @param[in,out] control 单路电机速度控制上下文
+ * @param[in] chassis 底盘实例，允许为 NULL，未初始化时输出全零
+ * @param[out] output CAN 电流命令，仅写 current_a[0~3]
  * @return 无返回值
  */
-static void Chassis_ResetMotorControl(Chassis_MotorControl_t *control)
+void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output)
 {
-    control->ramped_target_speed_rpm = 0.0F;
-    control->was_enabled = false;
-    control->feedback.filtered_speed_rpm = 0.0F;
-    control->feedback.current_command_a = 0.0F;
-
-    if (control->feedback.initialized)
+    if (output == NULL)
     {
-        PID_Reset(&control->pid);
-        LowPassFilter2p_Reset(&control->feedback_filter, 0.0F);
-        LowPassFilter2p_Reset(&control->current_filter, 0.0F);
+        return;
+    }
+
+    // 最后一道输出检查保证未初始化、非运行及非法电流不会进入通信任务
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        output->current_a[i] = 0.0F;
+        if (chassis != NULL && chassis->initialized && chassis->config_valid &&
+            chassis->mode == CHASSIS_MODE_INDEPENDENT && chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING &&
+            isfinite(chassis->wheel[i].output_current_a) && isfinite(chassis->config.max_current_a) &&
+            chassis->config.max_current_a > 0.0F)
+        {
+            output->current_a[i] = AbsClip(chassis->wheel[i].output_current_a, chassis->config.max_current_a);
+        }
     }
 }
 
 /**
- * @brief 预置底盘单路电机反馈状态以平滑恢复使能
+ * @brief 校验底盘限幅、斜坡、滤波和公共速度 PID 参数
  *
- * @param[in,out] control 单路电机速度控制上下文
+ * @param[in] config 待校验的非空配置
+ * @param[in] frequency_hz 初始化时的采样频率，单位 Hz
+ * @return 所有数值有限且范围合法时返回 true
+ */
+static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz)
+{
+    const KPID_Params_t *pid = &config->wheel_speed_pid;
+    const float nyquist_hz = frequency_hz * 0.5F;
+    return isfinite(frequency_hz) && frequency_hz > 0.0F && isfinite(1.0F / frequency_hz) &&
+           isfinite(config->max_wheel_speed_rpm) && config->max_wheel_speed_rpm > 0.0F &&
+           isfinite(config->wheel_accel_rpm_s) && config->wheel_accel_rpm_s > 0.0F &&
+           isfinite(config->reverse_release_speed_rpm) && config->reverse_release_speed_rpm >= 0.0F &&
+           isfinite(config->max_current_a) && config->max_current_a > 0.0F &&
+           isfinite(config->speed_filter_cutoff_hz) && config->speed_filter_cutoff_hz < nyquist_hz &&
+           isfinite(config->current_filter_cutoff_hz) && config->current_filter_cutoff_hz < nyquist_hz &&
+           isfinite(pid->k) && pid->k > 0.0F && isfinite(pid->p) && pid->p >= 0.0F &&
+           isfinite(pid->i) && pid->i >= 0.0F && isfinite(pid->d) && pid->d >= 0.0F &&
+           isfinite(pid->i_limit) && pid->i_limit >= 0.0F && isfinite(pid->out_limit) && pid->out_limit >= 0.0F &&
+           isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq < nyquist_hz &&
+           isfinite(pid->range) && pid->range >= 0.0F;
+}
+
+/**
+ * @brief 清除单轮速度环与两级滤波动态历史并输出零电流
+ *
+ * @param[in,out] wheel 待复位的单轮状态
  * @return 无返回值
  */
-static void Chassis_PrimeFeedback(Chassis_MotorControl_t *control)
+static void Chassis_ResetWheel(Chassis_Wheel_t *wheel)
 {
-    // 清除旧 PID 状态并用当前实际转速预置反馈滤波器
-    PID_Reset(&control->pid);
-    control->feedback.filtered_speed_rpm =
-        LowPassFilter2p_Reset(&control->feedback_filter, control->feedback.actual_speed_rpm);
-    LowPassFilter2p_Reset(&control->current_filter, 0.0F);
+    if (wheel->speed_pid.param != NULL)
+    {
+        PID_Reset(&wheel->speed_pid);
+    }
+    if (wheel->speed_filter.b0 > 0.0F)
+    {
+        LowPassFilter2p_Reset(&wheel->speed_filter, 0.0F);
+    }
+    if (wheel->current_filter.b0 > 0.0F)
+    {
+        LowPassFilter2p_Reset(&wheel->current_filter, 0.0F);
+    }
+    wheel->filtered_speed_rpm = 0.0F;
+    wheel->target_speed_rpm = 0.0F;
+    wheel->output_current_a = 0.0F;
+}
 
-    // 斜坡目标从当前实际转速起步，避免轮子仍在转动时以零目标产生满幅制动电流
-    control->ramped_target_speed_rpm = Chassis_Clamp(control->feedback.filtered_speed_rpm, CHASSIS_SPEED_LIMIT_RPM);
+/**
+ * @brief 用实测转速预置恢复运行时的反馈、微分和目标斜坡
+ *
+ * @param[in,out] wheel 反馈有效的单轮状态
+ * @param[in] speed_limit_rpm 输出轴转速绝对值上限，单位 rpm
+ * @return 无返回值
+ */
+static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm)
+{
+    // 预置速度与电流滤波器，使恢复运行时不沿用停机前历史
+    PID_Reset(&wheel->speed_pid);
+    wheel->filtered_speed_rpm = LowPassFilter2p_Reset(&wheel->speed_filter, wheel->measured_speed_rpm);
+    LowPassFilter2p_Reset(&wheel->current_filter, 0.0F);
+    wheel->target_speed_rpm = AbsClip(wheel->filtered_speed_rpm, speed_limit_rpm);
 
-    // 同步微分滤波器和上一反馈，避免重新使能时产生电流冲击
-    const float scaled_feedback = control->pid_param.k * control->feedback.filtered_speed_rpm;
-    LowPassFilter2p_Reset(&control->pid.dfilter, scaled_feedback);
-    control->pid.last.k_fb = scaled_feedback;
-    control->was_enabled = true;
+    // 同步微分上一反馈，避免恢复使能时产生一次性电流冲击
+    const float scaled_feedback = wheel->speed_pid.param->k * wheel->filtered_speed_rpm;
+    LowPassFilter2p_Reset(&wheel->speed_pid.dfilter, scaled_feedback);
+    wheel->speed_pid.last.k_fb = scaled_feedback;
+}
+
+/**
+ * @brief 同步公共 PID 参数并清空四轮旧积分
+ *
+ * @param[in,out] chassis 配置合法且初始化成功的底盘实例
+ * @return 无返回值
+ */
+static void Chassis_ApplyPidConfig(Chassis_t *chassis)
+{
+    const KPID_Params_t *next = &chassis->config.wheel_speed_pid;
+    const KPID_Params_t *old = &chassis->applied_wheel_speed_pid;
+    if (next->k == old->k && next->p == old->p && next->i == old->i && next->d == old->d &&
+        next->i_limit == old->i_limit && next->out_limit == old->out_limit &&
+        next->d_cutoff_freq == old->d_cutoff_freq && next->range == old->range)
+    {
+        return;
+    }
+
+    // 只在参数变更时复制一次；截止频率变化时同步重建各轮微分滤波系数
+    const bool filter_changed = next->d_cutoff_freq != old->d_cutoff_freq;
+    const bool gain_changed = next->k != old->k;
+    chassis->applied_wheel_speed_pid = *next;
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        KPID_t *pid = &chassis->wheel[i].speed_pid;
+        PID_ResetIntegral(pid);
+        if (filter_changed || gain_changed)
+        {
+            LowPassFilter2p_Init(&pid->dfilter, 1.0F / pid->dt_min, next->d_cutoff_freq);
+            const float scaled_feedback = next->k * chassis->wheel[i].filtered_speed_rpm;
+            LowPassFilter2p_Reset(&pid->dfilter, scaled_feedback);
+            pid->last.k_fb = scaled_feedback;
+        }
+    }
+}
+
+/**
+ * @brief 集中处理单轮待机、运行、离线与恢复转换
+ *
+ * @param[in,out] wheel 当前单轮状态
+ * @param[in] config 已校验的底盘配置，待机时允许配置非法
+ * @param[in] run 本周期是否请求运行
+ * @param[in] period_s 实测控制周期，运行时须在 (0, 0.1] s 内
+ * @return 无返回值
+ */
+static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run, float period_s)
+{
+    Chassis_WheelState_t next_state = CHASSIS_WHEEL_RELAX;
+    switch (wheel->state)
+    {
+        case CHASSIS_WHEEL_RELAX:
+        case CHASSIS_WHEEL_RUNNING:
+        case CHASSIS_WHEEL_OFFLINE:
+            if (run)
+            {
+                next_state = isfinite(wheel->measured_speed_rpm) ? CHASSIS_WHEEL_RUNNING : CHASSIS_WHEEL_OFFLINE;
+            }
+            break;
+
+        default:
+            // 非法状态本周期强制待机，下周期才允许重新预置运行
+            break;
+    }
+
+    // 入口动作只在恢复运行时预置，非运行状态持续清除历史并维持零输出
+    if (next_state == CHASSIS_WHEEL_RUNNING && wheel->state != CHASSIS_WHEEL_RUNNING)
+    {
+        Chassis_PrimeWheel(wheel, config->max_wheel_speed_rpm);
+    }
+    wheel->state = next_state;
+    switch (wheel->state)
+    {
+        case CHASSIS_WHEEL_RUNNING:
+            Chassis_RunWheel(wheel, config, period_s);
+            break;
+
+        case CHASSIS_WHEEL_OFFLINE:
+        case CHASSIS_WHEEL_RELAX:
+        default:
+            Chassis_ResetWheel(wheel);
+            break;
+    }
+}
+
+/**
+ * @brief 执行单轮限幅、换向保护、斜坡和速度闭环
+ *
+ * @param[in,out] wheel 运行中的单轮状态，反馈须有限
+ * @param[in] config 已校验的底盘配置
+ * @param[in] period_s 实测控制周期，单位 s
+ * @return 无返回值，计算结果非法时复位本轮并转入待机
+ */
+static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s)
+{
+    float target = AbsClip(wheel->requested_speed_rpm, config->max_wheel_speed_rpm);
+
+    // 目标反转先清除旧方向积分，再等待实测转速接近零后放行反向目标
+    if ((wheel->target_speed_rpm > 0.0F && target < 0.0F) ||
+        (wheel->target_speed_rpm < 0.0F && target > 0.0F))
+    {
+        PID_ResetIntegral(&wheel->speed_pid);
+    }
+    if ((wheel->measured_speed_rpm > config->reverse_release_speed_rpm && target < 0.0F) ||
+        (wheel->measured_speed_rpm < -config->reverse_release_speed_rpm && target > 0.0F))
+    {
+        target = 0.0F;
+    }
+
+    // 按实测周期推进斜坡，然后依次计算反馈滤波、速度 PID 和电流滤波
+    wheel->target_speed_rpm = RampTo(wheel->target_speed_rpm, target, config->wheel_accel_rpm_s * period_s);
+    wheel->filtered_speed_rpm = LowPassFilter2p_Apply(&wheel->speed_filter, wheel->measured_speed_rpm);
+    const float current = PID_Calc(&wheel->speed_pid, wheel->target_speed_rpm, wheel->filtered_speed_rpm,
+                                   0.0F, period_s);
+    wheel->output_current_a = LowPassFilter2p_Apply(&wheel->current_filter, current);
+
+    // 非有限计算只隔离本轮，下一周期重新预置后才恢复闭环
+    if (!isfinite(wheel->target_speed_rpm) || !isfinite(wheel->filtered_speed_rpm) ||
+        !isfinite(wheel->output_current_a))
+    {
+        Chassis_ResetWheel(wheel);
+        wheel->state = CHASSIS_WHEEL_RELAX;
+        return;
+    }
+    wheel->output_current_a = AbsClip(wheel->output_current_a, config->max_current_a);
 }

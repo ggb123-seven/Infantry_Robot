@@ -1,77 +1,50 @@
 #include "task/motor_chassis.h"
 
 #include "bsp/time.h"
-#include "device/can_devices.h"
 #include "device/dr16.h"
-#include "module/chassis.h"
-#include "module/fault_detect.h"
+#include "module/config.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
 
 /*
- * DR16 底盘输入参数：
- * - MOTOR_CHASSIS_DR16_CHANNEL_LIMIT：摇杆去中心后的有效计数上限
- * - MOTOR_CHASSIS_DR16_DEADZONE：摇杆中心死区比例
- * - MOTOR_CHASSIS_DR16_SPIN_WZ：左拨杆下位时的固定自旋角速度归一化值，正值为俯视逆时针
- * - MOTOR_CHASSIS_SCALE_RPM：归一化轮速尺度，沿用原调参默认值 100 rpm
+ * DR16 底盘输入参数，沿用底盘重构方案：
+ * - CHANNEL_LIMIT：摇杆去中心后的有效计数上限 660
+ * - DEADZONE：摇杆中心死区比例 5%
+ * - SPIN_WZ：左拨杆下位固定自旋归一化值 +0.30，正值为俯视逆时针
+ * - SCALE_RPM：归一化轮速尺度，单位输出轴 rpm
  */
 #define MOTOR_CHASSIS_DR16_CHANNEL_LIMIT (660.0F)
 #define MOTOR_CHASSIS_DR16_DEADZONE (0.05F)
 #define MOTOR_CHASSIS_DR16_SPIN_WZ (0.30F)
 #define MOTOR_CHASSIS_SCALE_RPM (100.0F)
 
-_Static_assert(CHASSIS_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘控制与 CAN 设备数量必须一致");
+_Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
-/*
- * 底盘调参与观测初值：反馈和目标转速清零，ID1~3 使用固化公共 PID 参数
- */
-volatile MotorChassis_Tune_t motor_chassis_watch =
-{
-    .actual_speed_rpm =
-    {
-        0.0F,
-    },
-    .target_speed_rpm =
-    {
-        0.0F,
-    },
-    .pid =
-    {
-        .kp = CHASSIS_PID_KP,
-        .ki = CHASSIS_PID_KI,
-        .kd = CHASSIS_PID_KD,
-    },
-};
-
-Chassis_Snapshot_t chassis_snapshot;
+// 调试观测入口，字段职责见头文件；运动请求每周期由 DR16 生成
+Chassis_t chassis;
+Chassis_Command_t chassis_command;
 FaultDetect_Snapshot_t fault_detect_snapshot;
 
 /*
  * 底盘任务私有状态：
- * - can_feedback_cache：从反馈邮箱取得的最新 CAN 快照
- * - chassis_feedback：从 CAN 快照映射出的本周期底盘控制反馈
- * - chassis_output：底盘模块本周期计算得到的四路电流命令
- * - dr16_state_cache：最近一次从 DR16 邮箱取得的状态快照
+ * - can_feedback_cache：本周期从反馈邮箱取得的 CAN 快照，读取失败时不使用缓存
+ * - dr16_state_cache：最近一次从 DR16 邮箱取得的状态，按完整微秒时间检查时效
  * - dr16_state_cache_valid：至少取得过一帧 DR16 状态时为 true
  */
 static CANDevices_Snapshot_t can_feedback_cache;
-static Chassis_Feedback_t chassis_feedback;
-static Chassis_Output_t chassis_output;
 static DR16_State_t dr16_state_cache;
 static bool dr16_state_cache_valid;
 
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
-static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us);
+static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now_us);
 static float MotorChassis_NormalizeDR16Channel(int16_t channel);
 static float MotorChassis_ApplyDeadzone(float value);
-static bool MotorChassis_PublishCommand(void);
+static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
 
 /**
- * @brief 初始化并周期运行 X 型全向轮底盘控制链
- *
- * DR16 未使能、设备离线或任一控制步骤失败时，对应电机电流指令保持为零
+ * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -80,58 +53,60 @@ void Task_motor_chassis(void *argument)
 {
     (void)argument;
 
-    const uint32_t delay_tick = osKernelGetTickFreq() / MOTOR_CHASSIS_FREQ;
-
-    // 等待系统外设与业务模块完成统一初始化后再进入周期控制
+    // 节拍必须精确表达控制频率，非法时仍保留任务以持续发布零电流和诊断
+    const uint32_t tick_frequency = osKernelGetTickFreq();
+    const bool timing_valid = tick_frequency >= MOTOR_CHASSIS_FREQ && tick_frequency % MOTOR_CHASSIS_FREQ == 0U;
+    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_CHASSIS_FREQ : 1U;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
-
-    // 建立绝对周期基准，避免控制周期累计漂移
-    uint32_t tick = osKernelGetTickCount();
-    while (1)
+    const int8_t init_status = Chassis_Init(&chassis, Config_GetChassis(),
+                                           timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F);
+    if (init_status != 0)
     {
-        // 建立默认禁用的控制输入，并读取在线调参
-        Chassis_Input_t chassis_input =
-        {
-            .enabled = false,
-            .scale_rpm = MOTOR_CHASSIS_SCALE_RPM,
-            .pid_tune =
-            {
-                .kp = motor_chassis_watch.pid.kp,
-                .ki = motor_chassis_watch.pid.ki,
-                .kd = motor_chassis_watch.pid.kd,
-            },
-            .control_period_s = 1.0F / (float)MOTOR_CHASSIS_FREQ,
-        };
+        FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
+    }
 
-        // 取得时间基准，用于拒绝过期遥控状态
+    // 首周期使用一个名义间隔，后续周期按实际节拍差计算，并支持无符号节拍回绕
+    uint32_t tick = osKernelGetTickCount();
+    uint32_t previous_tick = tick - delay_tick;
+    while (true)
+    {
+        // 获取本周期时间，拒绝过期遥控输入和过长控制周期
+        const uint32_t now_tick = osKernelGetTickCount();
+        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0F;
         const uint64_t now_us = BSP_TIME_Get();
+        previous_tick = now_tick;
 
-        // 消费并映射最新 CAN 反馈，邮箱没有新快照时四路反馈保持无效
+        // 消费最新 CAN 快照，没有新快照时由模块将四轮反馈标记为无效
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
+        Chassis_UpdateFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL);
 
-        // 消费最新 DR16 状态并保留本地缓存，邮箱没有新状态时继续使用最近快照
+        // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
+        MotorChassis_ApplyDR16Input(&chassis_command, now_us);
 
-        // 由 DR16 唯一生成运动使能和运动向量，失联时保持禁用
-        MotorChassis_ApplyDR16Input(&chassis_input, now_us);
-
-        // 完成运动学和速度控制，再发布最新电流命令
-        Chassis_Run(&chassis_input, &chassis_feedback, &chassis_output, &chassis_snapshot);
-        MotorChassis_PublishCommand();
-
-        // 同步同一控制周期的反馈和实际目标，供调试器逐轮对比转速
-        for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
+        // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
+        CANDevices_Command_t output =
         {
-            motor_chassis_watch.actual_speed_rpm[motor_index] = chassis_snapshot.actual_speed_rpm[motor_index];
-            motor_chassis_watch.target_speed_rpm[motor_index] = chassis_snapshot.ramped_target_speed_rpm[motor_index];
+            .sequence = feedback_received ? can_feedback_cache.sequence : 0U,
+        };
+        Chassis_Control(&chassis, &chassis_command, period_s);
+        Chassis_DumpOutput(&chassis, &output);
+        if (!MotorChassis_PublishCommand(&output))
+        {
+            // 发布失败时 CAN 任务空邮箱归零，本地同步复位，避免未执行电流期间积累控制历史
+            Chassis_Control(&chassis, NULL, period_s);
         }
 
-        // 汇总本周期设备和控制故障
-        FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis_snapshot,
+        // 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源
+        FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis,
                                        &fault_detect_snapshot);
 
+        // 错过节拍时跳过补算，防止追赶循环连续发布同一时刻的控制结果
+        if ((uint32_t)(now_tick - tick) >= delay_tick)
+        {
+            tick = now_tick;
+        }
         tick += delay_tick;
-        // 等待至下一个绝对任务周期，保持稳定控制频率
         osDelayUntil(tick);
     }
 }
@@ -162,20 +137,21 @@ static bool MotorChassis_ReadLatestDR16(void)
 /**
  * @brief 将 DR16 状态转换为当前底盘控制模式和运动向量
  *
- * @param[in,out] input 待覆盖的底盘控制输入
+ * @param[out] command 待覆盖的底盘控制命令
  * @param[in] now_us 当前时间，单位微秒
  * @return 无返回值
  */
-static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
+static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now_us)
 {
-    if (input == NULL)
+    if (command == NULL)
     {
         return;
     }
 
     // 先复位运动请求，确保遥控无效或超时不会沿用上一周期输出
-    input->enabled = false;
-    input->move_vector = (MoveVector_t)
+    command->mode = CHASSIS_MODE_RELAX;
+    command->wheel_speed_scale_rpm = MOTOR_CHASSIS_SCALE_RPM;
+    command->move = (MoveVector_t)
     {
         0,
     };
@@ -193,16 +169,16 @@ static void MotorChassis_ApplyDR16Input(Chassis_Input_t *input, uint64_t now_us)
     switch (dr16_state_cache.data.sw_l)
     {
         case DR16_SWITCH_UP:
-            input->enabled = true;
-            input->move_vector.vx = -forward_channel;
-            input->move_vector.vy = lateral_channel;
+            command->mode = CHASSIS_MODE_INDEPENDENT;
+            command->move.vx = -forward_channel;
+            command->move.vy = lateral_channel;
             break;
 
         case DR16_SWITCH_DOWN:
-            input->enabled = true;
-            input->move_vector.vx = -forward_channel;
-            input->move_vector.vy = lateral_channel;
-            input->move_vector.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
+            command->mode = CHASSIS_MODE_INDEPENDENT;
+            command->move.vx = -forward_channel;
+            command->move.vy = lateral_channel;
+            command->move.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
             break;
 
         // 中位和异常拨杆作为停机档，关闭速度环并输出零电流
@@ -254,68 +230,30 @@ static float MotorChassis_ApplyDeadzone(float value)
 }
 
 /**
- * @brief 初始化底盘任务私有运动学与速度控制器
+ * @brief 从容量为 1 的反馈邮箱读取最新 CAN 设备快照
  *
- * @return X 型全向轮混合器和四路速度控制器可运行时返回 true，否则返回 false
- */
-bool Task_motor_chassis_Init(void)
-{
-    // 选择四角 X 型全向轮布局并初始化底盘控制链，CAN 设备集合由独立通信任务负责初始化
-    Chassis_Init((float)MOTOR_CHASSIS_FREQ, MIXER_OMNICROSS, &chassis_snapshot);
-
-    // 生成初始化阶段诊断快照，区分未诊断和启动故障
-    FaultDetect_UpdateMotorChassis(NULL, &chassis_snapshot, &fault_detect_snapshot);
-    return chassis_snapshot.initialized;
-}
-
-/**
- * @brief 从容量为 1 的反馈邮箱读取并映射最新 CAN 设备快照
- *
- * @return 成功取得新快照时返回 true，否则返回 false 且四路反馈无效
+ * @return 成功取得新快照时返回 true，否则返回 false
  */
 static bool MotorChassis_ReadLatestFeedback(void)
 {
-    chassis_feedback = (Chassis_Feedback_t)
-    {
-        0,
-    };
-    if (task_runtime.msgq.can_feedback == NULL ||
-        osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) != osOK)
-    {
-        return false;
-    }
-
-    // 只把本周期成功更新且在线的设备反馈标记为可用于速度控制
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        chassis_feedback.valid[motor_index] = can_feedback_cache.feedback_update_status[motor_index] == CAN_DEVICES_OK;
-        chassis_feedback.motor_online[motor_index] = can_feedback_cache.motor_online[motor_index];
-        chassis_feedback.actual_speed_rpm[motor_index] = can_feedback_cache.actual_speed_rpm[motor_index];
-    }
-    return true;
+    return task_runtime.msgq.can_feedback != NULL &&
+           osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) == osOK;
 }
 
 /**
- * @brief 向容量为 1 的命令邮箱发布最新底盘电流命令
+ * @brief 向容量为 1 的命令邮箱发布最新底盘电流
  *
+ * @param[in] command 已由底盘模块填写的四轮电流和任务填写的序号
  * @return 邮箱重置并写入成功时返回 true，否则返回 false
  */
-static bool MotorChassis_PublishCommand(void)
+static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 {
-    CANDevices_Command_t command =
-    {
-        .sequence = can_feedback_cache.sequence,
-    };
-    for (uint32_t motor_index = 0U; motor_index < CHASSIS_MOTOR_COUNT; motor_index++)
-    {
-        command.current_a[motor_index] = chassis_output.current_command_a[motor_index];
-    }
     if (task_runtime.msgq.can_command == NULL)
     {
         return false;
     }
 
-    // 邮箱只保留最新电流命令，重置和写入任一失败都由 CAN task 的零命令默认值兜底
+    // 最新值邮箱不保存历史电流，重置或写入失败时由 CAN 任务默认零命令兜底
     return osMessageQueueReset(task_runtime.msgq.can_command) == osOK &&
-           osMessageQueuePut(task_runtime.msgq.can_command, &command, 0U, 0U) == osOK;
+           osMessageQueuePut(task_runtime.msgq.can_command, command, 0U, 0U) == osOK;
 }

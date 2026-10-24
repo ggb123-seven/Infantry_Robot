@@ -341,7 +341,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F407xx,USE_HAL_DRIVER,STM32F407xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;  ../Middlewares/Third_Party/FreeRTOS/Source/include;  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;  ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;  ../Drivers/CMSIS/Device/ST/STM32F4xx/Include;  ../Drivers/CMSIS/Include;  ../Drivers/CMSIS/DSP/Include;  ..\applications;  ..\User</IncludePath>
+              <IncludePath>../Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc;  ../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;  ../Middlewares/Third_Party/FreeRTOS/Source/include;  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;  ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;  ../Drivers/CMSIS/Device/ST/STM32F4xx/Include;  ../Drivers/CMSIS/Include;  ../Drivers/CMSIS/DSP/Include;  ..\applications;  ..\User;  ../Middlewares/Third_Party/RingBuffer/src/include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -606,6 +606,11 @@
           <GroupName>User/MRobot</GroupName>
           <Files>
             <File>
+              <FileName>ringbuffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\RingBuffer\src\ringbuffer\ringbuffer.c</FilePath>
+            </File>
+            <File>
               <FileName>user_task_init.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\task\init.c</FilePath>
@@ -694,6 +699,51 @@
               <FileName>config.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\config.c</FilePath>
+            </File>
+            <File>
+              <FileName>gpio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\gpio.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>mixer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\mixer.c</FilePath>
+            </File>
+            <File>
+              <FileName>can_devices.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\device\can_devices.c</FilePath>
+            </File>
+            <File>
+              <FileName>dr16.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\device\dr16.c</FilePath>
+            </File>
+            <File>
+              <FileName>chassis.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\chassis.c</FilePath>
+            </File>
+            <File>
+              <FileName>fault_detect.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\fault_detect.c</FilePath>
+            </File>
+            <File>
+              <FileName>can_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\can_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>dr16_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\dr16_task.c</FilePath>
             </File>
             <File>
               <FileName>motor.c</FileName>

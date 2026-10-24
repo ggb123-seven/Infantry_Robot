@@ -135,7 +135,7 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 创建底盘任务并检查句柄，当前 DR16 状态不会连接到底盘控制
+    // 创建底盘任务并检查句柄，由任务自行初始化模块并接收 DR16 运动命令
     task_runtime.init_status = TASK_INIT_MOTOR_THREAD_FAILED;
     task_runtime.thread.motor_chassis = osThreadNew(Task_motor_chassis, NULL, &attr_motor_chassis);
     if (task_runtime.thread.motor_chassis == NULL)
@@ -171,12 +171,6 @@ static bool Task_InitModules(void)
         return false;
     }
 
-    // CAN 总线可运行后初始化底盘速度控制器，失败时不创建业务任务
-    task_runtime.init_status = TASK_INIT_MOTOR_CHASSIS_FAILED;
-    if (!Task_motor_chassis_Init())
-    {
-        return false;
-    }
     return true;
 }
 
