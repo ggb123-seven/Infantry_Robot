@@ -26,7 +26,7 @@ extern "C"
 #define MOTOR_CHASSIS_INIT_DELAY (0U)
 
 /*
- * 云台任务参数：MOTOR_GIMBAL_FREQ 为 yaw 角度与速度串级控制频率，单位赫兹
+ * 云台任务参数：MOTOR_GIMBAL_FREQ 为云台两轴控制频率，单位赫兹
  * MOTOR_GIMBAL_INIT_DELAY 为启动延时，单位内核节拍
  */
 #define MOTOR_GIMBAL_FREQ (500U)
@@ -55,9 +55,8 @@ typedef enum
     TASK_INIT_CAN_COMMAND_MAILBOX_FAILED,
     TASK_INIT_GIMBAL_YAW_FEEDBACK_MAILBOX_FAILED,
     TASK_INIT_GIMBAL_PITCH_FEEDBACK_MAILBOX_FAILED,
-    TASK_INIT_GIMBAL_YAW_COMMAND_MAILBOX_FAILED,
+    TASK_INIT_GIMBAL_OUTPUT_MAILBOX_FAILED,
     TASK_INIT_GIMBAL_THREAD_FAILED,
-    TASK_INIT_GIMBAL_MODULE_FAILED,
     TASK_INIT_CAN_THREAD_FAILED,
     TASK_INIT_MOTOR_THREAD_FAILED,
     TASK_INIT_DR16_THREAD_FAILED,
@@ -71,7 +70,7 @@ typedef enum
  * 任务运行时对象：
  * - thread.can：CAN 设备反馈采集和电流发送任务句柄
  * - thread.motor_chassis：底盘周期控制任务句柄
- * - thread.motor_gimbal：yaw 角度与速度串级控制任务句柄
+ * - thread.motor_gimbal：云台模块初始化与两轴周期控制任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入
@@ -79,8 +78,8 @@ typedef enum
  * - msgq.can_command：长度为 1 的 CAN 设备最新电流命令邮箱，由 Task_motor_chassis 写入、Task_can 读取
  * - msgq.gimbal_yaw_feedback：长度为 1 的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 Task_can 写入
  * - msgq.gimbal_pitch_feedback：长度为 1 的 pitch 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 Task_can 写入
- * - 两个云台反馈邮箱的速度单位为 rpm、时间戳单位为微秒，yaw 由 Task_motor_gimbal 消费
- * - msgq.gimbal_yaw_command：长度为 1 的 yaw 电流邮箱，元素为 float，单位 A，由云台任务写入、CAN 任务读取
+ * - 两个云台反馈邮箱的速度单位为 rpm、时间戳单位为微秒，均由 Task_motor_gimbal 消费
+ * - msgq.gimbal_output：长度为 1 的云台输出邮箱，元素为 Gimbal_Output_t，单位 A，由云台任务写入、CAN 任务读取
  * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果
  */
 typedef struct
@@ -100,7 +99,7 @@ typedef struct
         osMessageQueueId_t can_command;
         osMessageQueueId_t gimbal_yaw_feedback;
         osMessageQueueId_t gimbal_pitch_feedback;
-        osMessageQueueId_t gimbal_yaw_command;
+        osMessageQueueId_t gimbal_output;
     } msgq;
     volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;

@@ -1,761 +1,508 @@
 #include "module/gimbal.h"
 
 #include <math.h>
+#include <stddef.h>
 
-#include "bsp/time.h"
-#include "component/pid.h"
-#include "device/motor_rm.h"
-
-// 对外角度接口使用度，PID 输入使用弧度，换算依据为 180 度等于 π 弧度
-#define GIMBAL_RAD_TO_DEG 57.2957795131f
-#define GIMBAL_DEG_TO_RAD 0.0174532925199f
-
-// 机械正前方对应的编码器单圈角度，单位度，范围 [0, 360)，取自用户实测，安装关系改变后须重新标定
-#define GIMBAL_YAW_DEFAULT_ZERO_DEG 97.0752f
-
-// 320 rpm 对应每秒 1920 度，90 ms 内的最大位移小于半圈，可唯一展开编码器角度
-#define GIMBAL_YAW_POSITION_MAX_SAMPLE_GAP_US 90000U
+#include "component/user_math.h"
 
 /*
- * 正弦测试参数来自本次跟随实验方案，角度单位为度，相位角速度单位为 rad/s
- * 中心 180 度、振幅 30 度使目标保持在 150 至 210 度，前馈峰值为 π rad/s
- * 2π 用于周期归一化，避免长时间累计相位导致浮点分辨率下降
+ * 云台模块换算与保护常量：
+ * - GIMBAL_RPM_TO_RAD_S：rpm 转 rad/s，每分钟 60 秒、每圈 2π 弧度
+ * - GIMBAL_FULL_TURN_DEG：单圈角度，单位度
+ * - GIMBAL_MAX_PERIOD_S：允许参与控制的最大周期，单位 s
+ * - GIMBAL_RAW_SPEED_MIN_RPM、GIMBAL_RAW_SPEED_MAX_RPM：RM 电机有符号 16 位转速反馈范围，单位 rpm
+ * - GIMBAL_MAX_GAIN：PID 增益合法上限，用于拒绝调试器误写的异常值
  */
-#define GIMBAL_YAW_SINE_CENTER_DEG 180.0f
-#define GIMBAL_YAW_SINE_AMPLITUDE_DEG 30.0f
-#define GIMBAL_YAW_SINE_OMEGA_RAD_S 6.0f
-#define GIMBAL_TWO_PI 6.28318530718f
+#define GIMBAL_RPM_TO_RAD_S (0.10471975512f)
+#define GIMBAL_FULL_TURN_DEG (360.0f)
+#define GIMBAL_MAX_PERIOD_S (0.1f)
+#define GIMBAL_RAW_SPEED_MIN_RPM (-32768.0f)
+#define GIMBAL_RAW_SPEED_MAX_RPM (32767.0f)
+#define GIMBAL_MAX_GAIN (1000.0f)
 
-volatile GimbalYawSpeed_t gimbal_yaw_speed =
-{
-    .kp = 0.06f,
-    .ki = 0.177f,
-    .kd = 0.0f,
-    .target_rad_s = 0.0f,
-    .actual_rad_s = 0.0f
-};
-
-volatile GimbalYawAngle_t gimbal_yaw_angle =
-{
-    .kp = 0.0f,
-    .ki = 0.0f,
-    .kd = 0.0f,
-    .target_deg = 0.0f,
-    .actual_deg = NAN,
-    .enabled = false
-};
-
-// 已标定的机械零点随固件加载，反馈失效只丢弃连续位置，采样请求由云台任务单次消费
-volatile float gimbal_yaw_zero_deg = GIMBAL_YAW_DEFAULT_ZERO_DEG;
-volatile bool gimbal_yaw_zero_capture = false;
-volatile float gimbal_yaw_encoder_deg = NAN;
-
-// 测试默认关闭，前馈开关仅在测试启用后生效，观测值由控制任务每周期刷新
-volatile bool gimbal_yaw_sine_test_enabled = false;
-volatile bool gimbal_yaw_sine_feedforward_enabled = true;
-volatile float gimbal_yaw_feedforward_rad_s = 0.0f;
-
-// 测试待机时相位归零，运行时按实际周期推进，异常入口统一回到待机
-typedef enum
-{
-    GIMBAL_YAW_SINE_IDLE = 0,
-    GIMBAL_YAW_SINE_RUNNING
-} GimbalYawSineState_t;
-
-static GimbalYawSineState_t yaw_sine_state;
-static float yaw_sine_phase_rad;
-
-// 等待标定时无有效机械坐标，就绪时采用已校验的固定偏置
-typedef enum
-{
-    GIMBAL_YAW_ZERO_WAITING = 0,
-    GIMBAL_YAW_ZERO_READY
-} GimbalYawZeroState_t;
-
-static GimbalYawZeroState_t yaw_zero_state;
-static float yaw_zero_applied_deg = NAN;
-static bool yaw_position_initialized;
-static float yaw_position_deg = NAN;
-static float yaw_position_last_encoder_deg = NAN;
-static uint64_t yaw_position_last_feedback_time_us = UINT64_MAX;
-
-/* 控制器未初始化时禁止输出，待机时清空历史量，运行入口使用当前反馈预置微分 */
-typedef enum
-{
-    GIMBAL_YAW_UNINITIALIZED = 0,
-    GIMBAL_YAW_READY,
-    GIMBAL_YAW_RUNNING
-} GimbalYawState_t;
-
-static GimbalYawState_t yaw_state;
-static KPID_t yaw_pid;
-static KPID_Params_t yaw_pid_params;
-
-// 角度外环独立保存状态与历史，由同一个调用任务串行初始化、使能和计算
-static GimbalYawState_t yaw_angle_state;
-static KPID_t yaw_angle_pid;
-
-// 反馈缓存与邮箱句柄由云台模块独占使用，邮箱对象仍由系统初始化入口统一管理
-static MOTOR_RM_Feedback_t yaw_feedback;
-static uint64_t yaw_feedback_time_us = UINT64_MAX;
-static osMessageQueueId_t yaw_feedback_queue;
-static osMessageQueueId_t yaw_current_queue;
-
-// 串级外环使用模块内常驻参数，角度误差按连续线性位置计算，速度限幅与内环一致
-static KPID_Params_t yaw_angle_params =
-{
-    .k = 1.0f,
-    .p = 0.0f,
-    .i = 0.0f,
-    .d = 0.0f,
-    .i_limit = 0.0f,
-    .out_limit = GIMBAL_YAW_SPEED_LIMIT_RAD_S,
-    .d_cutoff_freq = 0.0f,
-    .range = 0.0f
-};
+static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
+static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
+static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
+static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz);
+static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
+static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
+                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us);
+static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
+static void Gimbal_EnterRunning(Gimbal_Axis_t *axis);
+static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
+static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
+                           const Gimbal_AxisCommand_t *command, float period_s);
+static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
+                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s);
 
 /**
- * @brief 根据测试开关和控制有效性生成同一相位的正弦目标及解析角速度前馈
+ * @brief 复制配置并初始化两轴控制器，初始化后两轴处于 RELAX
  *
- * @param[in] control_valid 控制器、反馈、零点、增益和周期均有效且允许控制时为 true
- * @param[in] period_s 实际控制间隔，单位秒，由调用方完成合法性校验
- * @param[in,out] target_deg 目标角度，单位度，测试运行时替换并发布到调试区
- * @param[in,out] feedforward_rad_s 目标角速度前馈，单位 rad/s，测试运行时替换
- * @return 正常返回 true，非法测试状态返回 false 并禁止控制
+ * @param[out] gimbal 云台实例
+ * @param[in] config 云台配置，内容被复制到实例
+ * @param[in] frequency_hz 控制频率，单位 Hz，范围 10 至 2000
+ * @return 成功返回 0，参数非法或 PID 初始化失败返回 -1
  */
-static bool Gimbal_YawSineUpdate(bool control_valid, float period_s, float *target_deg, float *feedforward_rad_s)
+int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float frequency_hz)
 {
-    // 待机或异常时不产生轨迹，保留最后角度供普通定点控制使用
-    if (!gimbal_yaw_sine_test_enabled || !control_valid)
-    {
-        yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
-        yaw_sine_phase_rad = 0.0f;
-        return true;
-    }
-
-    // 首次运行从中心位置开始，非法状态强制停用，恢复需要人工重新使能
-    switch (yaw_sine_state)
-    {
-        case GIMBAL_YAW_SINE_IDLE:
-            yaw_sine_phase_rad = 0.0f;
-            yaw_sine_state = GIMBAL_YAW_SINE_RUNNING;
-            break;
-
-        case GIMBAL_YAW_SINE_RUNNING:
-            yaw_sine_phase_rad = fmodf(yaw_sine_phase_rad + GIMBAL_YAW_SINE_OMEGA_RAD_S * period_s, GIMBAL_TWO_PI);
-            break;
-
-        default:
-            yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
-            yaw_sine_phase_rad = 0.0f;
-            gimbal_yaw_sine_test_enabled = false;
-            gimbal_yaw_angle.enabled = false;
-            *feedforward_rad_s = 0.0f;
-            return false;
-    }
-
-    // 用同一相位计算角度与其解析导数，前馈开关不重置轨迹以便连续对比
-    *target_deg = GIMBAL_YAW_SINE_CENTER_DEG + GIMBAL_YAW_SINE_AMPLITUDE_DEG * sinf(yaw_sine_phase_rad);
-    *feedforward_rad_s = gimbal_yaw_sine_feedforward_enabled ?
-        GIMBAL_YAW_SINE_AMPLITUDE_DEG * GIMBAL_DEG_TO_RAD * GIMBAL_YAW_SINE_OMEGA_RAD_S *
-        cosf(yaw_sine_phase_rad) : 0.0f;
-    gimbal_yaw_angle.target_deg = *target_deg;
-    return true;
-}
-
-/**
- * @brief 清空控制历史并回到待机状态，供禁用与输入异常路径共用
- *
- * @return 固定返回零电流，单位 A
- */
-static float Gimbal_YawSpeedStop(void)
-{
-    if (yaw_state != GIMBAL_YAW_UNINITIALIZED)
-    {
-        yaw_state = PID_Reset(&yaw_pid) == 0 ? GIMBAL_YAW_READY : GIMBAL_YAW_UNINITIALIZED;
-    }
-    return 0.0f;
-}
-
-/**
- * @brief 将有限角度环绕到单圈区间，避免跨零点与多圈目标造成误差跳变
- *
- * @param[in] angle_deg 有限角度，单位度
- * @return 单圈角度，单位度，范围 [0, 360)
- */
-static float Gimbal_WrapDegrees(float angle_deg)
-{
-    float wrapped_deg = fmodf(angle_deg, 360.0f);
-    if (wrapped_deg < 0.0f)
-    {
-        wrapped_deg += 360.0f;
-    }
-    // 负的极小角度加整圈后可能舍入为 360 度，统一归到零点
-    return wrapped_deg >= 360.0f ? 0.0f : wrapped_deg;
-}
-
-/**
- * @brief 清空编码器展开状态，零点改变或连续位置失效后重新建立参考
- *
- * @return 无返回值
- */
-static void Gimbal_YawPositionReset(void)
-{
-    yaw_position_initialized = false;
-    yaw_position_deg = NAN;
-    yaw_position_last_encoder_deg = NAN;
-    yaw_position_last_feedback_time_us = UINT64_MAX;
-}
-
-/**
- * @brief 按相邻单圈反馈展开连续机械位置，阻止跨编码器零点时角度跳变
- *
- * @param[in] feedback_deg 原始编码器单圈角度，单位度，范围 [0, 360)
- * @param[in] feedback_time_us 当前有效反馈时间，单位微秒，须严格递增或与缓存帧相同
- * @param[out] actual_deg 相对机械零点的连续位置，单位度
- * @return 成功返回 true；时间倒退、采样间隔过长、半圈歧义或输入非法时返回 false
- */
-static bool Gimbal_YawPositionUpdate(float feedback_deg, uint64_t feedback_time_us, float *actual_deg)
-{
-    // 校验反馈范围和输出地址，避免错误数据污染位置状态
-    if (actual_deg == NULL || !isfinite(feedback_deg) || feedback_deg < 0.0f || feedback_deg >= 360.0f ||
-        feedback_time_us == UINT64_MAX || !isfinite(yaw_zero_applied_deg))
-    {
-        return false;
-    }
-
-    // 首次有效反馈以当前机械零点建立连续坐标
-    if (!yaw_position_initialized)
-    {
-        yaw_position_deg = Gimbal_WrapDegrees(feedback_deg - yaw_zero_applied_deg);
-        yaw_position_last_encoder_deg = feedback_deg;
-        yaw_position_last_feedback_time_us = feedback_time_us;
-        yaw_position_initialized = true;
-        *actual_deg = yaw_position_deg;
-        return true;
-    }
-
-    // 邮箱仍保留同一帧时复用已展开的位置，不重复累计编码器角度
-    if (feedback_time_us == yaw_position_last_feedback_time_us)
-    {
-        if (feedback_deg != yaw_position_last_encoder_deg)
-        {
-            return false;
-        }
-        *actual_deg = yaw_position_deg;
-        return true;
-    }
-
-    // 检查时间顺序与采样间隔，保证单圈差值的转动方向可唯一判断
-    if (feedback_time_us < yaw_position_last_feedback_time_us ||
-        feedback_time_us - yaw_position_last_feedback_time_us > GIMBAL_YAW_POSITION_MAX_SAMPLE_GAP_US)
-    {
-        return false;
-    }
-
-    // 将单圈角度差转换为连续转动增量
-    float delta_deg = feedback_deg - yaw_position_last_encoder_deg;
-    if (delta_deg > 180.0f)
-    {
-        delta_deg -= 360.0f;
-    }
-    else if (delta_deg < -180.0f)
-    {
-        delta_deg += 360.0f;
-    }
-
-    // 半圈差值方向不确定时拒绝继续使用旧位置坐标
-    if (delta_deg <= -180.0f || delta_deg >= 180.0f)
-    {
-        return false;
-    }
-
-    // 更新连续位置和本帧基准，供角度环使用
-    yaw_position_deg += delta_deg;
-    if (!isfinite(yaw_position_deg))
-    {
-        return false;
-    }
-    yaw_position_last_encoder_deg = feedback_deg;
-    yaw_position_last_feedback_time_us = feedback_time_us;
-    *actual_deg = yaw_position_deg;
-    return true;
-}
-
-/**
- * @brief 消费人工标定事件并集中维护机械零点状态，坐标改变时强制停机
- *
- * @param[in] feedback_valid 当前编码器角度、转速与反馈时效是否有效
- * @param[in] feedback_deg 当前原始编码器单圈角度，单位度
- * @return 固定机械零点有效时返回 true，等待标定或非法状态时返回 false
- */
-static bool Gimbal_YawZeroUpdate(bool feedback_valid, float feedback_deg)
-{
-    // 停机完成后才允许采样，失败请求当次清除，防止稍后意外修改零点
-    if (gimbal_yaw_zero_capture)
-    {
-        gimbal_yaw_zero_capture = false;
-        if (feedback_valid && !gimbal_yaw_angle.enabled &&
-            yaw_state == GIMBAL_YAW_READY && yaw_angle_state == GIMBAL_YAW_READY)
-        {
-            gimbal_yaw_zero_deg = feedback_deg;
-        }
-    }
-
-    // 对调试输入只读取一次，控制计算使用模块保存的已校验偏置
-    float configured_deg = gimbal_yaw_zero_deg;
-    const bool zero_valid = isfinite(configured_deg) && configured_deg >= 0.0f && configured_deg < 360.0f;
-    GimbalYawZeroState_t next_state;
-    switch (yaw_zero_state)
-    {
-        case GIMBAL_YAW_ZERO_WAITING:
-        case GIMBAL_YAW_ZERO_READY:
-            next_state = zero_valid ? GIMBAL_YAW_ZERO_READY : GIMBAL_YAW_ZERO_WAITING;
-            break;
-
-        default:
-            next_state = GIMBAL_YAW_ZERO_WAITING;
-            configured_deg = NAN;
-            gimbal_yaw_zero_deg = NAN;
-            break;
-    }
-
-    // 零点改变或失效时退出旧坐标，清除两环历史并要求人工重新使能
-    if (next_state != yaw_zero_state ||
-        (next_state == GIMBAL_YAW_ZERO_READY && configured_deg != yaw_zero_applied_deg))
-    {
-        gimbal_yaw_angle.enabled = false;
-        Gimbal_YawAngleSetEnabled(false);
-        Gimbal_YawSpeedStop();
-        Gimbal_YawPositionReset();
-        yaw_zero_applied_deg = next_state == GIMBAL_YAW_ZERO_READY ? configured_deg : NAN;
-        yaw_zero_state = next_state;
-    }
-    if (yaw_zero_state != GIMBAL_YAW_ZERO_READY)
-    {
-        gimbal_yaw_angle.enabled = false;
-        return false;
-    }
-    return true;
-}
-
-/**
- * @brief 初始化 yaw 串级控制器并清除两环上次运行历史
- *
- * @param[in] sample_frequency_hz 控制频率，单位 Hz，范围为 10 至 2000
- * @return 成功返回 0，输入非法或控制器初始化失败返回 -1
- */
-int8_t Gimbal_Init(float sample_frequency_hz)
-{
-    // 初始化失败时保持未就绪，禁止沿用之前的控制历史
-    yaw_state = GIMBAL_YAW_UNINITIALIZED;
-    yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
-    yaw_feedback_time_us = UINT64_MAX;
-    yaw_zero_state = GIMBAL_YAW_ZERO_WAITING;
-    yaw_zero_applied_deg = NAN;
-    Gimbal_YawPositionReset();
-    gimbal_yaw_zero_capture = false;
-    gimbal_yaw_encoder_deg = NAN;
-    gimbal_yaw_angle.actual_deg = NAN;
-    gimbal_yaw_angle.enabled = false;
-    gimbal_yaw_speed.target_rad_s = 0.0f;
-    gimbal_yaw_feedforward_rad_s = 0.0f;
-    gimbal_yaw_sine_test_enabled = false;
-    yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
-    yaw_sine_phase_rad = 0.0f;
-    if (!isfinite(sample_frequency_hz) || sample_frequency_hz < 10.0f || sample_frequency_hz > 2000.0f)
+    if (gimbal == NULL || config == NULL)
     {
         return -1;
     }
 
-    // 使用并行 PID，微分作用于反馈，当前关闭微分低通以便后续单独调参
-    yaw_pid_params.k = 1.0f;
-    yaw_pid_params.p = 0.0f;
-    yaw_pid_params.i = 0.0f;
-    yaw_pid_params.d = 0.0f;
-    yaw_pid_params.i_limit = 0.0f;
-    yaw_pid_params.out_limit = GIMBAL_YAW_CURRENT_LIMIT_A;
-    yaw_pid_params.d_cutoff_freq = 0.0f;
-    yaw_pid_params.range = 0.0f;
-    if (PID_Init(&yaw_pid, KPID_MODE_CALC_D, sample_frequency_hz, &yaw_pid_params) != 0)
+    // 先复制配置并清除全部运行数据，任一失败路径都保持两轴零输出
+    *gimbal = (Gimbal_t)
+    {
+        .config = *config,
+        .mode = GIMBAL_MODE_RELAX,
+    };
+    Gimbal_ClearFeedback(&gimbal->yaw);
+    Gimbal_ClearFeedback(&gimbal->pitch);
+    if (!isfinite(frequency_hz) || frequency_hz < 10.0f || frequency_hz > 2000.0f ||
+        !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f)
     {
         return -1;
     }
 
-    // 外环参数由模块常驻保存，初始化后必须人工使能才允许串级运行
-    if (Gimbal_YawAngleInit(sample_frequency_hz, &yaw_angle_params) != 0)
+    // 两轴各自校验配置并初始化串级 PID
+    if (Gimbal_InitAxis(&gimbal->yaw, &gimbal->config.yaw, frequency_hz) != 0 ||
+        Gimbal_InitAxis(&gimbal->pitch, &gimbal->config.pitch, frequency_hz) != 0)
     {
         return -1;
     }
-    yaw_state = GIMBAL_YAW_READY;
-    // 在初始化阶段采纳固定零点，避免首次控制周期撤销随后写入的人工使能
-    Gimbal_YawZeroUpdate(false, NAN);
     return 0;
 }
 
 /**
- * @brief 保存系统创建的邮箱句柄，启动时丢弃模块缓存的旧反馈时效
+ * @brief 接收两轴最新反馈帧，更新角度、转速和反馈时效
  *
- * @param[in] feedback_queue 有效的最新编码器反馈邮箱，元素为 MOTOR_RM_Feedback_t
- * @param[in] current_queue 有效的最新电流命令邮箱，元素为 float，单位 A
- * @return 无返回值，不创建或销毁邮箱，仅在启动或停止后绑定
+ * @param[in,out] gimbal 云台实例
+ * @param[in] yaw_motor yaw 新反馈帧，本周期没有新帧时传 NULL
+ * @param[in] pitch_motor pitch 新反馈帧，本周期没有新帧时传 NULL
+ * @param[in] now_us 当前单调时刻，单位微秒
+ * @return 无返回值
  */
-void Gimbal_BindQueues(osMessageQueueId_t feedback_queue, osMessageQueueId_t current_queue)
+void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
+                           const MOTOR_RM_Feedback_t *pitch_motor, uint64_t now_us)
 {
-    yaw_feedback_queue = feedback_queue;
-    yaw_current_queue = current_queue;
-    yaw_feedback_time_us = UINT64_MAX;
+    if (gimbal == NULL)
+    {
+        return;
+    }
+
+    // 超时配置非法时无法判断时效，两轴反馈全部视为失联
+    const float timeout_s = gimbal->config.feedback_timeout_s;
+    const uint64_t timeout_us = isfinite(timeout_s) && timeout_s > 0.0f ? (uint64_t)(timeout_s * 1.0e6f) : 0U;
+    Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->config.yaw, yaw_motor, now_us, timeout_us);
+    Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->config.pitch, pitch_motor, now_us, timeout_us);
 }
 
 /**
- * @brief 消费最新反馈并发布串级控制电流，将数据处理与邮箱交互集中在业务模块
+ * @brief 根据命令更新两轴状态机并计算输出电流
  *
- * @param[in] period_s 实际控制间隔，单位秒，由任务调度提供
- * @param[in] yaw_rate_feedback_rad_s 外部偏航角速度，单位 rad/s，正方向须与角度增大方向一致
- * @param[in] yaw_rate_feedback_valid 外部角速度有效且未过期时为 true，false 时使用编码器换算值
- * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭
- * @return 无返回值，发布失败时清空两环历史，CAN 任务按空邮箱路径归零
+ * @param[in,out] gimbal 云台实例
+ * @param[in] command 云台命令，为 NULL 时按 RELAX 处理
+ * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
+ * @return 无返回值
  */
-void Gimbal_Update(float period_s, float yaw_rate_feedback_rad_s, bool yaw_rate_feedback_valid,
-                   float yaw_rate_feedforward_rad_s)
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
 {
-    // 读取最新帧并恢复完整微秒时刻，空邮箱保留缓存，读取错误使反馈立即失效
-    const uint64_t now_us = BSP_TIME_Get();
-    const osStatus_t status = osMessageQueueGet(yaw_feedback_queue, &yaw_feedback, NULL, 0U);
-    if (status == osOK)
+    if (gimbal == NULL)
     {
-        const uint32_t age_us = (uint32_t)now_us - yaw_feedback.last_update_time;
-        yaw_feedback_time_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
-    }
-    else if (status != osErrorResource)
-    {
-        yaw_feedback_time_us = UINT64_MAX;
+        return;
     }
 
-    // 编码器角度由弧度转为度后进入公开接口，PID 内部继续使用弧度
-    const float feedback_deg = yaw_feedback.rotor_single_angle * GIMBAL_RAD_TO_DEG;
-    const float current_a = Gimbal_YawRunAt(feedback_deg, yaw_feedback.angle_valid, yaw_feedback.rotor_speed,
-                                           yaw_rate_feedback_rad_s, yaw_rate_feedback_valid, yaw_feedback_time_us,
-                                           now_us, true, period_s, yaw_rate_feedforward_rad_s);
-
-    // 电流邮箱只保留最新命令，发布失败时同步停止两环，避免下周期沿用积分
-    if (osMessageQueueReset(yaw_current_queue) != osOK ||
-        osMessageQueuePut(yaw_current_queue, &current_a, 0U, 0U) != osOK)
+    // 空命令按 RELAX 处理，保证调用方异常时两轴零输出
+    const Gimbal_Command_t relax_command =
     {
-        Gimbal_YawRunAt(feedback_deg, yaw_feedback.angle_valid, yaw_feedback.rotor_speed,
-                       yaw_rate_feedback_rad_s, yaw_rate_feedback_valid, yaw_feedback_time_us,
-                       now_us, false, period_s, yaw_rate_feedforward_rad_s);
-    }
+        .mode = GIMBAL_MODE_RELAX,
+    };
+    const Gimbal_Command_t *active_command = command != NULL ? command : &relax_command;
+    const Gimbal_Mode_t mode = active_command->mode;
+    const bool mode_changed = mode != gimbal->mode;
+
+    // 两轴共用模式，各自独立推进状态机
+    Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s);
+    Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &active_command->pitch, period_s);
+    gimbal->mode = mode;
 }
 
 /**
- * @brief 将 yaw 反馈转换为角速度并执行一次速度闭环计算
+ * @brief 导出两轴电机方向的输出电流
  *
- * @param[in] feedback_rpm 驱动原始转子速度，单位 rpm，有效范围为有符号 16 位反馈范围
- * @param[in] feedback_age_ms 距最近有效帧的时间，单位 ms，尚无反馈时传入 UINT32_MAX
- * @param[in] enabled 是否允许速度控制，false 时输出零电流
- * @param[in] period_s 控制间隔，单位 s，范围为初始化周期至 0.1 s
- * @return 转子侧目标电流，单位 A，限幅由 GIMBAL_YAW_CURRENT_LIMIT_A 指定，异常路径返回 0
+ * @param[in] gimbal 云台实例
+ * @param[out] output 云台输出
+ * @return 无返回值
  */
-float Gimbal_YawSpeedRun(float feedback_rpm, uint32_t feedback_age_ms, bool enabled, float period_s)
+void Gimbal_DumpOutput(const Gimbal_t *gimbal, Gimbal_Output_t *output)
 {
-    // 帧过期或原始速度非法时明确标记反馈无效，避免调试区显示旧速度
-    const bool feedback_valid = isfinite(feedback_rpm) && feedback_rpm >= -32768.0f &&
-                                feedback_rpm <= 32767.0f &&
-                                feedback_age_ms <= GIMBAL_YAW_FEEDBACK_TIMEOUT_MS;
-    // 标准反馈单位 rpm，按每分钟 60 秒和每圈 2π 弧度转换为 rad/s
-    const float actual_rad_s = feedback_valid ? feedback_rpm * 0.10471975512f : NAN;
-    gimbal_yaw_speed.actual_rad_s = actual_rad_s;
-
-    // 每周期读取一次调试输入，实际速度始终来自反馈，不能被调试器写值替代
-    const float kp = gimbal_yaw_speed.kp;
-    const float ki = gimbal_yaw_speed.ki;
-    const float kd = gimbal_yaw_speed.kd;
-    const float requested_rad_s = gimbal_yaw_speed.target_rad_s;
-    if (!enabled || !feedback_valid || !isfinite(period_s) || period_s <= 0.0f ||
-        period_s > GIMBAL_YAW_MAX_PERIOD_S)
+    if (output == NULL)
     {
-        return Gimbal_YawSpeedStop();
+        return;
     }
-    if (!isfinite(kp) || !isfinite(ki) || !isfinite(kd) || !isfinite(requested_rad_s) ||
-        kp < 0.0f || ki < 0.0f || kd < 0.0f || kp > 1000.0f || ki > 1000.0f || kd > 1000.0f)
+    *output = (Gimbal_Output_t)
     {
-        return Gimbal_YawSpeedStop();
-    }
-    if (yaw_state == GIMBAL_YAW_UNINITIALIZED || period_s < yaw_pid.dt_min)
+        0,
+    };
+    if (gimbal == NULL)
     {
-        return Gimbal_YawSpeedStop();
+        return;
     }
 
-    // 增益改变时清空旧积分与微分历史，避免旧参数留下的积分影响当前输出
-    if (kp != yaw_pid_params.p || ki != yaw_pid_params.i || kd != yaw_pid_params.d)
-    {
-        yaw_pid_params.p = kp;
-        yaw_pid_params.i = ki;
-        yaw_pid_params.d = kd;
-        yaw_pid_params.i_limit = ki > 0.000001f ? GIMBAL_YAW_CURRENT_LIMIT_A / ki : 0.0f;
-        Gimbal_YawSpeedStop();
-    }
-
-    // 待机进入运行时以当前反馈预置微分，停止和异常恢复均复用这一入口
-    switch (yaw_state)
-    {
-        case GIMBAL_YAW_READY:
-            yaw_pid.last.k_fb = actual_rad_s;
-            LowPassFilter2p_Reset(&yaw_pid.dfilter, actual_rad_s);
-            yaw_state = GIMBAL_YAW_RUNNING;
-            break;
-
-        case GIMBAL_YAW_RUNNING:
-            break;
-
-        case GIMBAL_YAW_UNINITIALIZED:
-        default:
-            yaw_state = GIMBAL_YAW_UNINITIALIZED;
-            return 0.0f;
-    }
-
-    // 保留调试区请求值，计算时单独限幅目标与电流，输出留给通信任务统一发送
-    const float target_rad_s = fmaxf(-GIMBAL_YAW_SPEED_LIMIT_RAD_S,
-                                    fminf(requested_rad_s, GIMBAL_YAW_SPEED_LIMIT_RAD_S));
-    const float current_a = PID_Calc(&yaw_pid, target_rad_s, actual_rad_s, 0.0f, period_s);
-    if (!isfinite(current_a))
-    {
-        return Gimbal_YawSpeedStop();
-    }
-    return fmaxf(-GIMBAL_YAW_CURRENT_LIMIT_A, fminf(current_a, GIMBAL_YAW_CURRENT_LIMIT_A));
+    // 模块内电流以角度增大方向为正，反装轴在输出时换回电机方向
+    const float yaw_current_a = gimbal->yaw.output_current_a;
+    const float pitch_current_a = gimbal->pitch.output_current_a;
+    output->yaw_current_a = gimbal->config.yaw.reversed ? -yaw_current_a : yaw_current_a;
+    output->pitch_current_a = gimbal->config.pitch.reversed ? -pitch_current_a : pitch_current_a;
 }
 
 /**
- * @brief 使用完整时间戳校验反馈，防止计数回绕和毫秒截断重新放行过期反馈
+ * @brief 校验单个 PID 参数是否可安全参与计算
  *
- * @param[in] feedback_rpm 原始转子转速，单位 rpm，无反馈时传入非数值
- * @param[in] feedback_time_us 最近反馈时刻，单位微秒，UINT64_MAX 表示无反馈
- * @param[in] now_us 当前单调时间，单位微秒
- * @param[in] enabled 是否允许控制，false 时返回零并清空控制历史
- * @param[in] period_s 控制间隔，单位秒，范围为初始化周期至 0.1 秒
- * @return 目标电流，单位 A，反馈无效或时间异常时返回零
+ * @param[in] pid PID 参数
+ * @return 增益、限幅和截止频率均有限且在合法范围内时返回 true
  */
-float Gimbal_YawSpeedRunAt(float feedback_rpm, uint64_t feedback_time_us, uint64_t now_us,
-                         bool enabled, float period_s)
+static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid)
 {
-    // 先按微秒判断边界，再转换接口单位，避免超时不足一毫秒时被截断为合法值
-    uint32_t feedback_age_ms = UINT32_MAX;
-    if (feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
-        now_us - feedback_time_us <= (uint64_t)GIMBAL_YAW_FEEDBACK_TIMEOUT_MS * 1000U)
-    {
-        feedback_age_ms = (uint32_t)((now_us - feedback_time_us) / 1000U);
-    }
-    return Gimbal_YawSpeedRun(feedback_rpm, feedback_age_ms, enabled, period_s);
+    const bool gains_valid = isfinite(pid->k) && isfinite(pid->p) && isfinite(pid->i) && isfinite(pid->d) &&
+                             pid->k >= 0.0f && pid->p >= 0.0f && pid->i >= 0.0f && pid->d >= 0.0f &&
+                             pid->k <= GIMBAL_MAX_GAIN && pid->p <= GIMBAL_MAX_GAIN &&
+                             pid->i <= GIMBAL_MAX_GAIN && pid->d <= GIMBAL_MAX_GAIN;
+    // 输出限幅为零时底层 PID 永不累计积分，连续线性角度要求不启用环绕
+    return gains_valid && isfinite(pid->i_limit) && pid->i_limit >= 0.0f && isfinite(pid->out_limit) &&
+           pid->out_limit > 0.0f && isfinite(pid->d_cutoff_freq) && pid->range == 0.0f;
 }
 
 /**
- * @brief 将编码器角度展开为连续机械位置，再执行角度与速度串级控制
+ * @brief 校验单轴配置是否可安全参与控制
  *
- * @param[in] feedback_deg 原始编码器单圈角度，单位度，范围 [0, 360)，未减机械零点
- * @param[in] angle_valid 电机反馈中的角度跟踪有效标志，false 时停止并要求确认位置后人工重新使能
- * @param[in] feedback_rpm 编码器转子转速，单位 rpm，有效范围为有符号 16 位反馈范围
- * @param[in] yaw_rate_feedback_rad_s 外部偏航角速度，单位 rad/s，正方向须与角度增大方向一致
- * @param[in] yaw_rate_feedback_valid 外部角速度有效且未过期时为 true，false 时由反馈转速换算
- * @param[in] feedback_time_us 最近有效反馈的完整微秒时刻，无反馈为 UINT64_MAX
- * @param[in] now_us 当前完整单调时刻，单位微秒
- * @param[in] enabled 本次调用是否允许控制，false 时停止两环并返回零电流
- * @param[in] period_s 实际控制间隔，单位秒，须在初始化周期至 0.1 秒之间
- * @param[in] yaw_rate_feedforward_rad_s 目标角速度前馈，单位 rad/s，须为有限值，零表示关闭
- * @return 速度内环生成的转子侧电流，单位 A，未标定、禁用或输入无效时为零
+ * @param[in] config 单轴配置
+ * @return 零点、角度范围、限幅和两环参数均合法时返回 true
  */
-float Gimbal_YawRunAt(float feedback_deg, bool angle_valid, float feedback_rpm, float yaw_rate_feedback_rad_s,
-                     bool yaw_rate_feedback_valid, uint64_t feedback_time_us, uint64_t now_us, bool enabled,
-                     float period_s, float yaw_rate_feedforward_rad_s)
+static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config)
 {
-    // 沿用速度控制的反馈时效和原始转速范围，阻止外环在同一无效帧上继续积分
-    const bool feedback_valid = angle_valid && feedback_time_us != UINT64_MAX && now_us >= feedback_time_us &&
-        now_us - feedback_time_us <= GIMBAL_YAW_POSITION_MAX_SAMPLE_GAP_US &&
-        isfinite(feedback_deg) && feedback_deg >= 0.0f && feedback_deg < 360.0f &&
-        isfinite(feedback_rpm) && feedback_rpm >= -32768.0f && feedback_rpm <= 32767.0f;
-    gimbal_yaw_encoder_deg = feedback_valid ? feedback_deg : NAN;
+    return isfinite(config->zero_encoder_deg) && config->zero_encoder_deg >= 0.0f &&
+           config->zero_encoder_deg < GIMBAL_FULL_TURN_DEG && isfinite(config->min_angle_deg) &&
+           isfinite(config->max_angle_deg) && config->min_angle_deg <= config->max_angle_deg &&
+           isfinite(config->max_speed_rad_s) && config->max_speed_rad_s > 0.0f &&
+           isfinite(config->max_current_a) && config->max_current_a > 0.0f &&
+           Gimbal_IsPidConfigValid(&config->angle_pid) && Gimbal_IsPidConfigValid(&config->speed_pid);
+}
 
-    // 先采纳零点变化，再用相邻有效反馈构建线性机械位置
-    if (!angle_valid)
+/**
+ * @brief 判断配置中的 PID 参数是否与实际采用的副本不同
+ *
+ * @param[in] config 配置中的 PID 参数
+ * @param[in] applied 实际采用的 PID 参数副本
+ * @return 影响输出或积分的任一字段不同时返回 true
+ */
+static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied)
+{
+    return config->k != applied->k || config->p != applied->p || config->i != applied->i ||
+           config->d != applied->d || config->i_limit != applied->i_limit || config->out_limit != applied->out_limit;
+}
+
+/**
+ * @brief 校验单轴配置并初始化串级 PID
+ *
+ * @param[out] axis 单轴运行数据
+ * @param[in] config 单轴配置
+ * @param[in] frequency_hz 控制频率，单位 Hz
+ * @return 成功返回 0，配置非法或 PID 初始化失败返回 -1
+ */
+static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz)
+{
+    if (!Gimbal_IsAxisConfigValid(config))
     {
-        gimbal_yaw_angle.enabled = false;
+        return -1;
     }
-    const bool zero_ready = Gimbal_YawZeroUpdate(feedback_valid, feedback_deg);
-    const bool position_was_initialized = yaw_position_initialized;
-    float actual_deg = NAN;
-    bool position_valid = feedback_valid && zero_ready &&
-        Gimbal_YawPositionUpdate(feedback_deg, feedback_time_us, &actual_deg);
-    // 反馈连续性丢失时停机并丢弃圈数，保留固定零点，恢复后须确认位置并人工重新使能
-    if (zero_ready && position_was_initialized && (!feedback_valid || !position_valid))
+
+    // PID 指向实例内的参数副本，调试器修改配置后由每周期比较决定何时同步
+    axis->applied_zero_encoder_deg = config->zero_encoder_deg;
+    axis->applied_angle_pid = config->angle_pid;
+    axis->applied_speed_pid = config->speed_pid;
+
+    // 角度环微分直接使用实测角速度，速度环微分由反馈差分计算
+    if (PID_Init(&axis->angle_pid, KPID_MODE_SET_D, frequency_hz, &axis->applied_angle_pid) != 0 ||
+        PID_Init(&axis->speed_pid, KPID_MODE_CALC_D, frequency_hz, &axis->applied_speed_pid) != 0)
     {
-        gimbal_yaw_angle.enabled = false;
-        Gimbal_YawAngleSetEnabled(false);
-        Gimbal_YawSpeedStop();
-        Gimbal_YawPositionReset();
-        actual_deg = NAN;
-        position_valid = false;
+        return -1;
     }
-    gimbal_yaw_angle.actual_deg = actual_deg;
+    axis->state = GIMBAL_AXIS_RELAX;
+    return 0;
+}
 
-    // 校验反馈角速度、前馈、增益和周期，异常时不允许推进测试轨迹
-    const bool rate_input_valid = !yaw_rate_feedback_valid || isfinite(yaw_rate_feedback_rad_s);
-    float requested_deg = gimbal_yaw_angle.target_deg;
-    float feedforward_rad_s = yaw_rate_feedforward_rad_s;
-    const float kp = gimbal_yaw_angle.kp;
-    const float ki = gimbal_yaw_angle.ki;
-    const float kd = gimbal_yaw_angle.kd;
-    const bool gains_valid = isfinite(kp) && isfinite(ki) && isfinite(kd) &&
-        kp >= 0.0f && ki >= 0.0f && kd >= 0.0f && kp <= 1000.0f && ki <= 1000.0f && kd <= 1000.0f;
-    const bool control_valid = enabled && gimbal_yaw_angle.enabled && zero_ready && feedback_valid && position_valid &&
-        rate_input_valid && isfinite(feedforward_rad_s) && gains_valid &&
-        yaw_state != GIMBAL_YAW_UNINITIALIZED && yaw_angle_state != GIMBAL_YAW_UNINITIALIZED &&
-        isfinite(period_s) && period_s >= yaw_angle_pid.dt_min && period_s <= GIMBAL_YAW_MAX_PERIOD_S;
+/**
+ * @brief 将单轴反馈标记为失联并断开连续角
+ *
+ * @param[out] axis 单轴运行数据
+ * @return 无返回值
+ */
+static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
+{
+    axis->encoder_deg = NAN;
+    axis->angle_deg = NAN;
+    axis->speed_rad_s = NAN;
+    axis->feedback_time_us = UINT64_MAX;
+    AngleUnwrap_Reset(&axis->unwrap);
+}
 
-    // 测试模式统一生成角度与前馈，普通模式继续采用调用方输入和调试目标
-    const bool sine_valid = Gimbal_YawSineUpdate(control_valid, period_s, &requested_deg, &feedforward_rad_s);
-    bool running = control_valid && sine_valid && isfinite(requested_deg) &&
-        requested_deg >= 0.0f && requested_deg <= 360.0f;
-
-    // 每周期采纳全局调参，增益改变时清空旧外环历史，避免沿用旧积分
-    float target_rad_s = 0.0f;
-    if (running)
+/**
+ * @brief 校验单轴新反馈帧并换算角度、转速和连续角
+ *
+ * 新帧时间倒退、与上一帧间隔超时或展开歧义时只清除反馈，本周期角度为非数值，下一帧重新建立连续角
+ *
+ * @param[in,out] axis 单轴运行数据
+ * @param[in] config 单轴配置
+ * @param[in] motor 新反馈帧，本周期没有新帧时为 NULL
+ * @param[in] now_us 当前单调时刻，单位微秒
+ * @param[in] timeout_us 反馈最大间隔，单位微秒，为 0 时全部反馈视为失联
+ * @return 无返回值
+ */
+static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
+                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us)
+{
+    // 没有新帧时只检查旧帧时效，超时后清除反馈
+    if (motor == NULL)
     {
-        if (kp != yaw_angle_params.p || ki != yaw_angle_params.i || kd != yaw_angle_params.d)
+        if (axis->feedback_time_us == UINT64_MAX || now_us < axis->feedback_time_us ||
+            now_us - axis->feedback_time_us > timeout_us)
         {
-            yaw_angle_params.p = kp;
-            yaw_angle_params.i = ki;
-            yaw_angle_params.d = kd;
-            yaw_angle_params.i_limit = ki > 0.000001f ? GIMBAL_YAW_SPEED_LIMIT_RAD_S / ki : 0.0f;
-            if (PID_Reset(&yaw_angle_pid) != 0)
-            {
-                yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
-            }
+            Gimbal_ClearFeedback(axis);
         }
+        return;
     }
 
-    // 外环未就绪时同时阻止速度内环运行，防止仍在转动时产生非零制动电流
-    running = running && yaw_angle_state != GIMBAL_YAW_UNINITIALIZED;
-    Gimbal_YawAngleSetEnabled(running);
-    running = running && yaw_angle_state == GIMBAL_YAW_RUNNING;
-    if (running)
+    // 驱动只保存时间戳低 32 位，按与当前时刻的差值恢复完整微秒时刻
+    const uint32_t age_us = (uint32_t)now_us - motor->last_update_time;
+    const uint64_t frame_time_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
+    const float encoder_rad = motor->rotor_single_angle;
+    const float speed_rpm = motor->rotor_speed;
+    const bool frame_valid = motor->angle_valid && frame_time_us != UINT64_MAX && age_us <= timeout_us &&
+                             isfinite(encoder_rad) && encoder_rad >= 0.0f && encoder_rad < M_2PI &&
+                             isfinite(speed_rpm) && speed_rpm >= GIMBAL_RAW_SPEED_MIN_RPM &&
+                             speed_rpm <= GIMBAL_RAW_SPEED_MAX_RPM;
+    // 与上一帧时间倒退或间隔超时时无法保证转动小于半圈，必须断开连续角
+    const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
+                            frame_time_us - axis->feedback_time_us <= timeout_us;
+    if (!frame_valid || (axis->unwrap.has_reference && !continuous))
     {
-        // 有效外部角速度供外环反馈微分，未提供时按每圈 2π 弧度和每分钟 60 秒换算编码器转速
-        const float feedback_rad_s = yaw_rate_feedback_valid ? yaw_rate_feedback_rad_s : feedback_rpm * 0.10471975512f;
-        const float previous_integral = yaw_angle_pid.i;
-        const float correction_rad_s = Gimbal_YawAngleRun(requested_deg, actual_deg, feedback_rad_s, period_s);
+        Gimbal_ClearFeedback(axis);
+        return;
+    }
 
-        // 先限制前馈到可用速度范围，再与角度修正相加，避免有限大输入相加溢出
-        feedforward_rad_s = fmaxf(-GIMBAL_YAW_SPEED_LIMIT_RAD_S,
-                                  fminf(feedforward_rad_s, GIMBAL_YAW_SPEED_LIMIT_RAD_S));
-        const float combined_rad_s = correction_rad_s + feedforward_rad_s;
-        target_rad_s = fmaxf(-GIMBAL_YAW_SPEED_LIMIT_RAD_S, fminf(combined_rad_s, GIMBAL_YAW_SPEED_LIMIT_RAD_S));
+    // 反装轴先翻转角度和转速，使模块内统一以角度增大方向为正
+    const float raw_encoder_deg = AngleUnwrap_Wrap(encoder_rad * M_RAD2DEG_MULT, GIMBAL_FULL_TURN_DEG);
+    const float encoder_deg = config->reversed ?
+        AngleUnwrap_Wrap(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
+    const float speed_rad_s = speed_rpm * GIMBAL_RPM_TO_RAD_S;
+    axis->encoder_deg = encoder_deg;
+    axis->speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
+    axis->feedback_time_us = frame_time_us;
+
+    // 以当前采用的零点换算相对角，再按相邻帧展开为连续角
+    const float relative_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
+    float angle_deg = NAN;
+    if (!AngleUnwrap_Update(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
+    {
+        angle_deg = NAN;
+    }
+    axis->angle_deg = angle_deg;
+}
+
+/**
+ * @brief 校验单轴配置并同步零点和 PID 参数副本
+ *
+ * 零点改变时断开连续角，角度模式运行中的轴随之进入故障；PID 参数改变时清空积分，避免旧积分按新增益突变
+ *
+ * @param[in,out] axis 单轴运行数据
+ * @param[in] config 单轴配置
+ * @return 配置合法时返回 true，非法时不采纳任何修改并返回 false
+ */
+static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config)
+{
+    if (!Gimbal_IsAxisConfigValid(config))
+    {
+        return false;
+    }
+
+    // 零点改变后旧连续角坐标失效，下一帧以新零点重新建立
+    if (config->zero_encoder_deg != axis->applied_zero_encoder_deg)
+    {
+        axis->applied_zero_encoder_deg = config->zero_encoder_deg;
+        axis->angle_deg = NAN;
+        AngleUnwrap_Reset(&axis->unwrap);
+    }
+
+    // 参数副本与配置不同时同步并清空积分，比例和微分项不受历史影响
+    if (Gimbal_IsPidChanged(&config->angle_pid, &axis->applied_angle_pid))
+    {
+        axis->applied_angle_pid = config->angle_pid;
+        PID_ResetIntegral(&axis->angle_pid);
+    }
+    if (Gimbal_IsPidChanged(&config->speed_pid, &axis->applied_speed_pid))
+    {
+        axis->applied_speed_pid = config->speed_pid;
+        PID_ResetIntegral(&axis->speed_pid);
+    }
+    return true;
+}
+
+/**
+ * @brief 进入运行或切换模式时清空两环历史，并以当前转速预置速度环微分
+ *
+ * @param[in,out] axis 单轴运行数据，转速须为有限值
+ * @return 无返回值
+ */
+static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
+{
+    PID_Reset(&axis->angle_pid);
+    PID_Reset(&axis->speed_pid);
+
+    // 速度环微分作用于反馈，预置上一反馈可避免入口处的微分冲击
+    const float scaled_speed = axis->applied_speed_pid.k * axis->speed_rad_s;
+    axis->speed_pid.last.k_fb = LowPassFilter2p_Reset(&axis->speed_pid.dfilter, scaled_speed);
+    axis->state = GIMBAL_AXIS_RUNNING;
+}
+
+/**
+ * @brief 清空两环历史、输出零电流并切换到指定停止状态
+ *
+ * @param[in,out] axis 单轴运行数据
+ * @param[in] next_state 停止后的状态，只能为 RELAX 或 FAULT
+ * @return 无返回值
+ */
+static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
+{
+    PID_Reset(&axis->angle_pid);
+    PID_Reset(&axis->speed_pid);
+    axis->target_angle_deg = NAN;
+    axis->target_speed_rad_s = 0.0f;
+    axis->output_current_a = 0.0f;
+    axis->state = next_state == GIMBAL_AXIS_RELAX ? GIMBAL_AXIS_RELAX : GIMBAL_AXIS_FAULT;
+}
+
+/**
+ * @brief 执行单轴一个周期的闭环计算
+ *
+ * @param[in,out] axis 单轴运行数据，须处于 RUNNING
+ * @param[in] config 单轴配置，已通过校验
+ * @param[in] mode 控制模式，只能为 SPEED 或 ANGLE
+ * @param[in] command 单轴命令
+ * @param[in] period_s 实际控制间隔，单位 s
+ * @return 计算成功返回 true；反馈失联、命令或周期非法、计算结果异常时返回 false
+ */
+static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
+                           const Gimbal_AxisCommand_t *command, float period_s)
+{
+    // 反馈、命令和周期任一无效时停止计算，由调用方进入故障
+    const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
+    if (!isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S ||
+        !isfinite(axis->speed_rad_s) || !isfinite(command->target_speed_rad_s) ||
+        (angle_needed && (!isfinite(axis->angle_deg) || !isfinite(command->target_angle_deg))))
+    {
+        return false;
+    }
+
+    // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈与角度环修正量合成
+    const float max_speed_rad_s = config->max_speed_rad_s;
+    const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
+    float target_speed_rad_s = command_speed_rad_s;
+    if (angle_needed)
+    {
+        float target_angle_deg = command->target_angle_deg;
+        Clip(&target_angle_deg, config->min_angle_deg, config->max_angle_deg);
+        axis->target_angle_deg = target_angle_deg;
+
+        // 角度环输入为弧度，微分项直接使用实测角速度
+        const float previous_integral = axis->angle_pid.i;
+        const float correction_rad_s = PID_Calc(&axis->angle_pid, target_angle_deg * M_DEG2RAD_MULT,
+                                                axis->angle_deg * M_DEG2RAD_MULT, axis->speed_rad_s, period_s);
+        const float combined_rad_s = correction_rad_s + command_speed_rad_s;
+        target_speed_rad_s = AbsClip(combined_rad_s, max_speed_rad_s);
 
         // 合成速度饱和且误差继续推向饱和方向时撤销本周期积分，保留反向退饱和能力
-        if ((combined_rad_s > GIMBAL_YAW_SPEED_LIMIT_RAD_S && requested_deg > actual_deg) ||
-            (combined_rad_s < -GIMBAL_YAW_SPEED_LIMIT_RAD_S && requested_deg < actual_deg))
+        if ((combined_rad_s > max_speed_rad_s && target_angle_deg > axis->angle_deg) ||
+            (combined_rad_s < -max_speed_rad_s && target_angle_deg < axis->angle_deg))
         {
-            yaw_angle_pid.i = previous_integral;
+            axis->angle_pid.i = previous_integral;
         }
     }
-
-    // 发布实际采用的前馈和合成速度，禁用时归零，速度内环继续使用编码器反馈
-    gimbal_yaw_feedforward_rad_s = running ? feedforward_rad_s : 0.0f;
-    gimbal_yaw_speed.target_rad_s = target_rad_s;
-    const float current_a = Gimbal_YawSpeedRunAt(feedback_rpm, feedback_time_us, now_us, running, period_s);
-    // 内环未运行时同步撤销调试输出与轨迹相位，避免观测值保留未执行的前馈
-    if (yaw_state != GIMBAL_YAW_RUNNING || yaw_angle_state != GIMBAL_YAW_RUNNING)
+    else
     {
-        gimbal_yaw_feedforward_rad_s = 0.0f;
-        gimbal_yaw_speed.target_rad_s = 0.0f;
-        yaw_sine_state = GIMBAL_YAW_SINE_IDLE;
-        yaw_sine_phase_rad = 0.0f;
+        axis->target_angle_deg = NAN;
     }
-    return current_a;
+
+    // 速度环输出电流，非有限结果视为计算异常
+    const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
+    if (!isfinite(target_speed_rad_s) || !isfinite(current_a))
+    {
+        return false;
+    }
+    axis->target_speed_rad_s = target_speed_rad_s;
+    axis->output_current_a = AbsClip(current_a, config->max_current_a);
+    return true;
 }
 
 /**
- * @brief 初始化独立角度外环，使用外部角速度作为反馈微分，成功后保持禁用
+ * @brief 单轴状态机，集中决定进入运行、保持运行、停止和故障锁存
  *
- * @param[in] sample_frequency_hz 控制频率，单位 Hz，须为有限正数
- * @param[in] params 持续有效的 PID 参数对象，各字段单位和约束见头文件集中说明
- * @return 成功返回 0，底层 PID 初始化失败返回 -1
- */
-int8_t Gimbal_YawAngleInit(float sample_frequency_hz, const KPID_Params_t *params)
-{
-    // 单独初始化外环，不改变已有速度控制器或任务调度
-    yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
-    if (PID_Init(&yaw_angle_pid, KPID_MODE_SET_D, sample_frequency_hz, params) != 0)
-    {
-        return -1;
-    }
-
-    yaw_angle_state = GIMBAL_YAW_READY;
-    return 0;
-}
-
-/**
- * @brief 切换角度外环使能状态，只在状态变化时清空积分与微分历史
- *
- * @param[in] enabled true 为运行，false 为待机，未初始化时不生效
+ * @param[in,out] axis 单轴运行数据
+ * @param[in] config 单轴配置
+ * @param[in] mode 本周期控制模式
+ * @param[in] mode_changed 本周期模式与上一周期不同时为 true
+ * @param[in] command 单轴命令
+ * @param[in] period_s 实际控制间隔，单位 s
  * @return 无返回值
  */
-void Gimbal_YawAngleSetEnabled(bool enabled)
+static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
+                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s)
 {
-    // 使能入口集中管理外环状态，重复设置相同状态时保留运行历史
-    switch (yaw_angle_state)
+    // 先采纳配置修改，再根据模式和反馈判断本周期能否闭环
+    const bool config_valid = Gimbal_ApplyAxisConfig(axis, config);
+    const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
+    const bool feedback_ready = isfinite(axis->speed_rad_s) && (mode != GIMBAL_MODE_ANGLE || isfinite(axis->angle_deg));
+
+    switch (axis->state)
     {
-        case GIMBAL_YAW_READY:
-        case GIMBAL_YAW_RUNNING:
-        {
-            const GimbalYawState_t next_state = enabled ? GIMBAL_YAW_RUNNING : GIMBAL_YAW_READY;
-            if (next_state != yaw_angle_state)
+        // 待机时等待运行请求，反馈尚未就绪不算故障，继续零输出等待
+        case GIMBAL_AXIS_RELAX:
+            if (!run_requested || !config_valid || !feedback_ready)
             {
-                yaw_angle_state = PID_Reset(&yaw_angle_pid) == 0 ? next_state : GIMBAL_YAW_UNINITIALIZED;
+                Gimbal_StopAxis(axis, GIMBAL_AXIS_RELAX);
+                break;
+            }
+            Gimbal_EnterRunning(axis);
+            if (!Gimbal_RunAxis(axis, config, mode, command, period_s))
+            {
+                Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
             break;
-        }
 
-        case GIMBAL_YAW_UNINITIALIZED:
-        default:
-            yaw_angle_state = GIMBAL_YAW_UNINITIALIZED;
+        // 运行中撤销请求正常停机，配置或反馈异常锁存故障，切换模式时清空两环历史
+        case GIMBAL_AXIS_RUNNING:
+            if (!run_requested)
+            {
+                Gimbal_StopAxis(axis, GIMBAL_AXIS_RELAX);
+                break;
+            }
+            if (mode_changed)
+            {
+                Gimbal_EnterRunning(axis);
+            }
+            if (!config_valid || !Gimbal_RunAxis(axis, config, mode, command, period_s))
+            {
+                Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
+            }
             break;
-    }
-}
 
-/**
- * @brief 执行一次角度外环计算，返回速度目标供调用方选择何时接入
- *
- * @param[in] target_deg 目标角度，单位度，环绕周期为零时不执行角度归一化
- * @param[in] feedback_deg 实际角度，单位度，与目标采用相同零点和方向
- * @param[in] feedback_rad_s 实际角速度，单位 rad/s，与角度反馈正方向一致
- * @param[in] period_s 实际控制间隔，单位 s，须为有限正数且不小于初始化周期
- * @return 速度目标，单位 rad/s，未初始化、禁用或输入无效时为零，不执行零点换算
- */
-float Gimbal_YawAngleRun(float target_deg, float feedback_deg, float feedback_rad_s, float period_s)
-{
-    // 直接调用也校验输入，防止非数值目标触发底层保留旧输出的路径
-    if (!isfinite(target_deg) || !isfinite(feedback_deg) || !isfinite(feedback_rad_s) ||
-        !isfinite(period_s) || period_s < yaw_angle_pid.dt_min || period_s <= 0.0f ||
-        period_s > GIMBAL_YAW_MAX_PERIOD_S || yaw_angle_state != GIMBAL_YAW_RUNNING)
-    {
-        Gimbal_YawAngleSetEnabled(false);
-        return 0.0f;
-    }
+        // 故障锁存至命令回到 RELAX，避免反馈恢复后在未知位置自动重新出力
+        case GIMBAL_AXIS_FAULT:
+            Gimbal_StopAxis(axis, mode == GIMBAL_MODE_RELAX ? GIMBAL_AXIS_RELAX : GIMBAL_AXIS_FAULT);
+            break;
 
-    // 仅配置环绕周期时归一化角度，连续线性位置直接转换为弧度
-    const bool circular = yaw_angle_pid.param->range > 0.0f;
-    const float target_rad = (circular ? Gimbal_WrapDegrees(target_deg) : target_deg) * GIMBAL_DEG_TO_RAD;
-    const float feedback_rad = (circular ? Gimbal_WrapDegrees(feedback_deg) : feedback_deg) * GIMBAL_DEG_TO_RAD;
-
-    // 仅运行状态计算角度到速度的外环输出，反馈有效性由调用方通过使能入口控制
-    switch (yaw_angle_state)
-    {
-        case GIMBAL_YAW_RUNNING:
-            return PID_Calc(&yaw_angle_pid, target_rad, feedback_rad, feedback_rad_s, period_s);
-
-        case GIMBAL_YAW_READY:
-        case GIMBAL_YAW_UNINITIALIZED:
         default:
-            return 0.0f;
+            Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
+            break;
     }
 }

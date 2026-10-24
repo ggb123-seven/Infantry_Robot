@@ -57,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/bsp/uart.c
 
     # User/component 源文件
+    User/component/angle_unwrap.c
     User/component/filter.c
     User/component/madgwick_ahrs.c
     User/component/mixer.c
@@ -72,6 +73,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/module 源文件
     User/module/chassis.c
+    User/module/config.c
     User/module/fault_detect.c
     User/module/gimbal.c
     User/module/ins.c

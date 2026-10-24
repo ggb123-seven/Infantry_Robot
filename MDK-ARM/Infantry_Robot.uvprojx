@@ -666,6 +666,11 @@
               <FilePath>..\User\component\pid.c</FilePath>
             </File>
             <File>
+              <FileName>angle_unwrap.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\angle_unwrap.c</FilePath>
+            </File>
+            <File>
               <FileName>user_math.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\component\user_math.c</FilePath>
@@ -684,6 +689,11 @@
               <FileName>gimbal.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\gimbal.c</FilePath>
+            </File>
+            <File>
+              <FileName>config.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\config.c</FilePath>
             </File>
             <File>
               <FileName>motor.c</FileName>

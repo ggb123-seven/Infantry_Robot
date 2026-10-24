@@ -111,10 +111,10 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 电流命令直接使用浮点安培值，不额外定义命令结构体
-    task_runtime.init_status = TASK_INIT_GIMBAL_YAW_COMMAND_MAILBOX_FAILED;
-    task_runtime.msgq.gimbal_yaw_command = osMessageQueueNew(1U, sizeof(float), NULL);
-    if (task_runtime.msgq.gimbal_yaw_command == NULL)
+    // 云台输出邮箱保存两轴最新电流，由云台任务写入、CAN 任务读取
+    task_runtime.init_status = TASK_INIT_GIMBAL_OUTPUT_MAILBOX_FAILED;
+    task_runtime.msgq.gimbal_output = osMessageQueueNew(1U, sizeof(Gimbal_Output_t), NULL);
+    if (task_runtime.msgq.gimbal_output == NULL)
     {
         return false;
     }
@@ -177,21 +177,6 @@ static bool Task_InitModules(void)
     {
         return false;
     }
-
-    // 创建云台任务前确认内核节拍能精确表达控制周期，避免零周期或频率截断
-    task_runtime.init_status = TASK_INIT_GIMBAL_MODULE_FAILED;
-    const uint32_t tick_frequency = osKernelGetTickFreq();
-    if (tick_frequency < MOTOR_GIMBAL_FREQ || tick_frequency % MOTOR_GIMBAL_FREQ != 0U)
-    {
-        return false;
-    }
-
-    // 在统一装配入口直接调用云台模块初始化，失败时不创建任何业务任务
-    if (Gimbal_Init((float)MOTOR_GIMBAL_FREQ) != 0)
-    {
-        return false;
-    }
-
     return true;
 }
 
@@ -253,14 +238,14 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.msgq.can_command = NULL;
     }
-    // 任一后续对象创建失败时，也回收云台命令与两路反馈邮箱
-    if (task_runtime.msgq.gimbal_yaw_command != NULL)
+    // 任一后续对象创建失败时，也回收云台输出与两路反馈邮箱
+    if (task_runtime.msgq.gimbal_output != NULL)
     {
-        if (osMessageQueueDelete(task_runtime.msgq.gimbal_yaw_command) != osOK)
+        if (osMessageQueueDelete(task_runtime.msgq.gimbal_output) != osOK)
         {
             success = false;
         }
-        task_runtime.msgq.gimbal_yaw_command = NULL;
+        task_runtime.msgq.gimbal_output = NULL;
     }
     if (task_runtime.msgq.gimbal_pitch_feedback != NULL)
     {

@@ -1,6 +1,7 @@
 #include "task/can_task.h"
 
 #include "device/can_devices.h"
+#include "module/gimbal.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
@@ -39,15 +40,18 @@ void Task_can(void *argument)
             command.sequence = can_devices_snapshot.sequence;
         }
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
-        // 只使用本周期取得的 yaw 电流，邮箱为空或读取失败时立即回到零输出
-        float yaw_current_a = 0.0f;
-        if (task_runtime.msgq.gimbal_yaw_command == NULL ||
-            osMessageQueueGet(task_runtime.msgq.gimbal_yaw_command, &yaw_current_a, NULL, 0U) != osOK)
+        // 只使用本周期取得的云台输出，邮箱为空或读取失败时立即回到零输出
+        Gimbal_Output_t gimbal_output =
         {
-            yaw_current_a = 0.0f;
+            0,
+        };
+        if (task_runtime.msgq.gimbal_output == NULL ||
+            osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
+        {
+            gimbal_output.yaw_current_a = 0.0f;
         }
-        // 两轴缓存统一组帧，yaw 使用速度环输出，pitch 保持零电流
-        gimbal_output_status = CANDevices_ApplyGimbalCurrent(yaw_current_a);
+        // 设备层当前只接收 yaw 电流并保持 pitch 零电流，pitch 输出待设备接口扩展后接入
+        gimbal_output_status = CANDevices_ApplyGimbalCurrent(gimbal_output.yaw_current_a);
         // 发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
         tick += delay_tick;
