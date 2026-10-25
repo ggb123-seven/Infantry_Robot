@@ -344,17 +344,19 @@ int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedba
 }
 
 /**
- * @brief 写入 yaw 电流并清零 pitch，再统一发送云台控制帧
+ * @brief 分别写入 yaw 和 pitch 电流，再统一发送云台控制帧
  *
  * @param[in] yaw_current_a yaw 转子侧电流，单位 A，有限值由电机驱动按协议量程限幅
- * @return 两路缓存写入且发送成功返回 CAN_DEVICES_OK，非法输入归零并返回 CAN_DEVICES_ERROR
+ * @param[in] pitch_current_a pitch 转子侧电流，单位 A，有限值由电机驱动按协议量程限幅
+ * @return 两路缓存写入且发送成功返回 CAN_DEVICES_OK，非法输入或驱动失败返回 CAN_DEVICES_ERROR
  */
-int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a)
+int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a)
 {
-    bool success = isfinite(yaw_current_a);
+    bool success = isfinite(yaw_current_a) && isfinite(pitch_current_a);
+    bool cache_safe = true;
     MOTOR_RM_Param_t *flush_param = NULL;
 
-    // 非法请求使用零电流，先写完两轴缓存再统一发送，pitch 始终不参与控制
+    // 两轴独立校验，单轴非法请求只清零本轴，先写完两轴缓存再统一发送
     for (uint8_t axis = 0U; axis < CAN_DEVICES_GIMBAL_MOTOR_COUNT; axis++)
     {
         if (!can_devices_gimbal_registered[axis])
@@ -363,16 +365,22 @@ int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a)
             continue;
         }
         MOTOR_RM_Param_t *param = &can_devices_gimbal_param[axis];
-        const float current_a = axis == CAN_DEVICES_GIMBAL_YAW && isfinite(yaw_current_a) ? yaw_current_a : 0.0f;
+        const float requested_a = axis == CAN_DEVICES_GIMBAL_YAW ? yaw_current_a : pitch_current_a;
+        const float current_a = isfinite(requested_a) ? requested_a : 0.0f;
         if (MOTOR_RM_SetTorqueCurrent(param, current_a) != DEVICE_OK)
         {
             success = false;
+            // 写入失败时尝试清零槽位，无法确认清零则禁止提交可能残留的旧电流
+            if (MOTOR_RM_SetOutput(param, 0.0f) != DEVICE_OK)
+            {
+                cache_safe = false;
+            }
         }
         flush_param = param;
     }
 
     // 共用的 0x2FE 每周期只发送一次，未使用的 ID7 与保留字节由驱动清零
-    if (flush_param == NULL || MOTOR_RM_FlushGroup(flush_param) != DEVICE_OK)
+    if (!cache_safe || flush_param == NULL || MOTOR_RM_FlushGroup(flush_param) != DEVICE_OK)
     {
         return CAN_DEVICES_ERROR;
     }

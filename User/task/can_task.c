@@ -12,7 +12,8 @@ CANDevices_Snapshot_t can_devices_snapshot;
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
 static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
-static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;// 独立保留云台发送结果，避免覆盖底盘快照的发送状态
+// 独立保留云台发送结果，避免覆盖底盘快照的发送状态
+static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -24,7 +25,8 @@ void Task_can(void *argument)
 {
     (void)argument;
     const uint32_t delay_tick = osKernelGetTickFreq() / CAN_TASK_FREQ;
-    osDelay(CAN_TASK_INIT_DELAY);// 等待业务初始化完成后再进入 CAN 周期通信
+    // 等待业务初始化完成后再进入 CAN 周期通信
+    osDelay(CAN_TASK_INIT_DELAY);
 
     // 建立绝对周期基准，避免通信周期累计漂移
     uint32_t tick = osKernelGetTickCount();
@@ -49,9 +51,11 @@ void Task_can(void *argument)
             osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
         {
             gimbal_output.yaw_current_a = 0.0f;
+            gimbal_output.pitch_current_a = 0.0f;
         }
-        // 设备层当前只接收 yaw 电流并保持 pitch 零电流，pitch 输出待设备接口扩展后接入
-        gimbal_output_status = CANDevices_ApplyGimbalCurrent(gimbal_output.yaw_current_a);
+        // 两轴独立电流交给设备层写入同组槽位，再统一提交一帧
+        gimbal_output_status = CANDevices_ApplyGimbalCurrent(gimbal_output.yaw_current_a,
+                                                           gimbal_output.pitch_current_a);
         // 发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
         tick += delay_tick;

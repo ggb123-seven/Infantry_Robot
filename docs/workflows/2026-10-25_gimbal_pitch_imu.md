@@ -1,5 +1,8 @@
 # 云台 pitch 参数同步与陀螺仪角速度接入
 
+当前状态：pitch 有符号角度和两轴独立电流输出已完成软件验证；两轴启用，默认命令 RELAX，未烧录
+下文早期的禁用、占位及待确认描述为历史记录，以末尾两项实施记录为准；IMU 角速度接入仍待后续实施
+
 ## 两步实施范围
 
 1. 同步 pitch 与 yaw 的配置及控制参数，分别保留电机标识和机械标定
@@ -74,3 +77,24 @@
 - `python .auto-embedded/scripts/check.py`：ARCH/HW/SPEC 全通过；UTF-8、120 列、Allman、空白扫描和 `git diff --check` 通过
 - 逐文件重读 AGENTS.md、agent.md 并人工复核注释、返回值、分层和安全输出；没有改变 RTOS 对象、ISR 共享状态或硬件配置
 - 未烧录，机械正方向、真实行程及闭环效果待上板验证；临时回归程序在本任务最终记录后清理
+
+## 后续实施二：两轴独立电流输出
+
+- `CANDevices_ApplyGimbalCurrent(yaw_current_a, pitch_current_a)` 分别处理两轴转子侧电流，先写缓存，再统一提交一次 0x2FE
+- CAN2 ID5/yaw 反馈 0x209、ID6/pitch 反馈 0x20A；实际驱动将 yaw 写入字节 0～1、pitch 写入字节 2～3，字节 4～7 清零
+- 单轴 NaN/Inf 只将本轴归零并返回错误；电流写失败尝试零写回退，零写也失败则禁止提交可能残留的旧缓存并返回错误
+- 单路未注册保留另一轴输出能力；发送失败返回错误，下一周期重新覆盖两轴缓存后再提交
+- CAN 任务读取云台邮箱失败或句柄为空时两轴显式归零；保留独立的 gimbal_output_status 诊断
+- pitch.enabled 改为 true，两轴仍受 gimbal_command.mode 统一控制，默认 RELAX，启用配置不触发上电运动
+- 水平零点 118.08016°、目标范围 [-60°,60°]、各轴最大电流 0.5 A 保留；正角表示方向修正后的编码器角增大，实际抬头方向待实测
+- 临时主机集成测试使用真实 can_devices.c、motor_rm.c、can_task.c、config.c；仅隔离 BSP/RTOS，并在驱动写入边界注入失败
+- 编译命令：`gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibuild/gimbal_signed_check -IUser build/gimbal_signed_check/output.c '-Wl,--gc-sections' -lm -o build/gimbal_signed_check/output.exe`
+- 执行 `build/gimbal_signed_check/output.exe`：193 项断言通过，覆盖两轴各符号组合、真实电流标度/协议限幅/帧槽位/单次提交、NaN/Inf、写失败/零写失败、发送失败、无设备、真实 CAN 任务单周期的邮箱成功/错误/空句柄，以及实际默认配置
+- 分别执行 `build/gimbal_signed_check/output.exe 0x209` 和 `build/gimbal_signed_check/output.exe 0x20A`：各 11 项断言通过，验证任一电机注册失败时另一轴继续输出
+- 合计两项实施 616 项主机断言通过；CMake Debug 构建通过，首选产物 `build/Debug/Infantry_Robot.elf`
+- ARCH/HW/SPEC、UTF-8、120 列、Allman 花括号、行尾空白及 `git diff --check` 均通过，逐文件重读规则后人工复核分层、状态机、安全输出、注释和返回值
+- 未新增结构体、RTOS 对象、ISR 共享状态、临界区或硬件配置；保留用户 yaw 未提交调参及原有删除，不纳入本轮提交
+- 通过 task.py promote 回流有限行程正负角和两轴同组输出约定，明确替代历史单轴邮箱和 pitch 恒零描述
+- 临时目录 `build/gimbal_signed_check` 内的测试源码、模拟头文件和可执行程序在记录证据后全部清理，正式测试资产不变
+- 尚未烧录或实测；需在 RELAX 下检查水平约 0°、零点两侧正负角，再小目标核对方向及反馈失联停机；±60° 为目标限幅，SPEED 模式不提供位置行程保护
+- 当前速度反馈仍来自电机编码器 rpm 换算，未在本轮接入 IMU 或 SMC

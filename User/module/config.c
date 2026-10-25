@@ -51,7 +51,8 @@ const Chassis_Config_t *Config_GetChassis(void)
  * - pitch 的两环参数、速度和电流上限与 yaw 对齐，参数副本独立保存，后续可分别整定
  * - pitch 水平零点 118.08016° 取自用户实测，沿用当前 reversed=false 的编码器方向
  * - pitch 目标角度范围按用户指定设为水平零点两侧各 60°，即 [-60°, 60°]
- * - pitch 尚未接入输出，enabled 为 false，连续角首帧的正负区间处理待完善
+ * - 两轴均启用并独立输出电流，默认命令为 RELAX，上电保持零电流
+ * - pitch 使用相对水平零点的 [-180°, 180°) 有符号角，yaw 保留连续角展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  */
 static const Gimbal_Config_t gimbal_config =
@@ -90,7 +91,7 @@ static const Gimbal_Config_t gimbal_config =
     },
     .pitch =
     {
-        .enabled = false,
+        .enabled = true,
         .reversed = false,
         .zero_encoder_deg = 118.08016f,
         .min_angle_deg = -60.0f,

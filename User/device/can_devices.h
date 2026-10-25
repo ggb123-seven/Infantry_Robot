@@ -117,12 +117,13 @@ int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_S
 int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedback);
 
 /**
- * @brief 写入 yaw 电流并保持 pitch 零电流，统一发送一次 0x2FE 帧
+ * @brief 分别写入 yaw 和 pitch 电流，统一发送一次 0x2FE 帧
  *
  * @param[in] yaw_current_a yaw 转子侧电流，单位 A，传入零表示停机，非有限值按零处理
+ * @param[in] pitch_current_a pitch 转子侧电流，单位 A，传入零表示停机，非有限值按零处理
  * @return 两路缓存更新且发送成功返回 CAN_DEVICES_OK，非法输入、设备不可用或发送失败返回错误码
  */
-int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a);
+int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a);
 
 #ifdef __cplusplus
 }
