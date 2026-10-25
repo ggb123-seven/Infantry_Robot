@@ -62,6 +62,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/component/madgwick_ahrs.c
     User/component/mixer.c
     User/component/pid.c
+    User/component/SMC/slidingmodec.c
     User/component/user_math.c
 
     # User/device 源文件

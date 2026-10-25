@@ -671,6 +671,11 @@
               <FilePath>..\User\component\pid.c</FilePath>
             </File>
             <File>
+              <FileName>slidingmodec.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\SMC\slidingmodec.c</FilePath>
+            </File>
+            <File>
               <FileName>angle_unwrap.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\component\angle_unwrap.c</FilePath>
