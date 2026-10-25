@@ -26,7 +26,8 @@ static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz);
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
 static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
-                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us);
+                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us,
+                                      bool signed_angle);
 static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
 static void Gimbal_EnterRunning(Gimbal_Axis_t *axis);
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
@@ -93,8 +94,8 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
     // 超时配置非法时无法判断时效，两轴反馈全部视为失联
     const float timeout_s = gimbal->config.feedback_timeout_s;
     const uint64_t timeout_us = isfinite(timeout_s) && timeout_s > 0.0f ? (uint64_t)(timeout_s * 1.0e6f) : 0U;
-    Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->config.yaw, yaw_motor, now_us, timeout_us);
-    Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->config.pitch, pitch_motor, now_us, timeout_us);
+    Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->config.yaw, yaw_motor, now_us, timeout_us, false);
+    Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->config.pitch, pitch_motor, now_us, timeout_us, true);
 }
 
 /**
@@ -248,7 +249,7 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
 }
 
 /**
- * @brief 校验单轴新反馈帧并换算角度、转速和连续角
+ * @brief 校验单轴新反馈帧并换算编码器角度、转速和相对角度
  *
  * 新帧时间倒退、与上一帧间隔超时或展开歧义时只清除反馈，本周期角度为非数值，下一帧重新建立连续角
  *
@@ -257,10 +258,12 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
  * @param[in] motor 新反馈帧，本周期没有新帧时为 NULL
  * @param[in] now_us 当前单调时刻，单位微秒
  * @param[in] timeout_us 反馈最大间隔，单位微秒，为 0 时全部反馈视为失联
+ * @param[in] signed_angle 为 true 时使用零点两侧的有符号单圈角，否则展开连续角
  * @return 无返回值
  */
 static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
-                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us)
+                                      const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us,
+                                      bool signed_angle)
 {
     // 没有新帧时只检查旧帧时效，超时后清除反馈
     if (motor == NULL)
@@ -282,10 +285,11 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
                              isfinite(encoder_rad) && encoder_rad >= 0.0f && encoder_rad < M_2PI &&
                              isfinite(speed_rpm) && speed_rpm >= GIMBAL_RAW_SPEED_MIN_RPM &&
                              speed_rpm <= GIMBAL_RAW_SPEED_MAX_RPM;
-    // 与上一帧时间倒退或间隔超时时无法保证转动小于半圈，必须断开连续角
+    // 两种角度都拒绝旧帧和超时间隔，pitch 不依赖连续角展开器也保留时序校验
     const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
                             frame_time_us - axis->feedback_time_us <= timeout_us;
-    if (!frame_valid || (axis->unwrap.has_reference && !continuous))
+    const bool has_reference = signed_angle ? isfinite(axis->angle_deg) : axis->unwrap.has_reference;
+    if (!frame_valid || (has_reference && !continuous))
     {
         Gimbal_ClearFeedback(axis);
         return;
@@ -300,7 +304,16 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     axis->speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
     axis->feedback_time_us = frame_time_us;
 
-    // 以当前采用的零点换算相对角，再按相邻帧展开为连续角
+    // pitch 行程围绕水平零点，直接映射到 [-180, 180)，负角上电和失联恢复均不累计圈数
+    if (signed_angle)
+    {
+        const float half_turn_deg = GIMBAL_FULL_TURN_DEG * 0.5f;
+        axis->angle_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
+                                         GIMBAL_FULL_TURN_DEG) - half_turn_deg;
+        return;
+    }
+
+    // yaw 保留原有连续角展开，跨编码器零点时按相邻帧最短路径累计
     const float relative_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
     float angle_deg = NAN;
     if (!AngleUnwrap_Update(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))

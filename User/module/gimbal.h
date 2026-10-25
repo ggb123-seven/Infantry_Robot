@@ -42,7 +42,8 @@ typedef enum
  * 单轴配置，运行中可由调试器修改，模块每周期校验并采纳：
  * - enabled：false 时该轴始终零输出
  * - reversed：true 时反转编码器角度、转速和输出电流方向
- * - zero_encoder_deg：机械正前方对应的编码器单圈角度，单位度，范围 [0, 360)，修改后运行中的轴进入故障
+ * - zero_encoder_deg：yaw 正前方或 pitch 水平对应的方向修正后编码器角度，单位度，范围 [0, 360)
+ *   修改零点后运行中的角度闭环进入故障
  * - min_angle_deg、max_angle_deg：相对零点的目标角度范围，单位度，目标超出时限幅
  * - max_speed_rad_s：速度目标绝对值上限，单位 rad/s
  * - max_current_a：转子侧输出电流绝对值上限，单位 A
@@ -101,7 +102,8 @@ typedef struct
  * 单轴运行数据，调试器可直接观察：
  * - state：单轴运行状态
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
- * - angle_deg：相对零点的连续角度，单位度，首帧落在 [0, 360)，失联或连续角断开时为非数值
+ * - angle_deg：相对零点的角度，单位度，yaw 为连续角且首帧落在 [0, 360)，pitch 为 [-180, 180)
+ *   pitch 首帧和失联恢复均直接确定正负角，失联或角度无效时为非数值
  * - speed_rad_s：编码器换算角速度，单位 rad/s，失联时为非数值
  * - target_angle_deg：限幅后实际采用的目标角度，单位度
  * - target_speed_rad_s：限幅后实际送入速度环的目标，单位 rad/s
@@ -109,7 +111,7 @@ typedef struct
  * - feedback_time_us：最近反馈帧时刻，单位微秒，无反馈时为 UINT64_MAX
  * - applied_zero_encoder_deg：当前连续角坐标采用的零点，用于识别零点修改
  * - applied_angle_pid、applied_speed_pid：PID 实际使用的参数副本，与配置不同时同步并清空积分
- * - unwrap：连续角展开器
+ * - unwrap：yaw 连续角展开器，pitch 不使用
  * - angle_pid、speed_pid：角度外环和速度内环运行状态
  */
 typedef struct

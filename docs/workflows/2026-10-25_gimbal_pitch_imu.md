@@ -59,3 +59,18 @@
 - CMake Debug 配置、构建及 UTF-8、120 列、Allman、行尾空白、`git diff --check` 检查通过
 - 人工复核确认只修改限位常量与集中说明，没有新增结构体、分支、并发访问或硬件配置
 - 未烧录、未做机械行程或闭环实测，未创建临时测试程序；yaw 已有调参差异不纳入本次提交
+
+## 后续实施一：pitch 有符号角度
+
+- 用户已授权实施正负角初始化及两轴独立电流输出，涵盖云台模块、设备输出接口及 CAN 任务
+- pitch 每帧按 `Wrap(方向修正后编码器角度 - 水平零点 + 180, 360) - 180` 映射到 [-180°,180°)
+- 水平零点为 118.08016° 时，113.08016° 对应 -5°，123.08016° 对应 +5°；首帧及失联恢复直接确定正负角
+- yaw 保留连续角展开；pitch 不使用展开器，但保留重复帧、时间倒退及帧间隔超时校验
+- 未新增结构体或字段，复用现有单轴 RELAX/RUNNING/FAULT 状态机，默认命令仍为 RELAX
+- 主机使用真实 gimbal、angle_unwrap、pid、filter、user_math 源码，临时 BSP 头仅隔离 HAL 依赖
+- 编译命令：`gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibuild/gimbal_signed_check -IUser build/gimbal_signed_check/control.c User/module/gimbal.c User/component/angle_unwrap.c User/component/pid.c User/component/filter.c User/component/user_math.c '-Wl,--gc-sections' -lm -o build/gimbal_signed_check/control.exe`
+- 执行 `build/gimbal_signed_check/control.exe`：401 项断言通过，覆盖 -60° 至 +60° 各首帧、零点两侧、编码器跨零、反装、电流方向、目标限幅、0.5 A 限流、90 ms 边界、单轴故障隔离、RELAX 解锁、重复及倒退帧、恢复、修改零点及非法反馈/周期
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug -j 2`：成功，产物 `build/Debug/Infantry_Robot.elf`
+- `python .auto-embedded/scripts/check.py`：ARCH/HW/SPEC 全通过；UTF-8、120 列、Allman、空白扫描和 `git diff --check` 通过
+- 逐文件重读 AGENTS.md、agent.md 并人工复核注释、返回值、分层和安全输出；没有改变 RTOS 对象、ISR 共享状态或硬件配置
+- 未烧录，机械正方向、真实行程及闭环效果待上板验证；临时回归程序在本任务最终记录后清理
