@@ -50,7 +50,8 @@ const Chassis_Config_t *Config_GetChassis(void)
  * - 两轴角度环统一采用当前 yaw 参数 Kp=15、Ki=0.005、Kd=0，积分限幅为 1.0 rad·s
  * - pitch 的两环参数、速度和电流上限与 yaw 对齐，参数副本独立保存，后续可分别整定
  * - pitch 水平零点 118.08016° 取自用户实测，沿用当前 reversed=false 的编码器方向
- * - pitch 尚未接入输出，enabled 为 false，范围 [-20°, 20°] 为占位值，启用前须实测上下限位
+ * - pitch 目标角度范围按用户指定设为水平零点两侧各 60°，即 [-60°, 60°]
+ * - pitch 尚未接入输出，enabled 为 false，连续角首帧的正负区间处理待完善
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  */
 static const Gimbal_Config_t gimbal_config =
@@ -92,8 +93,8 @@ static const Gimbal_Config_t gimbal_config =
         .enabled = false,
         .reversed = false,
         .zero_encoder_deg = 118.08016f,
-        .min_angle_deg = -20.0f,
-        .max_angle_deg = 20.0f,
+        .min_angle_deg = -60.0f,
+        .max_angle_deg = 60.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
         .max_current_a = 0.5f,
         .angle_pid =
