@@ -119,6 +119,14 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 姿态和角速度共用一个邮箱，避免云台读到不同采样周期的数据
+    task_runtime.init_status = TASK_INIT_GIMBAL_IMU_MAILBOX_FAILED;
+    task_runtime.msgq.gimbal_imu = osMessageQueueNew(1U, sizeof(Gimbal_ImuFeedback_t), NULL);
+    if (task_runtime.msgq.gimbal_imu == NULL)
+    {
+        return false;
+    }
+
     // 创建独立 INS 任务，设备初始化在任务获得调度后执行
     task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
     task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
@@ -232,7 +240,15 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.msgq.can_command = NULL;
     }
-    // 任一后续对象创建失败时，也回收云台输出与两路反馈邮箱
+    // 任一后续对象创建失败时，也回收惯性反馈、云台输出与两路电机反馈邮箱
+    if (task_runtime.msgq.gimbal_imu != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.gimbal_imu) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.gimbal_imu = NULL;
+    }
     if (task_runtime.msgq.gimbal_output != NULL)
     {
         if (osMessageQueueDelete(task_runtime.msgq.gimbal_output) != osOK)

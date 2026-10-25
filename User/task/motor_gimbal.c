@@ -73,6 +73,16 @@ void Task_motor_gimbal(void *argument)
 
         if (initialized)
         {
+            // 先接收同帧惯性快照供观测，本步骤仍保持编码器闭环
+            if (task_runtime.msgq.gimbal_imu != NULL)
+            {
+                Gimbal_ImuFeedback_t imu;
+                if (osMessageQueueGet(task_runtime.msgq.gimbal_imu, &imu, NULL, 0U) == osOK)
+                {
+                    gimbal.imu = imu;
+                }
+            }
+
             // 消费两轴最新反馈帧，邮箱为空时传 NULL 由模块检查旧帧时效
             MOTOR_RM_Feedback_t yaw_feedback;
             MOTOR_RM_Feedback_t pitch_feedback;

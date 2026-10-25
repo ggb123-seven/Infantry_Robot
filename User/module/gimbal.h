@@ -13,6 +13,21 @@ extern "C"
 #include "device/motor_rm.h"
 
 /*
+ * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标
+ * - angle_deg：依次为 Roll、Pitch、累计 Yaw，单位度
+ * - gyro_rad_s：当前机体系 X、Y、Z 轴角速度，单位 rad/s
+ * - sample_time_us：本帧开始采集的单调时间，单位微秒，接收端不得改写
+ * - valid：完整更新成功时为 true，初始化及故障通知为 false
+ */
+typedef struct
+{
+    float angle_deg[3];
+    float gyro_rad_s[3];
+    uint64_t sample_time_us;
+    bool valid;
+} Gimbal_ImuFeedback_t;
+
+/*
  * 云台控制模式，由命令统一指定两轴：
  * - GIMBAL_MODE_RELAX：两轴零电流，同时解除故障锁存
  * - GIMBAL_MODE_SPEED：只运行速度环，用于单独整定速度环参数
@@ -137,6 +152,7 @@ typedef struct
  * - config：初始化时复制的配置副本，调试器可在运行中修改
  * - mode：上一周期采用的控制模式
  * - yaw、pitch：两轴运行数据
+ * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
  * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
  */
 typedef struct
@@ -145,6 +161,7 @@ typedef struct
     Gimbal_Mode_t mode;
     Gimbal_Axis_t yaw;
     Gimbal_Axis_t pitch;
+    Gimbal_ImuFeedback_t imu;
 } Gimbal_t;
 
 /*
