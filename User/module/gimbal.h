@@ -54,12 +54,25 @@ typedef enum
 } Gimbal_AxisState_t;
 
 /*
+ * 共用惯性反馈状态：等待首帧、连续静止检查、可用于闭环、故障锁存
+ * 就绪前保持零输出，故障后须先回 RELAX，再重新完成静止检查
+ */
+typedef enum
+{
+    GIMBAL_IMU_WAITING = 0,
+    GIMBAL_IMU_STABILIZING,
+    GIMBAL_IMU_READY,
+    GIMBAL_IMU_FAULT,
+} Gimbal_ImuState_t;
+
+/*
  * 单轴配置，运行中可由调试器修改，模块每周期校验并采纳：
  * - enabled：false 时该轴始终零输出
- * - reversed：true 时反转编码器角度、转速和输出电流方向
+ * - reversed：true 时反转编码器角度、转速和输出电流方向，不改变 INS 朝向
  * - zero_encoder_deg：yaw 正前方或 pitch 水平对应的方向修正后编码器角度，单位度，范围 [0, 360)
- *   修改零点后运行中的角度闭环进入故障
- * - min_angle_deg、max_angle_deg：相对零点的目标角度范围，单位度，目标超出时限幅
+ *   修改零点或 reversed 后运行中的该轴闭环进入故障
+ * - mechanical_limit_enabled：是否启用编码器机械行程约束
+ * - min_angle_deg、max_angle_deg：相对编码器零点的机械角范围，单位度，仅启用机械约束时使用
  * - max_speed_rad_s：速度目标绝对值上限，单位 rad/s
  * - max_current_a：转子侧输出电流绝对值上限，单位 A
  * - angle_pid：角度外环参数，输入为弧度，输出为 rad/s，range 须为 0
@@ -70,6 +83,7 @@ typedef struct
 {
     bool enabled;
     bool reversed;
+    bool mechanical_limit_enabled;
     float zero_encoder_deg;
     float min_angle_deg;
     float max_angle_deg;
@@ -84,17 +98,20 @@ typedef struct
  * - yaw、pitch：两轴各自配置
  * - feedback_timeout_s：反馈帧最大间隔，单位 s，超过时视为失联并断开连续角
  *   须保证最高转速下该时间内转动小于半圈，才能唯一展开编码器角度
+ * - imu_timeout_s：惯性反馈源采样时刻的最大帧龄及相邻帧间隔，单位 s，范围 (0, 0.1]
  */
 typedef struct
 {
     Gimbal_AxisConfig_t yaw;
     Gimbal_AxisConfig_t pitch;
     float feedback_timeout_s;
+    float imu_timeout_s;
 } Gimbal_Config_t;
 
 /*
  * 单轴命令：
- * - target_angle_deg：相对零点的目标角度，单位度，仅 ANGLE 模式使用
+ * - target_angle_deg：当前 INS 坐标下的姿态目标，单位度，仅 ANGLE 模式使用，yaw 为累计角
+ *   每次从待机进入 ANGLE 时由模块预置为当前姿态，随后调用方可以修改目标
  * - target_speed_rad_s：SPEED 模式下为速度目标，ANGLE 模式下为角速度前馈，单位 rad/s
  */
 typedef struct
@@ -117,14 +134,17 @@ typedef struct
  * 单轴运行数据，调试器可直接观察：
  * - state：单轴运行状态
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
- * - angle_deg：相对零点的角度，单位度，yaw 为连续角且首帧落在 [0, 360)，pitch 为 [-180, 180)
- *   pitch 首帧和失联恢复均直接确定正负角，失联或角度无效时为非数值
- * - speed_rad_s：编码器换算角速度，单位 rad/s，失联时为非数值
+ * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
+ * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，仅供机械观测和诊断
+ * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
+ * - speed_rad_s：当前机体系陀螺仪角速度，单位 rad/s，yaw 使用 Z，pitch 使用 Y
+ *   直接轴分量不等同于任意姿态下的欧拉角导数，姿态未就绪时两项均为非数值
  * - target_angle_deg：限幅后实际采用的目标角度，单位度
  * - target_speed_rad_s：限幅后实际送入速度环的目标，单位 rad/s
  * - output_current_a：本周期输出电流，单位 A，正方向与角度增大方向一致
  * - feedback_time_us：最近反馈帧时刻，单位微秒，无反馈时为 UINT64_MAX
  * - applied_zero_encoder_deg：当前连续角坐标采用的零点，用于识别零点修改
+ * - applied_reversed：当前机械反馈采用的方向，用于识别运行中方向修改
  * - applied_angle_pid、applied_speed_pid：PID 实际使用的参数副本，与配置不同时同步并清空积分
  * - unwrap：yaw 连续角展开器，pitch 不使用
  * - angle_pid、speed_pid：角度外环和速度内环运行状态
@@ -133,6 +153,8 @@ typedef struct
 {
     Gimbal_AxisState_t state;
     float encoder_deg;
+    float mechanical_angle_deg;
+    float motor_speed_rad_s;
     float angle_deg;
     float speed_rad_s;
     float target_angle_deg;
@@ -140,6 +162,7 @@ typedef struct
     float output_current_a;
     uint64_t feedback_time_us;
     float applied_zero_encoder_deg;
+    bool applied_reversed;
     KPID_Params_t applied_angle_pid;
     KPID_Params_t applied_speed_pid;
     AngleUnwrap_t unwrap;
@@ -153,6 +176,8 @@ typedef struct
  * - mode：上一周期采用的控制模式
  * - yaw、pitch：两轴运行数据
  * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
+ * - imu_state：惯性反馈就绪及故障状态
+ * - imu_stable_since_us：连续静止检查开始时刻，单位微秒，未开始时为 UINT64_MAX
  * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
  */
 typedef struct
@@ -162,6 +187,8 @@ typedef struct
     Gimbal_Axis_t yaw;
     Gimbal_Axis_t pitch;
     Gimbal_ImuFeedback_t imu;
+    Gimbal_ImuState_t imu_state;
+    uint64_t imu_stable_since_us;
 } Gimbal_t;
 
 /*
@@ -184,26 +211,27 @@ typedef struct
 int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float frequency_hz);
 
 /**
- * @brief 接收两轴最新反馈帧，更新角度、转速和反馈时效
+ * @brief 接收两轴电机帧及同帧惯性快照，更新机械反馈、惯性反馈和时效
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] yaw_motor yaw 新反馈帧，本周期没有新帧时传 NULL
  * @param[in] pitch_motor pitch 新反馈帧，本周期没有新帧时传 NULL
+ * @param[in] imu INS 新快照，本周期没有新帧时传 NULL，不会刷新缓存的源采样时刻
  * @param[in] now_us 当前单调时刻，单位微秒
  * @return 无返回值
  */
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
-                           const MOTOR_RM_Feedback_t *pitch_motor, uint64_t now_us);
+                           const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 
 /**
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
  * @param[in,out] gimbal 云台实例
- * @param[in] command 云台命令，为 NULL 时按 RELAX 处理
+ * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机进入 ANGLE 时预置当前姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s);
+void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s);
 
 /**
  * @brief 导出两轴电机方向的输出电流

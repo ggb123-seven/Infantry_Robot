@@ -9,10 +9,9 @@
 
 /*
  * yaw 正弦跟随测试参数，角度单位为度，相位角速度单位为 rad/s：
- * - 中心 180°、振幅 30°，目标在 150°~210° 之间往复，前馈峰值为 π rad/s
+ * - 中心取启动测试时的当前姿态，振幅 30°，前馈峰值为 π rad/s
  * - 2π 用于相位归一化，避免长时间累计相位导致浮点分辨率下降
  */
-#define MOTOR_GIMBAL_SINE_CENTER_DEG (180.0f)
 #define MOTOR_GIMBAL_SINE_AMPLITUDE_DEG (30.0f)
 #define MOTOR_GIMBAL_SINE_OMEGA_RAD_S (6.0f)
 #define MOTOR_GIMBAL_TWO_PI (6.28318530718f)
@@ -36,6 +35,7 @@ volatile bool gimbal_sine_feedforward_enabled = true;
 
 static MotorGimbal_SineState_t sine_state;
 static float sine_phase_rad;
+static float sine_center_deg;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_UpdateSineTest(float period_s);
@@ -73,15 +73,10 @@ void Task_motor_gimbal(void *argument)
 
         if (initialized)
         {
-            // 先接收同帧惯性快照供观测，本步骤仍保持编码器闭环
-            if (task_runtime.msgq.gimbal_imu != NULL)
-            {
-                Gimbal_ImuFeedback_t imu;
-                if (osMessageQueueGet(task_runtime.msgq.gimbal_imu, &imu, NULL, 0U) == osOK)
-                {
-                    gimbal.imu = imu;
-                }
-            }
+            // 消费完整惯性快照，无新消息时由模块保留源时间并检查帧龄
+            Gimbal_ImuFeedback_t imu;
+            const osMessageQueueId_t imu_queue = task_runtime.msgq.gimbal_imu;
+            const bool imu_received = imu_queue != NULL && osMessageQueueGet(imu_queue, &imu, NULL, 0U) == osOK;
 
             // 消费两轴最新反馈帧，邮箱为空时传 NULL 由模块检查旧帧时效
             MOTOR_RM_Feedback_t yaw_feedback;
@@ -90,7 +85,7 @@ void Task_motor_gimbal(void *argument)
             const bool pitch_received =
                 MotorGimbal_ReadFeedback(task_runtime.msgq.gimbal_pitch_feedback, &pitch_feedback);
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
-                                  pitch_received ? &pitch_feedback : NULL, BSP_TIME_Get());
+                                  pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
             // 正弦测试改写 yaw 命令后执行状态机和两环计算
             MotorGimbal_UpdateSineTest(period_s);
@@ -101,7 +96,7 @@ void Task_motor_gimbal(void *argument)
         // 发布失败时 CAN 任务按空邮箱输出零电流，同步让两轴停机，避免积分在零输出期间累计
         if (!MotorGimbal_PublishOutput(&output) && initialized)
         {
-            const Gimbal_Command_t relax_command =
+            Gimbal_Command_t relax_command =
             {
                 .mode = GIMBAL_MODE_RELAX,
             };
@@ -145,7 +140,8 @@ static bool MotorGimbal_Init(void)
 static void MotorGimbal_UpdateSineTest(float period_s)
 {
     const bool active = gimbal_sine_test_enabled && gimbal_command.mode == GIMBAL_MODE_ANGLE &&
-                        gimbal.yaw.state != GIMBAL_AXIS_FAULT && isfinite(period_s) && period_s > 0.0f;
+                        gimbal.yaw.state == GIMBAL_AXIS_RUNNING && gimbal.imu_state == GIMBAL_IMU_READY &&
+                        isfinite(gimbal.yaw.angle_deg) && isfinite(period_s) && period_s > 0.0f;
 
     // 测试状态机：待机时相位归零，首次运行从中心开始，之后按实际周期推进
     switch (sine_state)
@@ -156,6 +152,7 @@ static void MotorGimbal_UpdateSineTest(float period_s)
                 return;
             }
             sine_phase_rad = 0.0f;
+            sine_center_deg = gimbal.yaw.angle_deg;
             sine_state = MOTOR_GIMBAL_SINE_RUNNING;
             break;
 
@@ -179,8 +176,7 @@ static void MotorGimbal_UpdateSineTest(float period_s)
     }
 
     // 角度与前馈来自同一相位，前馈开关不重置轨迹以便连续对比
-    gimbal_command.yaw.target_angle_deg =
-        MOTOR_GIMBAL_SINE_CENTER_DEG + MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * sinf(sine_phase_rad);
+    gimbal_command.yaw.target_angle_deg = sine_center_deg + MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * sinf(sine_phase_rad);
     gimbal_command.yaw.target_speed_rad_s = gimbal_sine_feedforward_enabled ?
         MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * MOTOR_GIMBAL_DEG_TO_RAD * MOTOR_GIMBAL_SINE_OMEGA_RAD_S *
         cosf(sine_phase_rad) : 0.0f;

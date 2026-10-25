@@ -22,3 +22,56 @@
 - 编译器静态栈报告：`INS_Task` 72 B、快照发布 72 B；不是实际线程栈高水位
 
 验证边界：本轮未烧录，尚未测量实际姿态收敛、安装方向、电机响应、失联停机时延及栈高水位
+
+## 步骤二：惯性串级闭环与机械保护
+
+- `Gimbal_UpdateFeedback` 接收电机及惯性快照，module 层完成时效、数值、连续性及启动静止检查
+- yaw 使用累计 Yaw/Gyro Z，pitch 使用 Pitch/Gyro Y，沿用当前 INS 朝向
+- `angle_deg`、`speed_rad_s` 改为惯性反馈，新增 `mechanical_angle_deg`、`motor_speed_rad_s` 独立保留机械观测
+- 共用惯性故障两轴停机并锁存，回 RELAX 后重新静止检查；单电机异常仅隔离本轴，不回退编码器闭环
+- `Gimbal_Control` 命令参数改为输入输出，从待机或速度模式进入 ANGLE 时预置当前姿态并清零前馈
+- pitch 按预计机械角约束目标增量，速度模式、前馈和边界电流均受保护，保留向内恢复和积分保护
+- pitch 零点 118.08016°、机械范围 ±60°，yaw 机械限位默认关闭；正弦测试中心改为启动时当前 yaw
+- 初始化保存配置后清零实例，避免整实例临时副本占满任务栈，并支持传入实例自身配置重新初始化
+- 保留用户已有未提交的 yaw.reversed=true、yaw 角度环 P=15/I=0.005，只选择性提交本步骤配置差异
+
+主机验证：
+
+- 真实 `gimbal.c` 联合 PID、滤波、数学和编码器展开组件：25345 次断言通过，包含启动阶段逐周期零输出检查
+- 覆盖轴向、单位、惯性与机械速度分离、负 pitch、累计 yaw 跨零、10000/10001 us 时效边界、重复/倒退/未来时刻、非有限数据、断流与姿态跳变、RELAX 解锁
+- 覆盖底座倾斜下的预计机械目标、两侧限位、速度模式、前馈、向外电流阻断、向内恢复、积分保护及电流限幅
+- 覆盖单电机超时、共用源故障、运行中零点/方向修改、非法状态/配置/周期、自身配置重新初始化与低 32 位时间戳回绕
+- 真实 `motor_gimbal.c` 联合模块模拟 RTOS：6 个场景共 41706 次断言通过，包括闭环入口、IMU 停更、输出 reset/put 失败、缺失 IMU 邮箱、非法节拍及当前姿态中心正弦
+- 步骤一 transport 测试重新编译执行通过，确认创建、清理、发布及退出路径
+
+控制测试命令；将 control_test 替换为 task_test 可执行任务联合测试：
+
+```powershell
+gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibuild/imu_migration_test -IUser build/imu_migration_test/control_test.c User/module/gimbal.c User/component/angle_unwrap.c User/component/pid.c User/component/filter.c User/component/user_math.c '-Wl,--gc-sections' -lm -o build/imu_migration_test/control_test.exe
+./build/imu_migration_test/control_test.exe
+```
+
+## 实机检查入口与边界
+
+1. 载入本轮 ELF，保持 `gimbal_command.mode=GIMBAL_MODE_RELAX`，先观察 `gimbal.imu` 和两轴机械角
+2. `gimbal.imu_state`：0 等待、1 静止检查、2 就绪、3 故障；打印机振动可能使静止检查持续等待
+3. 手动抬头核对 Pitch/Gyro Y 与机械角正方向，转 yaw 核对累计 Yaw/Gyro Z 与电机方向，源码定义不能替代实测
+4. pitch 水平时机械角核对为 0°，上下行程检查 ±60°；yaw 改过 reversed 后重新核对机械零点
+5. 就绪后先小电流核对内环方向；进入 ANGLE 后先捕获当前目标，下一周期后再修改目标
+6. 故障后先回 RELAX，再重新完成静止检查并使能
+
+尚未烧录或运行真实电机；10 ms 超时、1 秒静止检查及变化率门槛须通过板上观测核定
+直接陀螺仪轴分量不等同于任意姿态下的欧拉角导数，六轴 yaw 漂移不会因反馈迁移消失
+预计机械角是局部近似，不包含制动距离，不能阻止惯性、外力或掉电越界
+未加入重启代号，依赖初始化失效通知、校准断流与姿态连续性检查，不支持带电直接修改姿态内部状态
+
+## 最终复核记录
+
+- CMake Debug 构建成功，产物 `build/Debug/Infantry_Robot.elf`；主机测试使用 `-Wall -Wextra -Werror`
+- ARCH、HW、SPEC 全通过；9 个相关源码文件的 Allman、120 列、行尾空白及控制块花括号扫描通过
+- 人工复核任务/模块边界、同帧所有权、RTOS 创建与失败清理、故障状态默认零输出和注释；未更改 main、ISR、HAL、BSP、设备协议、CAN ID 或 CubeMX
+- 编译器静态栈：Gimbal_Init 208 B，Task_motor_gimbal 216 B，Gimbal_UpdateImu 120 B；初始化整实例临时副本修复前为 968 B
+- 静态栈报告不是运行时高水位，仍需板上观测中断嵌套及 RTOS 开销
+- 设计决策通过 `task.py promote` 回流 architecture/conventions，明确惯性失效不回退编码器及机械目标增量约束
+- 测试证据记录后删除本轮专用 `build/imu_migration_test` 下的临时测试源码、模拟头、检查脚本及可执行文件，不删除仓库正式测试资产
+- 第一步本地提交 `e96a24e`；第二步通过验证后独立提交，未推送远端

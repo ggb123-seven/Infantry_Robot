@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "component/user_math.h"
 
@@ -12,6 +13,11 @@
  * - GIMBAL_MAX_PERIOD_S：允许参与控制的最大周期，单位 s
  * - GIMBAL_RAW_SPEED_MIN_RPM、GIMBAL_RAW_SPEED_MAX_RPM：RM 电机有符号 16 位转速反馈范围，单位 rpm
  * - GIMBAL_MAX_GAIN：PID 增益合法上限，用于拒绝调试器误写的异常值
+ * - GIMBAL_IMU_STABLE_US：连续静止检查时间，初始取 1 秒，后续需通过实机收敛观测核定
+ * - GIMBAL_IMU_STATIC_RAD_S、GIMBAL_IMU_STATIC_DEG_S：静止检查的陀螺仪模长和姿态变化率上限
+ * - GIMBAL_IMU_MAX_RAD_S：拒绝超出 BMI088 当前量程的异常角速度，留取约 40 rad/s 的数值余量
+ * - GIMBAL_IMU_MAX_PITCH_DEG：欧拉俯仰有效区保留距奇异点 1 度的余量，单位度
+ * - GIMBAL_IMU_JUMP_MARGIN_DEG：相邻姿态物理变化量之外允许的解算修正余量，初始取 1 度
  */
 #define GIMBAL_RPM_TO_RAD_S (0.10471975512f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
@@ -19,12 +25,20 @@
 #define GIMBAL_RAW_SPEED_MIN_RPM (-32768.0f)
 #define GIMBAL_RAW_SPEED_MAX_RPM (32767.0f)
 #define GIMBAL_MAX_GAIN (1000.0f)
+#define GIMBAL_IMU_STABLE_US (1000000ULL)
+#define GIMBAL_IMU_STATIC_RAD_S (0.05f)
+#define GIMBAL_IMU_STATIC_DEG_S (0.5f)
+#define GIMBAL_IMU_MAX_RAD_S (40.0f)
+#define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
+#define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
 
 static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
 static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz);
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
+static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
+static void Gimbal_InvalidateImu(Gimbal_t *gimbal);
 static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
                                       const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us,
                                       bool signed_angle);
@@ -52,15 +66,19 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     }
 
     // 先复制配置并清除全部运行数据，任一失败路径都保持两轴零输出
-    *gimbal = (Gimbal_t)
-    {
-        .config = *config,
-        .mode = GIMBAL_MODE_RELAX,
-    };
+    const Gimbal_Config_t saved_config = *config;
+    memset(gimbal, 0, sizeof(*gimbal));
+    gimbal->config = saved_config;
+    gimbal->mode = GIMBAL_MODE_RELAX;
     Gimbal_ClearFeedback(&gimbal->yaw);
     Gimbal_ClearFeedback(&gimbal->pitch);
+    gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
+    gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
+    gimbal->imu_stable_since_us = UINT64_MAX;
     if (!isfinite(frequency_hz) || frequency_hz < 10.0f || frequency_hz > 2000.0f ||
-        !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f)
+        !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f ||
+        config->feedback_timeout_s > 1.0f || !isfinite(config->imu_timeout_s) ||
+        config->imu_timeout_s <= 0.0f || config->imu_timeout_s > 0.1f)
     {
         return -1;
     }
@@ -75,16 +93,17 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 }
 
 /**
- * @brief 接收两轴最新反馈帧，更新角度、转速和反馈时效
+ * @brief 接收两轴电机帧及同帧惯性快照，更新机械反馈、惯性反馈和时效
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] yaw_motor yaw 新反馈帧，本周期没有新帧时传 NULL
  * @param[in] pitch_motor pitch 新反馈帧，本周期没有新帧时传 NULL
+ * @param[in] imu INS 新快照，本周期没有新帧时传 NULL
  * @param[in] now_us 当前单调时刻，单位微秒
  * @return 无返回值
  */
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
-                           const MOTOR_RM_Feedback_t *pitch_motor, uint64_t now_us)
+                           const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us)
 {
     if (gimbal == NULL)
     {
@@ -93,20 +112,24 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
 
     // 超时配置非法时无法判断时效，两轴反馈全部视为失联
     const float timeout_s = gimbal->config.feedback_timeout_s;
-    const uint64_t timeout_us = isfinite(timeout_s) && timeout_s > 0.0f ? (uint64_t)(timeout_s * 1.0e6f) : 0U;
+    const bool timeout_valid = isfinite(timeout_s) && timeout_s > 0.0f && timeout_s <= 1.0f;
+    const uint64_t timeout_us = timeout_valid ? (uint64_t)(timeout_s * 1.0e6f) : 0U;
     Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->config.yaw, yaw_motor, now_us, timeout_us, false);
     Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->config.pitch, pitch_motor, now_us, timeout_us, true);
+
+    // 惯性快照独立校验时效和连续性，控制量只由该快照更新
+    Gimbal_UpdateImu(gimbal, imu, now_us);
 }
 
 /**
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
  * @param[in,out] gimbal 云台实例
- * @param[in] command 云台命令，为 NULL 时按 RELAX 处理
+ * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机进入 ANGLE 时预置当前姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
+void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
 {
     if (gimbal == NULL)
     {
@@ -114,13 +137,36 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float per
     }
 
     // 空命令按 RELAX 处理，保证调用方异常时两轴零输出
-    const Gimbal_Command_t relax_command =
+    Gimbal_Command_t relax_command =
     {
         .mode = GIMBAL_MODE_RELAX,
     };
-    const Gimbal_Command_t *active_command = command != NULL ? command : &relax_command;
+    Gimbal_Command_t *active_command = command != NULL ? command : &relax_command;
     const Gimbal_Mode_t mode = active_command->mode;
     const bool mode_changed = mode != gimbal->mode;
+
+    // 共用源故障只在人工回待机后解除，下一轮重新执行静止检查
+    if (mode == GIMBAL_MODE_RELAX && gimbal->imu_state == GIMBAL_IMU_FAULT)
+    {
+        gimbal->imu_state = GIMBAL_IMU_WAITING;
+        gimbal->imu.valid = false;
+        gimbal->imu_stable_since_us = UINT64_MAX;
+    }
+
+    // 从待机进入姿态模式时捕获当前姿态，避免旧编码器目标或默认零目标引发回转
+    if (mode == GIMBAL_MODE_ANGLE && gimbal->imu_state == GIMBAL_IMU_READY)
+    {
+        if ((gimbal->yaw.state == GIMBAL_AXIS_RELAX || mode_changed) && isfinite(gimbal->yaw.angle_deg))
+        {
+            active_command->yaw.target_angle_deg = gimbal->yaw.angle_deg;
+            active_command->yaw.target_speed_rad_s = 0.0f;
+        }
+        if ((gimbal->pitch.state == GIMBAL_AXIS_RELAX || mode_changed) && isfinite(gimbal->pitch.angle_deg))
+        {
+            active_command->pitch.target_angle_deg = gimbal->pitch.angle_deg;
+            active_command->pitch.target_speed_rad_s = 0.0f;
+        }
+    }
 
     // 两轴共用模式，各自独立推进状态机
     Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s);
@@ -220,10 +266,11 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
 
     // PID 指向实例内的参数副本，调试器修改配置后由每周期比较决定何时同步
     axis->applied_zero_encoder_deg = config->zero_encoder_deg;
+    axis->applied_reversed = config->reversed;
     axis->applied_angle_pid = config->angle_pid;
     axis->applied_speed_pid = config->speed_pid;
 
-    // 角度环微分直接使用实测角速度，速度环微分由反馈差分计算
+    // 内环直接采用机体系陀螺仪分量，外环保留当前零微分配置
     if (PID_Init(&axis->angle_pid, KPID_MODE_SET_D, frequency_hz, &axis->applied_angle_pid) != 0 ||
         PID_Init(&axis->speed_pid, KPID_MODE_CALC_D, frequency_hz, &axis->applied_speed_pid) != 0)
     {
@@ -234,7 +281,7 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
 }
 
 /**
- * @brief 将单轴反馈标记为失联并断开连续角
+ * @brief 将单轴机械反馈标记为失联并断开编码器连续角
  *
  * @param[out] axis 单轴运行数据
  * @return 无返回值
@@ -242,16 +289,150 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
 {
     axis->encoder_deg = NAN;
-    axis->angle_deg = NAN;
-    axis->speed_rad_s = NAN;
+    axis->mechanical_angle_deg = NAN;
+    axis->motor_speed_rad_s = NAN;
     axis->feedback_time_us = UINT64_MAX;
     AngleUnwrap_Reset(&axis->unwrap);
 }
 
 /**
+ * @brief 撤销惯性控制量并根据当前阶段进入等待或故障
+ *
+ * @param[in,out] gimbal 云台实例
+ * @return 无返回值
+ */
+static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
+{
+    gimbal->imu.valid = false;
+    gimbal->imu_stable_since_us = UINT64_MAX;
+    gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
+    gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
+
+    // 启动期间允许继续等待，运行后的共用反馈异常必须锁存至人工待机
+    switch (gimbal->imu_state)
+    {
+        case GIMBAL_IMU_WAITING:
+        case GIMBAL_IMU_STABILIZING:
+            gimbal->imu_state = GIMBAL_IMU_WAITING;
+            break;
+
+        case GIMBAL_IMU_READY:
+        case GIMBAL_IMU_FAULT:
+        default:
+            gimbal->imu_state = GIMBAL_IMU_FAULT;
+            break;
+    }
+}
+
+/**
+ * @brief 校验同帧惯性反馈并推进静止检查与故障状态机
+ *
+ * @param[in,out] gimbal 云台实例
+ * @param[in] imu 新快照，无新消息时为 NULL
+ * @param[in] now_us 当前单调时刻，单位微秒
+ * @return 无返回值
+ */
+static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, uint64_t now_us)
+{
+    const float timeout_s = gimbal->config.imu_timeout_s;
+    if (!isfinite(timeout_s) || timeout_s <= 0.0f || timeout_s > 0.1f)
+    {
+        Gimbal_InvalidateImu(gimbal);
+        return;
+    }
+    const uint64_t timeout_us = (uint64_t)(timeout_s * 1.0e6f);
+    const Gimbal_ImuFeedback_t *frame = imu != NULL ? imu : &gimbal->imu;
+    bool valid = frame->valid && frame->sample_time_us <= now_us &&
+                 now_us - frame->sample_time_us <= timeout_us;
+    bool stationary = gimbal->imu.valid;
+    float gyro_norm_sq = 0.0f;
+
+    // 所有轴共同校验，任何非有限数据都不能进入任一轴的闭环
+    for (uint32_t i = 0U; i < 3U; ++i)
+    {
+        valid = valid && isfinite(frame->angle_deg[i]) && isfinite(frame->gyro_rad_s[i]) &&
+                fabsf(frame->gyro_rad_s[i]) <= GIMBAL_IMU_MAX_RAD_S;
+        gyro_norm_sq += frame->gyro_rad_s[i] * frame->gyro_rad_s[i];
+    }
+    valid = valid && fabsf(frame->angle_deg[0]) <= 180.0f &&
+            fabsf(frame->angle_deg[1]) < GIMBAL_IMU_MAX_PITCH_DEG;
+
+    // 新帧必须严格前进，重复帧、倒退及断流后突然恢复均不得掩盖坐标断开
+    if (imu != NULL && gimbal->imu.valid)
+    {
+        const uint64_t previous_us = gimbal->imu.sample_time_us;
+        const bool continuous = frame->sample_time_us > previous_us &&
+                                frame->sample_time_us - previous_us <= timeout_us;
+        valid = valid && continuous;
+        const float dt_s = continuous ? (float)(frame->sample_time_us - previous_us) * 1.0e-6f : 0.0f;
+        for (uint32_t i = 0U; i < 3U; ++i)
+        {
+            float delta_deg = frame->angle_deg[i] - gimbal->imu.angle_deg[i];
+            if (i == 0U)
+            {
+                delta_deg = AngleUnwrap_Wrap(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
+            }
+            stationary = stationary && fabsf(delta_deg) <= GIMBAL_IMU_STATIC_DEG_S * dt_s;
+            const float max_delta_deg = GIMBAL_IMU_MAX_RAD_S * M_RAD2DEG_MULT * dt_s + GIMBAL_IMU_JUMP_MARGIN_DEG;
+            valid = valid && fabsf(delta_deg) <= max_delta_deg;
+        }
+    }
+    if (!valid)
+    {
+        Gimbal_InvalidateImu(gimbal);
+        return;
+    }
+
+    // 只按新源采样推进就绪计时，重复使用缓存不能凑够静止时间
+    if (imu != NULL)
+    {
+        stationary = stationary && gyro_norm_sq <= GIMBAL_IMU_STATIC_RAD_S * GIMBAL_IMU_STATIC_RAD_S;
+        gimbal->imu = *imu;
+        switch (gimbal->imu_state)
+        {
+            case GIMBAL_IMU_WAITING:
+                gimbal->imu_stable_since_us = UINT64_MAX;
+                gimbal->imu_state = GIMBAL_IMU_STABILIZING;
+                break;
+
+            case GIMBAL_IMU_STABILIZING:
+                if (!stationary)
+                {
+                    gimbal->imu_stable_since_us = UINT64_MAX;
+                    break;
+                }
+                if (gimbal->imu_stable_since_us == UINT64_MAX)
+                {
+                    gimbal->imu_stable_since_us = imu->sample_time_us;
+                }
+                if (imu->sample_time_us - gimbal->imu_stable_since_us >= GIMBAL_IMU_STABLE_US)
+                {
+                    gimbal->imu_state = GIMBAL_IMU_READY;
+                }
+                break;
+
+            case GIMBAL_IMU_READY:
+            case GIMBAL_IMU_FAULT:
+                break;
+
+            default:
+                Gimbal_InvalidateImu(gimbal);
+                break;
+        }
+    }
+
+    // 当前 INS 已完成安装修正，直接取 Pitch/Y 与累计 Yaw/Z，不叠加电机方向
+    const bool ready = gimbal->imu_state == GIMBAL_IMU_READY;
+    gimbal->yaw.angle_deg = ready ? gimbal->imu.angle_deg[2] : NAN;
+    gimbal->yaw.speed_rad_s = ready ? gimbal->imu.gyro_rad_s[2] : NAN;
+    gimbal->pitch.angle_deg = ready ? gimbal->imu.angle_deg[1] : NAN;
+    gimbal->pitch.speed_rad_s = ready ? gimbal->imu.gyro_rad_s[1] : NAN;
+}
+
+/**
  * @brief 校验单轴新反馈帧并换算编码器角度、转速和相对角度
  *
- * 新帧时间倒退、与上一帧间隔超时或展开歧义时只清除反馈，本周期角度为非数值，下一帧重新建立连续角
+ * 新帧时间倒退、与上一帧间隔超时或展开歧义时清除机械反馈，下一帧重新建立机械角，惯性量独立处理
  *
  * @param[in,out] axis 单轴运行数据
  * @param[in] config 单轴配置
@@ -265,6 +446,12 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
                                       const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us,
                                       bool signed_angle)
 {
+    if (timeout_us == 0U)
+    {
+        Gimbal_ClearFeedback(axis);
+        return;
+    }
+
     // 没有新帧时只检查旧帧时效，超时后清除反馈
     if (motor == NULL)
     {
@@ -288,7 +475,7 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     // 两种角度都拒绝旧帧和超时间隔，pitch 不依赖连续角展开器也保留时序校验
     const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
                             frame_time_us - axis->feedback_time_us <= timeout_us;
-    const bool has_reference = signed_angle ? isfinite(axis->angle_deg) : axis->unwrap.has_reference;
+    const bool has_reference = signed_angle ? isfinite(axis->mechanical_angle_deg) : axis->unwrap.has_reference;
     if (!frame_valid || (has_reference && !continuous))
     {
         Gimbal_ClearFeedback(axis);
@@ -301,15 +488,15 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
         AngleUnwrap_Wrap(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
     const float speed_rad_s = speed_rpm * GIMBAL_RPM_TO_RAD_S;
     axis->encoder_deg = encoder_deg;
-    axis->speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
+    axis->motor_speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
     axis->feedback_time_us = frame_time_us;
 
     // pitch 行程围绕水平零点，直接映射到 [-180, 180)，负角上电和失联恢复均不累计圈数
     if (signed_angle)
     {
         const float half_turn_deg = GIMBAL_FULL_TURN_DEG * 0.5f;
-        axis->angle_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
-                                         GIMBAL_FULL_TURN_DEG) - half_turn_deg;
+        axis->mechanical_angle_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
+                                                    GIMBAL_FULL_TURN_DEG) - half_turn_deg;
         return;
     }
 
@@ -320,13 +507,13 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     {
         angle_deg = NAN;
     }
-    axis->angle_deg = angle_deg;
+    axis->mechanical_angle_deg = angle_deg;
 }
 
 /**
  * @brief 校验单轴配置并同步零点和 PID 参数副本
  *
- * 零点改变时断开连续角，角度模式运行中的轴随之进入故障；PID 参数改变时清空积分，避免旧积分按新增益突变
+ * 零点或方向改变时断开机械连续角，运行中的轴进入故障；PID 参数改变时清空积分，避免旧积分按新增益突变
  *
  * @param[in,out] axis 单轴运行数据
  * @param[in] config 单轴配置
@@ -339,12 +526,16 @@ static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_
         return false;
     }
 
-    // 零点改变后旧连续角坐标失效，下一帧以新零点重新建立
-    if (config->zero_encoder_deg != axis->applied_zero_encoder_deg)
+    // 零点或方向变化后机械坐标失效，运行中锁存故障，下一帧重新建立机械角
+    if (config->zero_encoder_deg != axis->applied_zero_encoder_deg || config->reversed != axis->applied_reversed)
     {
         axis->applied_zero_encoder_deg = config->zero_encoder_deg;
-        axis->angle_deg = NAN;
-        AngleUnwrap_Reset(&axis->unwrap);
+        axis->applied_reversed = config->reversed;
+        Gimbal_ClearFeedback(axis);
+        if (axis->state == GIMBAL_AXIS_RUNNING)
+        {
+            Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
+        }
     }
 
     // 参数副本与配置不同时同步并清空积分，比例和微分项不受历史影响
@@ -411,7 +602,8 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     // 反馈、命令和周期任一无效时停止计算，由调用方进入故障
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
     if (!isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S ||
-        !isfinite(axis->speed_rad_s) || !isfinite(command->target_speed_rad_s) ||
+        !isfinite(axis->speed_rad_s) || !isfinite(axis->mechanical_angle_deg) ||
+        !isfinite(axis->motor_speed_rad_s) || !isfinite(command->target_speed_rad_s) ||
         (angle_needed && (!isfinite(axis->angle_deg) || !isfinite(command->target_angle_deg))))
     {
         return false;
@@ -421,14 +613,22 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
     float target_speed_rad_s = command_speed_rad_s;
+    const float previous_angle_integral = axis->angle_pid.i;
+    bool mechanically_limited = false;
     if (angle_needed)
     {
         float target_angle_deg = command->target_angle_deg;
-        Clip(&target_angle_deg, config->min_angle_deg, config->max_angle_deg);
+        if (config->mechanical_limit_enabled)
+        {
+            // 用目标姿态增量预测机械角，底座倾斜时不能直接夹住世界姿态目标
+            const float min_target_deg = axis->angle_deg + config->min_angle_deg - axis->mechanical_angle_deg;
+            const float max_target_deg = axis->angle_deg + config->max_angle_deg - axis->mechanical_angle_deg;
+            Clip(&target_angle_deg, min_target_deg, max_target_deg);
+            mechanically_limited = target_angle_deg != command->target_angle_deg;
+        }
         axis->target_angle_deg = target_angle_deg;
 
-        // 角度环输入为弧度，微分项直接使用实测角速度
-        const float previous_integral = axis->angle_pid.i;
+        // 角度环输入为弧度，陀螺仪反馈保持机体系分量，当前外环微分增益为零
         const float correction_rad_s = PID_Calc(&axis->angle_pid, target_angle_deg * M_DEG2RAD_MULT,
                                                 axis->angle_deg * M_DEG2RAD_MULT, axis->speed_rad_s, period_s);
         const float combined_rad_s = correction_rad_s + command_speed_rad_s;
@@ -438,7 +638,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         if ((combined_rad_s > max_speed_rad_s && target_angle_deg > axis->angle_deg) ||
             (combined_rad_s < -max_speed_rad_s && target_angle_deg < axis->angle_deg))
         {
-            axis->angle_pid.i = previous_integral;
+            axis->angle_pid.i = previous_angle_integral;
         }
     }
     else
@@ -446,7 +646,19 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         axis->target_angle_deg = NAN;
     }
 
+    // 速度模式及前馈同样受机械边界约束，越界时只允许零速或向行程内部运动
+    if (config->mechanical_limit_enabled)
+    {
+        const float scale = M_DEG2RAD_MULT / period_s;
+        const float min_speed = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
+        const float max_speed = fmaxf(0.0f, (config->max_angle_deg - axis->mechanical_angle_deg) * scale);
+        const float requested_speed = target_speed_rad_s;
+        Clip(&target_speed_rad_s, min_speed, max_speed);
+        mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
+    }
+
     // 速度环输出电流，非有限结果视为计算异常
+    const float previous_speed_integral = axis->speed_pid.i;
     const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
     if (!isfinite(target_speed_rad_s) || !isfinite(current_a))
     {
@@ -454,6 +666,20 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     }
     axis->target_speed_rad_s = target_speed_rad_s;
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
+
+    // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
+    if (config->mechanical_limit_enabled &&
+        ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
+         (axis->mechanical_angle_deg <= config->min_angle_deg && axis->output_current_a < 0.0f)))
+    {
+        axis->output_current_a = 0.0f;
+        axis->speed_pid.i = previous_speed_integral;
+        mechanically_limited = true;
+    }
+    if (mechanically_limited)
+    {
+        axis->angle_pid.i = previous_angle_integral;
+    }
     return true;
 }
 
@@ -474,7 +700,8 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
     // 先采纳配置修改，再根据模式和反馈判断本周期能否闭环
     const bool config_valid = Gimbal_ApplyAxisConfig(axis, config);
     const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
-    const bool feedback_ready = isfinite(axis->speed_rad_s) && (mode != GIMBAL_MODE_ANGLE || isfinite(axis->angle_deg));
+    const bool feedback_ready = isfinite(axis->speed_rad_s) && isfinite(axis->angle_deg) &&
+                                isfinite(axis->mechanical_angle_deg) && isfinite(axis->motor_speed_rad_s);
 
     switch (axis->state)
     {
