@@ -47,8 +47,9 @@ const Chassis_Config_t *Config_GetChassis(void)
  * - 速度上限依据 GM6020 使用说明 20231013 的 320 rpm 空载转速换算，约 33.51 rad/s
  * - 电流上限 0.5 A，低于手册额定电流 1.62 A，为当前调试阶段的软件保护
  * - 速度环 Kp=0.06、Ki=0.177 为已整定值，积分限幅取电流上限除以 Ki，约 2.825 rad
- * - 角度环增益初值为零待整定，积分限幅暂取 1.0 rad·s，增大 Ki 前须同步评估
- * - pitch 尚未接入控制，enabled 为 false，零点和角度范围为占位值，启用前须实测标定
+ * - 两轴角度环统一采用当前 yaw 参数 Kp=15、Ki=0.005、Kd=0，积分限幅为 1.0 rad·s
+ * - pitch 的两环参数、速度和电流上限与 yaw 对齐，参数副本独立保存，后续可分别整定
+ * - pitch 尚未接入输出，enabled 为 false，零点 0° 与范围 [-20°, 20°] 为占位值，启用前须实测标定
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  */
 static const Gimbal_Config_t gimbal_config =
@@ -97,13 +98,24 @@ static const Gimbal_Config_t gimbal_config =
         .angle_pid =
         {
             .k = 1.0f,
+            .p = 15.0f,
+            .i = 0.005f,
+            .d = 0.0f,
             .i_limit = 1.0f,
             .out_limit = 320.0f * 0.10471975512f,
+            .d_cutoff_freq = 0.0f,
+            .range = 0.0f,
         },
         .speed_pid =
         {
             .k = 1.0f,
+            .p = 0.06f,
+            .i = 0.177f,
+            .d = 0.0f,
+            .i_limit = 0.5f / 0.177f,
             .out_limit = 0.5f,
+            .d_cutoff_freq = 0.0f,
+            .range = 0.0f,
         },
     },
     .feedback_timeout_s = 0.09f,
