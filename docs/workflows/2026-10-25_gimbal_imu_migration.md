@@ -1,5 +1,7 @@
 # 云台惯性反馈迁移记录
 
+当前行为以末尾“移除静止使能门槛”记录为准，步骤二的连续静止检查属于已被替代的历史实现
+
 用户已确认：沿用当前 INS 朝向，新增反馈结构仅包含姿态角、三轴陀螺仪角速度、源采样时间戳及有效标志
 保留电机反馈结构、现有 CAN 电流输出和编码器机械限位
 
@@ -54,13 +56,13 @@ gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibui
 ## 实机检查入口与边界
 
 1. 载入本轮 ELF，保持 `gimbal_command.mode=GIMBAL_MODE_RELAX`，先观察 `gimbal.imu` 和两轴机械角
-2. `gimbal.imu_state`：0 等待、1 静止检查、2 就绪、3 故障；打印机振动可能使静止检查持续等待
+2. `gimbal.imu_state`：0 等待、2 就绪、3 故障；有效首帧直接就绪，不再使用状态值 1
 3. 手动抬头核对 Pitch/Gyro Y 与机械角正方向，转 yaw 核对累计 Yaw/Gyro Z 与电机方向，源码定义不能替代实测
 4. pitch 水平时机械角核对为 0°，上下行程检查 ±60°；yaw 改过 reversed 后重新核对机械零点
 5. 就绪后先小电流核对内环方向；进入 ANGLE 后先捕获当前目标，下一周期后再修改目标
-6. 故障后先回 RELAX，再重新完成静止检查并使能
+6. 故障后先回 RELAX，再等待有效新帧后使能
 
-尚未烧录或运行真实电机；10 ms 超时、1 秒静止检查及变化率门槛须通过板上观测核定
+尚未烧录或运行真实电机；10 ms 超时须通过板上观测核定，云台的 1 秒静止检查及其变化率门槛已删除
 直接陀螺仪轴分量不等同于任意姿态下的欧拉角导数，六轴 yaw 漂移不会因反馈迁移消失
 预计机械角是局部近似，不包含制动距离，不能阻止惯性、外力或掉电越界
 未加入重启代号，依赖初始化失效通知、校准断流与姿态连续性检查，不支持带电直接修改姿态内部状态
@@ -75,3 +77,22 @@ gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibui
 - 设计决策通过 `task.py promote` 回流 architecture/conventions，明确惯性失效不回退编码器及机械目标增量约束
 - 测试证据记录后删除本轮专用 `build/imu_migration_test` 下的临时测试源码、模拟头、检查脚本及可执行文件，不删除仓库正式测试资产
 - 第一步本地提交 `e96a24e`；第二步通过验证后独立提交，未推送远端
+
+## 移除静止使能门槛
+
+- 用户要求移除云台额外增加的静止检查，删除 1 秒计时、低角速度及低姿态变化率门槛和对应运行字段
+- `Gimbal_UpdateImu` 收到有效首帧立即从 WAITING 进入 READY，保留 READY=2、FAULT=3 的调试数值
+- 故障依旧锁存至 RELAX，解除后等待有效新帧即可就绪；不再重新等待静止
+- 保留超时、无效标志、NaN/Inf、时间倒退/重复、姿态异常跳变、单轴电机在线和机械限位保护
+- 本次只删除云台使能条件，BMI088 驱动初始化中的原有零偏校准不在本次修改范围
+
+验证证据：
+
+- `python .auto-embedded/scripts/check.py`：ARCH、HW、SPEC 通过
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug -j 2`：成功，生成 `build/Debug/Infantry_Robot.elf`
+- 真实 Gimbal/PID/滤波/数学/编码器展开组件的主机回归：140 次断言通过
+- 覆盖非零角速度首帧立即就绪、运动中的后续帧、角度模式入口捕获及下一周期目标修改产生电流、源时间 10000/10001 us 边界
+- 覆盖启动无效帧、NaN/Inf、过期/未来/重复/倒退时刻、异常姿态跳变、故障锁存及 RELAX 后首帧恢复、非法状态、单电机故障隔离及机械边界保护
+- 编译使用 `gcc -std=c11 -Wall -Wextra -Werror -O0 -ffunction-sections -fdata-sections -Ibuild/gimbal_ready_test -IUser build/gimbal_ready_test/ready_test.c User/module/gimbal.c User/component/angle_unwrap.c User/component/pid.c User/component/filter.c User/component/user_math.c '-Wl,--gc-sections' -lm -o build/gimbal_ready_test/ready_test.exe`，执行该程序通过
+- 逐文件重读协作规则并复核格式、中文注释、分层和默认输出；测试记录后清理本轮临时测试文件
+- 尚未烧录或进行硬件验证，不能据此确认此前无法控制的唯一原因

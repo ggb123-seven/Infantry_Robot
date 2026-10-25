@@ -54,14 +54,14 @@ typedef enum
 } Gimbal_AxisState_t;
 
 /*
- * 共用惯性反馈状态：等待首帧、连续静止检查、可用于闭环、故障锁存
- * 就绪前保持零输出，故障后须先回 RELAX，再重新完成静止检查
+ * 共用惯性反馈状态：等待有效首帧、可用于闭环、故障锁存
+ * 收到有效快照即可就绪，故障后须先回 RELAX，再等待新的有效快照
+ * 保留就绪值 2 和故障值 3，兼容现有调试器观测，不再使用原静止检查值 1
  */
 typedef enum
 {
     GIMBAL_IMU_WAITING = 0,
-    GIMBAL_IMU_STABILIZING,
-    GIMBAL_IMU_READY,
+    GIMBAL_IMU_READY = 2,
     GIMBAL_IMU_FAULT,
 } Gimbal_ImuState_t;
 
@@ -177,7 +177,6 @@ typedef struct
  * - yaw、pitch：两轴运行数据
  * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
  * - imu_state：惯性反馈就绪及故障状态
- * - imu_stable_since_us：连续静止检查开始时刻，单位微秒，未开始时为 UINT64_MAX
  * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
  */
 typedef struct
@@ -188,7 +187,6 @@ typedef struct
     Gimbal_Axis_t pitch;
     Gimbal_ImuFeedback_t imu;
     Gimbal_ImuState_t imu_state;
-    uint64_t imu_stable_since_us;
 } Gimbal_t;
 
 /*

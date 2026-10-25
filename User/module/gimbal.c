@@ -13,8 +13,6 @@
  * - GIMBAL_MAX_PERIOD_S：允许参与控制的最大周期，单位 s
  * - GIMBAL_RAW_SPEED_MIN_RPM、GIMBAL_RAW_SPEED_MAX_RPM：RM 电机有符号 16 位转速反馈范围，单位 rpm
  * - GIMBAL_MAX_GAIN：PID 增益合法上限，用于拒绝调试器误写的异常值
- * - GIMBAL_IMU_STABLE_US：连续静止检查时间，初始取 1 秒，后续需通过实机收敛观测核定
- * - GIMBAL_IMU_STATIC_RAD_S、GIMBAL_IMU_STATIC_DEG_S：静止检查的陀螺仪模长和姿态变化率上限
  * - GIMBAL_IMU_MAX_RAD_S：拒绝超出 BMI088 当前量程的异常角速度，留取约 40 rad/s 的数值余量
  * - GIMBAL_IMU_MAX_PITCH_DEG：欧拉俯仰有效区保留距奇异点 1 度的余量，单位度
  * - GIMBAL_IMU_JUMP_MARGIN_DEG：相邻姿态物理变化量之外允许的解算修正余量，初始取 1 度
@@ -25,9 +23,6 @@
 #define GIMBAL_RAW_SPEED_MIN_RPM (-32768.0f)
 #define GIMBAL_RAW_SPEED_MAX_RPM (32767.0f)
 #define GIMBAL_MAX_GAIN (1000.0f)
-#define GIMBAL_IMU_STABLE_US (1000000ULL)
-#define GIMBAL_IMU_STATIC_RAD_S (0.05f)
-#define GIMBAL_IMU_STATIC_DEG_S (0.5f)
 #define GIMBAL_IMU_MAX_RAD_S (40.0f)
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
@@ -74,7 +69,6 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     Gimbal_ClearFeedback(&gimbal->pitch);
     gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
     gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
-    gimbal->imu_stable_since_us = UINT64_MAX;
     if (!isfinite(frequency_hz) || frequency_hz < 10.0f || frequency_hz > 2000.0f ||
         !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f ||
         config->feedback_timeout_s > 1.0f || !isfinite(config->imu_timeout_s) ||
@@ -145,12 +139,11 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
     const Gimbal_Mode_t mode = active_command->mode;
     const bool mode_changed = mode != gimbal->mode;
 
-    // 共用源故障只在人工回待机后解除，下一轮重新执行静止检查
+    // 共用源故障只在人工回待机后解除，下一轮等待新的有效快照
     if (mode == GIMBAL_MODE_RELAX && gimbal->imu_state == GIMBAL_IMU_FAULT)
     {
         gimbal->imu_state = GIMBAL_IMU_WAITING;
         gimbal->imu.valid = false;
-        gimbal->imu_stable_since_us = UINT64_MAX;
     }
 
     // 从待机进入姿态模式时捕获当前姿态，避免旧编码器目标或默认零目标引发回转
@@ -304,7 +297,6 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
 static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
 {
     gimbal->imu.valid = false;
-    gimbal->imu_stable_since_us = UINT64_MAX;
     gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
     gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
 
@@ -312,7 +304,6 @@ static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
     switch (gimbal->imu_state)
     {
         case GIMBAL_IMU_WAITING:
-        case GIMBAL_IMU_STABILIZING:
             gimbal->imu_state = GIMBAL_IMU_WAITING;
             break;
 
@@ -325,7 +316,7 @@ static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
 }
 
 /**
- * @brief 校验同帧惯性反馈并推进静止检查与故障状态机
+ * @brief 校验同帧惯性反馈并推进有效就绪与故障状态机
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] imu 新快照，无新消息时为 NULL
@@ -344,15 +335,12 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
     const Gimbal_ImuFeedback_t *frame = imu != NULL ? imu : &gimbal->imu;
     bool valid = frame->valid && frame->sample_time_us <= now_us &&
                  now_us - frame->sample_time_us <= timeout_us;
-    bool stationary = gimbal->imu.valid;
-    float gyro_norm_sq = 0.0f;
 
     // 所有轴共同校验，任何非有限数据都不能进入任一轴的闭环
     for (uint32_t i = 0U; i < 3U; ++i)
     {
         valid = valid && isfinite(frame->angle_deg[i]) && isfinite(frame->gyro_rad_s[i]) &&
                 fabsf(frame->gyro_rad_s[i]) <= GIMBAL_IMU_MAX_RAD_S;
-        gyro_norm_sq += frame->gyro_rad_s[i] * frame->gyro_rad_s[i];
     }
     valid = valid && fabsf(frame->angle_deg[0]) <= 180.0f &&
             fabsf(frame->angle_deg[1]) < GIMBAL_IMU_MAX_PITCH_DEG;
@@ -372,7 +360,6 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
             {
                 delta_deg = AngleUnwrap_Wrap(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
             }
-            stationary = stationary && fabsf(delta_deg) <= GIMBAL_IMU_STATIC_DEG_S * dt_s;
             const float max_delta_deg = GIMBAL_IMU_MAX_RAD_S * M_RAD2DEG_MULT * dt_s + GIMBAL_IMU_JUMP_MARGIN_DEG;
             valid = valid && fabsf(delta_deg) <= max_delta_deg;
         }
@@ -383,32 +370,14 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
         return;
     }
 
-    // 只按新源采样推进就绪计时，重复使用缓存不能凑够静止时间
+    // 有效新快照直接就绪，运动不阻止使能，故障状态仍须先由命令解除
     if (imu != NULL)
     {
-        stationary = stationary && gyro_norm_sq <= GIMBAL_IMU_STATIC_RAD_S * GIMBAL_IMU_STATIC_RAD_S;
         gimbal->imu = *imu;
         switch (gimbal->imu_state)
         {
             case GIMBAL_IMU_WAITING:
-                gimbal->imu_stable_since_us = UINT64_MAX;
-                gimbal->imu_state = GIMBAL_IMU_STABILIZING;
-                break;
-
-            case GIMBAL_IMU_STABILIZING:
-                if (!stationary)
-                {
-                    gimbal->imu_stable_since_us = UINT64_MAX;
-                    break;
-                }
-                if (gimbal->imu_stable_since_us == UINT64_MAX)
-                {
-                    gimbal->imu_stable_since_us = imu->sample_time_us;
-                }
-                if (imu->sample_time_us - gimbal->imu_stable_since_us >= GIMBAL_IMU_STABLE_US)
-                {
-                    gimbal->imu_state = GIMBAL_IMU_READY;
-                }
+                gimbal->imu_state = GIMBAL_IMU_READY;
                 break;
 
             case GIMBAL_IMU_READY:
