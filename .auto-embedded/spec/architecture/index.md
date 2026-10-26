@@ -61,3 +61,4 @@
 - [设计决策] 底盘采用任务负责 DR16 映射、队列与实测周期，模块只执行 Init/UpdateFeedback/Control/DumpOutput；配置非法或周期超过 100 ms 时整组零输出，单轮离线隔离及自动恢复策略必须明确并单独验证
 - [设计决策] 当前云台由 Task_motor_gimbal 调用无 RTOS 依赖的 Gimbal 模块，通过 Gimbal_Output_t 邮箱传递 yaw/pitch 两轴电流 A；CANDevices_ApplyGimbalCurrent 接收两轴电流，先写完 CAN2 ID5/ID6 槽位再统一发送一次 0x2FE。单轴非有限电流归零，命令邮箱空或读失败两轴归零；两轴 enabled=true，默认命令 RELAX。此约定取代历史 yaw 单 float 邮箱、pitch 恒零及模块直接读写邮箱的描述。
 - [设计决策] 云台惯性串级控制由 Gimbal 模块接收同帧姿态角、陀螺仪角速度、源采样时间戳及有效标志，INS 任务唯一发布，云台任务只消费邮箱；编码器单独用于机械角和在线检测，惯性故障两轴停机且不回退编码器闭环。当前沿用 INS 安装坐标，yaw 为累计 Yaw/Z，pitch 为 Pitch/Y，直接机体系分量不等同于任意姿态下的欧拉角导数。
+- [设计决策] DR16 状态通过独立最新值邮箱分别分发给底盘和云台，不由两个消费者争抢同一队列；Task_Init 集中创建并检查 dr16_gimbal_state，任一路发布失败仍尝试另一路。云台右拨杆中位 RELAX、上位 ANGLE，右摇杆按实际周期累加两轴目标角；输入启用状态由云台任务集中编排，闭环和机械限位保留在 Gimbal 模块。

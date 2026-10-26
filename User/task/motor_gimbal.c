@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "bsp/time.h"
+#include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
 
@@ -16,6 +17,36 @@
 #define MOTOR_GIMBAL_SINE_OMEGA_RAD_S (6.0f)
 #define MOTOR_GIMBAL_TWO_PI (6.28318530718f)
 #define MOTOR_GIMBAL_DEG_TO_RAD (0.0174532925199f)
+
+/*
+ * DR16 云台命令参数，使用右拨杆和右摇杆，左侧输入继续分配给底盘
+ * - CHANNEL_LIMIT：DR16 去中心后的满量程计数，来源为设备协议的 ±660
+ * - DEADZONE：中心死区比例 5%，死区外重新归一化到满量程
+ * - YAW_RATE_DEG_S、PITCH_RATE_DEG_S：满杆目标角变化速度，初始均取 60 度每秒
+ * - YAW_DIRECTION、PITCH_DIRECTION：通道到当前 INS 角度坐标的符号，初始均取反向，实机核对左右与抬头方向
+ * - MAX_PERIOD_S：输入积分允许的最大间隔，沿用云台模块的 0.1 秒控制周期上限
+ * 遥控帧龄使用 DR16_RECEIVER_OFFLINE_TIMEOUT_US，沿用设备层的 100 毫秒离线阈值
+ */
+#define MOTOR_GIMBAL_DR16_CHANNEL_LIMIT (660.0f)
+#define MOTOR_GIMBAL_DR16_DEADZONE (0.05f)
+#define MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S (60.0f)
+#define MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S (60.0f)
+#define MOTOR_GIMBAL_DR16_YAW_DIRECTION (-1.0f)
+#define MOTOR_GIMBAL_DR16_PITCH_DIRECTION (-1.0f)
+#define MOTOR_GIMBAL_MAX_PERIOD_S (0.1f)
+
+/*
+ * 遥控输入状态仅编排命令来源，闭环和设备故障继续由 Gimbal 模块管理
+ * - WAIT_MIDDLE：启动、失联或异常后保持失能，等待收到有效的右拨杆中位
+ * - READY：已确认中位，继续零输出，右拨杆上位后允许角度模式
+ * - ACTIVE：仅右拨杆上位时发布角度命令，中位退回 READY，其他档位退回 WAIT_MIDDLE
+ */
+typedef enum
+{
+    MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE = 0,
+    MOTOR_GIMBAL_REMOTE_READY,
+    MOTOR_GIMBAL_REMOTE_ACTIVE,
+} MotorGimbal_RemoteState_t;
 
 // 正弦测试待机时相位归零，yaw 进入角度闭环后才开始推进，异常状态回到待机
 typedef enum
@@ -37,7 +68,14 @@ static MotorGimbal_SineState_t sine_state;
 static float sine_phase_rad;
 static float sine_center_deg;
 
+// 遥控缓存及输入状态仅由云台任务访问，不与 ISR 共享
+static DR16_State_t remote_cache;
+static bool remote_cache_valid;
+static MotorGimbal_RemoteState_t remote_state;
+
 static bool MotorGimbal_Init(void);
+static void MotorGimbal_ApplyDR16Input(uint64_t now_us, float period_s);
+static float MotorGimbal_NormalizeChannel(int16_t channel);
 static void MotorGimbal_UpdateSineTest(float period_s);
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback);
 static bool MotorGimbal_PublishOutput(const Gimbal_Output_t *output);
@@ -53,7 +91,8 @@ void Task_motor_gimbal(void *argument)
     (void)argument;
 
     const uint32_t tick_frequency = osKernelGetTickFreq();
-    const uint32_t delay_tick = tick_frequency / MOTOR_GIMBAL_FREQ;
+    const bool timing_valid = tick_frequency >= MOTOR_GIMBAL_FREQ && tick_frequency % MOTOR_GIMBAL_FREQ == 0U;
+    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_GIMBAL_FREQ : 1U;
 
     // 等待统一装配完成后初始化云台模块，失败时只发布零电流
     osDelay(MOTOR_GIMBAL_INIT_DELAY);
@@ -64,7 +103,7 @@ void Task_motor_gimbal(void *argument)
     {
         // 按实际调度间隔计算控制周期，错过节拍时由模块拒绝过长周期
         const uint32_t now_tick = osKernelGetTickCount();
-        const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
+        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0f;
         previous_tick = now_tick;
         Gimbal_Output_t output =
         {
@@ -87,7 +126,8 @@ void Task_motor_gimbal(void *argument)
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
-            // 正弦测试改写 yaw 命令后执行状态机和两环计算
+            // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
+            MotorGimbal_ApplyDR16Input(BSP_TIME_Get(), period_s);
             MotorGimbal_UpdateSineTest(period_s);
             Gimbal_Control(&gimbal, &gimbal_command, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
@@ -101,6 +141,8 @@ void Task_motor_gimbal(void *argument)
                 .mode = GIMBAL_MODE_RELAX,
             };
             Gimbal_Control(&gimbal, &relax_command, period_s);
+            remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+            gimbal_command.mode = GIMBAL_MODE_RELAX;
         }
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
@@ -127,6 +169,124 @@ static bool MotorGimbal_Init(void)
         return false;
     }
     return Gimbal_Init(&gimbal, Config_GetGimbal(), (float)MOTOR_GIMBAL_FREQ) == 0;
+}
+
+/**
+ * @brief 消费独立遥控邮箱并将右拨杆和右摇杆转换为云台角度命令
+ *
+ * @param[in] now_us 当前单调时间，单位微秒
+ * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
+ * @return 无返回值
+ */
+static void MotorGimbal_ApplyDR16Input(uint64_t now_us, float period_s)
+{
+    // 每周期先撤销使能和前馈，只有有效遥控状态才能重新开放角度命令
+    gimbal_command.mode = GIMBAL_MODE_RELAX;
+    gimbal_command.yaw.target_speed_rad_s = 0.0f;
+    gimbal_command.pitch.target_speed_rad_s = 0.0f;
+    const osMessageQueueId_t queue = task_runtime.msgq.dr16_gimbal_state;
+    if (queue == NULL)
+    {
+        remote_cache_valid = false;
+        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+        return;
+    }
+
+    // 空邮箱保留最近合法帧的源时间，实际读取错误立即撤销缓存，避免沿用故障前的使能
+    DR16_State_t received;
+    const osStatus_t status = osMessageQueueGet(queue, &received, NULL, 0U);
+    if (status == osOK)
+    {
+        remote_cache = received;
+        remote_cache_valid = true;
+    }
+    else if (status != osErrorResource)
+    {
+        remote_cache_valid = false;
+    }
+
+    // 帧龄、时基或控制周期异常均回到人工确认状态，恢复上位帧不会自动使能
+    if (!remote_cache_valid || !remote_cache.header.online || now_us < remote_cache.header.last_online_time ||
+        now_us - remote_cache.header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US ||
+        !isfinite(period_s) || period_s <= 0.0f || period_s > MOTOR_GIMBAL_MAX_PERIOD_S)
+    {
+        remote_cache_valid = false;
+        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+        return;
+    }
+
+    // 模块故障后撤销整个遥控使能，避免其中一轴恢复时在旧目标上重新出力
+    if (gimbal.imu_state == GIMBAL_IMU_FAULT || gimbal.yaw.state == GIMBAL_AXIS_FAULT ||
+        gimbal.pitch.state == GIMBAL_AXIS_FAULT)
+    {
+        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+        return;
+    }
+
+    // 集中管理输入使能顺序，非法状态和中位以外的停机档都要求重新确认中位
+    const DR16_SwitchPosition_t position = remote_cache.data.sw_r;
+    switch (remote_state)
+    {
+        case MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE:
+            if (position == DR16_SWITCH_MIDDLE)
+            {
+                remote_state = MOTOR_GIMBAL_REMOTE_READY;
+            }
+            return;
+
+        case MOTOR_GIMBAL_REMOTE_READY:
+        case MOTOR_GIMBAL_REMOTE_ACTIVE:
+            if (position == DR16_SWITCH_MIDDLE)
+            {
+                remote_state = MOTOR_GIMBAL_REMOTE_READY;
+                return;
+            }
+            if (position != DR16_SWITCH_UP)
+            {
+                remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+                return;
+            }
+            remote_state = MOTOR_GIMBAL_REMOTE_ACTIVE;
+            break;
+
+        default:
+            remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+            return;
+    }
+
+    // 用模块上周期实际限幅后的目标继续积分，避免持续推向机械边界时积累不可达目标
+    // 首次使能或反馈尚未就绪时不积分，由模块捕获当前姿态作为目标
+    gimbal_command.mode = GIMBAL_MODE_ANGLE;
+    if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg))
+    {
+        const float yaw_input = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
+                                MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_x);
+        gimbal_command.yaw.target_angle_deg =
+            gimbal.yaw.target_angle_deg + yaw_input * MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S * period_s;
+    }
+    if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
+    {
+        const float pitch_input = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
+                                  MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_y);
+        gimbal_command.pitch.target_angle_deg =
+            gimbal.pitch.target_angle_deg + pitch_input * MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S * period_s;
+    }
+}
+
+/**
+ * @brief 将 DR16 右摇杆原始计数限幅并去除中心死区
+ *
+ * @param[in] channel 去中心后的原始计数，典型范围为 [-660, 660]
+ * @return 死区内为零，死区外线性映射到 [-1, 1]
+ */
+static float MotorGimbal_NormalizeChannel(int16_t channel)
+{
+    const float value = fmaxf(-1.0f, fminf(1.0f, (float)channel / MOTOR_GIMBAL_DR16_CHANNEL_LIMIT));
+    if (fabsf(value) <= MOTOR_GIMBAL_DR16_DEADZONE)
+    {
+        return 0.0f;
+    }
+    return copysignf((fabsf(value) - MOTOR_GIMBAL_DR16_DEADZONE) / (1.0f - MOTOR_GIMBAL_DR16_DEADZONE), value);
 }
 
 /**

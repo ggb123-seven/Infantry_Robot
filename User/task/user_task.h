@@ -64,6 +64,7 @@ typedef enum
     TASK_INIT_INS_THREAD_FAILED,
     TASK_INIT_CLEANUP_FAILED,
     TASK_INIT_KERNEL_UNLOCK_FAILED,
+    TASK_INIT_DR16_GIMBAL_MAILBOX_FAILED,
 } Task_InitStatus_t;
 
 /*
@@ -73,7 +74,8 @@ typedef enum
  * - thread.motor_gimbal：云台模块初始化与两轴周期控制任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
- * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入
+ * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入、底盘任务读取
+ * - msgq.dr16_gimbal_state：长度为 1 的独立 DR16 状态邮箱，元素为 DR16_State_t，由 DR16 任务写入、云台任务读取
  * - msgq.can_feedback：长度为 1 的 CAN 设备最新反馈邮箱，由 Task_can 写入、Task_motor_chassis 读取
  * - msgq.can_command：长度为 1 的 CAN 设备最新电流命令邮箱，由 Task_motor_chassis 写入、Task_can 读取
  * - msgq.gimbal_yaw_feedback：长度为 1 的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 Task_can 写入
@@ -96,6 +98,7 @@ typedef struct
     struct
     {
         osMessageQueueId_t dr16_state;
+        osMessageQueueId_t dr16_gimbal_state;
         osMessageQueueId_t can_feedback;
         osMessageQueueId_t can_command;
         osMessageQueueId_t gimbal_yaw_feedback;

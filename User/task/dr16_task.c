@@ -156,9 +156,9 @@ static bool DR16_TaskInitialize(void)
 }
 
 /**
- * @brief 使用长度为 1 的邮箱发布最新 DR16 一致快照
+ * @brief 将最新 DR16 一致快照分别发布到底盘和云台的独立邮箱
  *
- * @return 重置邮箱并写入状态均成功时返回 true，否则返回 false
+ * @return 两个邮箱均重置并写入成功时返回 true，任一失败时返回 false，仍继续发布另一邮箱
  */
 static bool DR16_TaskPublishState(void)
 {
@@ -167,18 +167,22 @@ static bool DR16_TaskPublishState(void)
     {
         DR16_ResetState(&dr16_state);
     }
-    if (task_runtime.msgq.dr16_state == NULL)
+    // 分别发布同一源时间的最新快照，一路失败不得阻断另一路的离线通知
+    const osMessageQueueId_t queues[] =
     {
-        return false;
-    }
-
-    // 邮箱只保留最新状态，重置和写入均必须检查结果
-    if (osMessageQueueReset(task_runtime.msgq.dr16_state) != osOK ||
-        osMessageQueuePut(task_runtime.msgq.dr16_state, &dr16_state, 0U, 0U) != osOK)
+        task_runtime.msgq.dr16_state,
+        task_runtime.msgq.dr16_gimbal_state,
+    };
+    bool success = true;
+    for (size_t i = 0U; i < sizeof(queues) / sizeof(queues[0]); ++i)
     {
-        return false;
+        if (queues[i] == NULL || osMessageQueueReset(queues[i]) != osOK ||
+            osMessageQueuePut(queues[i], &dr16_state, 0U, 0U) != osOK)
+        {
+            success = false;
+        }
     }
-    return true;
+    return success;
 }
 
 /**

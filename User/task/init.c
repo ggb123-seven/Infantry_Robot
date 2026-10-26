@@ -81,6 +81,14 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 云台使用独立遥控邮箱，避免与底盘争抢同一条消息
+    task_runtime.init_status = TASK_INIT_DR16_GIMBAL_MAILBOX_FAILED;
+    task_runtime.msgq.dr16_gimbal_state = osMessageQueueNew(1U, sizeof(DR16_State_t), NULL);
+    if (task_runtime.msgq.dr16_gimbal_state == NULL)
+    {
+        return false;
+    }
+
     // 创建 3508 底盘电机使用的 CAN 反馈邮箱，保证 CAN task 启动后已有明确发布目标
     task_runtime.init_status = TASK_INIT_CAN_FEEDBACK_MAILBOX_FAILED;
     task_runtime.msgq.can_feedback = osMessageQueueNew(1U, sizeof(CANDevices_Snapshot_t), NULL);
@@ -280,6 +288,15 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.can_feedback = NULL;
+    }
+    // 新增的遥控分发邮箱同样由初始化任务负责回收
+    if (task_runtime.msgq.dr16_gimbal_state != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.dr16_gimbal_state) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.dr16_gimbal_state = NULL;
     }
     if (task_runtime.msgq.dr16_state != NULL)
     {
