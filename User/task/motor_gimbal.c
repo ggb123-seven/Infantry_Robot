@@ -74,7 +74,7 @@ static bool remote_cache_valid;
 static MotorGimbal_RemoteState_t remote_state;
 
 static bool MotorGimbal_Init(void);
-static void MotorGimbal_ApplyDR16Input(uint64_t now_us, float period_s);
+static void MotorGimbal_ApplyDR16Input(float period_s);
 static float MotorGimbal_NormalizeChannel(int16_t channel);
 static void MotorGimbal_UpdateSineTest(float period_s);
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback);
@@ -127,7 +127,7 @@ void Task_motor_gimbal(void *argument)
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
             // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
-            MotorGimbal_ApplyDR16Input(BSP_TIME_Get(), period_s);
+            MotorGimbal_ApplyDR16Input(period_s);
             MotorGimbal_UpdateSineTest(period_s);
             Gimbal_Control(&gimbal, &gimbal_command, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
@@ -174,11 +174,10 @@ static bool MotorGimbal_Init(void)
 /**
  * @brief 消费独立遥控邮箱并将右拨杆和右摇杆转换为云台角度命令
  *
- * @param[in] now_us 当前单调时间，单位微秒
  * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
  * @return 无返回值
  */
-static void MotorGimbal_ApplyDR16Input(uint64_t now_us, float period_s)
+static void MotorGimbal_ApplyDR16Input(float period_s)
 {
     // 每周期先撤销使能和前馈，只有有效遥控状态才能重新开放角度命令
     gimbal_command.mode = GIMBAL_MODE_RELAX;
@@ -204,6 +203,9 @@ static void MotorGimbal_ApplyDR16Input(uint64_t now_us, float period_s)
     {
         remote_cache_valid = false;
     }
+
+    // 取得遥控快照后再采当前时间，避免高优先级接收任务抢占时将合法新帧误判为未来时间
+    const uint64_t now_us = BSP_TIME_Get();
 
     // 帧龄、时基或控制周期异常均回到人工确认状态，恢复上位帧不会自动使能
     if (!remote_cache_valid || !remote_cache.header.online || now_us < remote_cache.header.last_online_time ||
