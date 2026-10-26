@@ -22,7 +22,7 @@
  * DR16 云台命令参数，使用右拨杆和右摇杆，左侧输入继续分配给底盘
  * - CHANNEL_LIMIT：DR16 去中心后的满量程计数，来源为设备协议的 ±660
  * - DEADZONE：中心死区比例 5%，死区外重新归一化到满量程
- * - YAW_RATE_DEG_S、PITCH_RATE_DEG_S：满杆目标角变化速度，初始均取 60 度每秒
+ * - YAW_RATE_DEG_S、PITCH_RATE_DEG_S：满杆目标角变化速度，初始均取 60 度每秒，同时换算为角速度前馈
  * - YAW_DIRECTION、PITCH_DIRECTION：通道到当前 INS 角度坐标的符号，初始均取反向，实机核对左右与抬头方向
  * - MAX_PERIOD_S：输入积分允许的最大间隔，沿用云台模块的 0.1 秒控制周期上限
  * 遥控帧龄使用 DR16_RECEIVER_OFFLINE_TIMEOUT_US，沿用设备层的 100 毫秒离线阈值
@@ -257,21 +257,24 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     }
 
     // 用模块上周期实际限幅后的目标继续积分，避免持续推向机械边界时积累不可达目标
-    // 首次使能或反馈尚未就绪时不积分，由模块捕获当前姿态作为目标
+    // 同一摇杆角速度同时用于目标积分和前馈，减少运动时积累的跟随误差
+    // 首次使能或反馈尚未就绪时不积分且前馈为零，由模块捕获当前姿态作为目标
     gimbal_command.mode = GIMBAL_MODE_ANGLE;
     if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg))
     {
-        const float yaw_input = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
-                                MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_x);
-        gimbal_command.yaw.target_angle_deg =
-            gimbal.yaw.target_angle_deg + yaw_input * MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S * period_s;
+        const float yaw_rate_deg_s = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
+                                     MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_x) *
+                                     MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S;
+        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + yaw_rate_deg_s * period_s;
+        gimbal_command.yaw.target_speed_rad_s = yaw_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
     if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
     {
-        const float pitch_input = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
-                                  MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_y);
-        gimbal_command.pitch.target_angle_deg =
-            gimbal.pitch.target_angle_deg + pitch_input * MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S * period_s;
+        const float pitch_rate_deg_s = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
+                                       MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_y) *
+                                       MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S;
+        gimbal_command.pitch.target_angle_deg = gimbal.pitch.target_angle_deg + pitch_rate_deg_s * period_s;
+        gimbal_command.pitch.target_speed_rad_s = pitch_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
 }
 
