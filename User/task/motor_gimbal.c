@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "bsp/time.h"
+#include "component/user_math.h"
 #include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
@@ -23,6 +24,8 @@
  * - CHANNEL_LIMIT：DR16 去中心后的满量程计数，来源为设备协议的 ±660
  * - DEADZONE：中心死区比例 5%，死区外重新归一化到满量程
  * - YAW_RATE_DEG_S、PITCH_RATE_DEG_S：满杆目标角变化速度，初始均取 60 度每秒，同时换算为角速度前馈
+ * - YAW_ACCEL_DEG_S2、PITCH_ACCEL_DEG_S2：目标角速度变化上限，初始均取 2000 度每平方秒
+ *   满杆 60 度每秒约需 30 毫秒过渡，每个控制周期连续推进，作为待实机调整的平滑起点
  * - YAW_DIRECTION、PITCH_DIRECTION：通道到当前 INS 角度坐标的符号，初始均取反向，实机核对左右与抬头方向
  * - MAX_PERIOD_S：输入积分允许的最大间隔，沿用云台模块的 0.1 秒控制周期上限
  * 遥控帧龄使用 DR16_RECEIVER_OFFLINE_TIMEOUT_US，沿用设备层的 100 毫秒离线阈值
@@ -31,6 +34,8 @@
 #define MOTOR_GIMBAL_DR16_DEADZONE (0.05f)
 #define MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S (60.0f)
 #define MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S (60.0f)
+#define MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2 (2000.0f)
+#define MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2 (2000.0f)
 #define MOTOR_GIMBAL_DR16_YAW_DIRECTION (-1.0f)
 #define MOTOR_GIMBAL_DR16_PITCH_DIRECTION (-1.0f)
 #define MOTOR_GIMBAL_MAX_PERIOD_S (0.1f)
@@ -72,6 +77,8 @@ static float sine_center_deg;
 static DR16_State_t remote_cache;
 static bool remote_cache_valid;
 static MotorGimbal_RemoteState_t remote_state;
+static float remote_yaw_rate_deg_s;
+static float remote_pitch_rate_deg_s;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
@@ -143,6 +150,10 @@ void Task_motor_gimbal(void *argument)
             Gimbal_Control(&gimbal, &relax_command, period_s);
             remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
             gimbal_command.mode = GIMBAL_MODE_RELAX;
+            gimbal_command.yaw.target_speed_rad_s = 0.0f;
+            gimbal_command.pitch.target_speed_rad_s = 0.0f;
+            remote_yaw_rate_deg_s = 0.0f;
+            remote_pitch_rate_deg_s = 0.0f;
         }
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
@@ -179,7 +190,11 @@ static bool MotorGimbal_Init(void)
  */
 static void MotorGimbal_ApplyDR16Input(float period_s)
 {
-    // 每周期先撤销使能和前馈，只有有效遥控状态才能重新开放角度命令
+    // 先保存上周期速度再默认清零，所有失能和异常早退均立即撤销平滑状态与前馈
+    const float previous_yaw_rate_deg_s = remote_yaw_rate_deg_s;
+    const float previous_pitch_rate_deg_s = remote_pitch_rate_deg_s;
+    remote_yaw_rate_deg_s = 0.0f;
+    remote_pitch_rate_deg_s = 0.0f;
     gimbal_command.mode = GIMBAL_MODE_RELAX;
     gimbal_command.yaw.target_speed_rad_s = 0.0f;
     gimbal_command.pitch.target_speed_rad_s = 0.0f;
@@ -257,24 +272,30 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     }
 
     // 用模块上周期实际限幅后的目标继续积分，避免持续推向机械边界时积累不可达目标
-    // 同一摇杆角速度同时用于目标积分和前馈，减少运动时积累的跟随误差
+    // 调用通用斜坡按实际周期细分摇杆速度，同一平滑速度用于目标积分和前馈，避免两者不一致
     // 首次使能或反馈尚未就绪时不积分且前馈为零，由模块捕获当前姿态作为目标
     gimbal_command.mode = GIMBAL_MODE_ANGLE;
-    if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg))
+    // 正弦测试接管及退出交接周期不积累遥控速度，避免切回遥控时沿用被覆盖的前馈
+    if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg) &&
+        !gimbal_sine_test_enabled && sine_state == MOTOR_GIMBAL_SINE_IDLE)
     {
         const float yaw_rate_deg_s = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
                                      MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_x) *
                                      MOTOR_GIMBAL_DR16_YAW_RATE_DEG_S;
-        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + yaw_rate_deg_s * period_s;
-        gimbal_command.yaw.target_speed_rad_s = yaw_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
+        remote_yaw_rate_deg_s = RampTo(previous_yaw_rate_deg_s, yaw_rate_deg_s,
+                                      MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2 * period_s);
+        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + remote_yaw_rate_deg_s * period_s;
+        gimbal_command.yaw.target_speed_rad_s = remote_yaw_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
     if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
     {
         const float pitch_rate_deg_s = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
                                        MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_y) *
                                        MOTOR_GIMBAL_DR16_PITCH_RATE_DEG_S;
-        gimbal_command.pitch.target_angle_deg = gimbal.pitch.target_angle_deg + pitch_rate_deg_s * period_s;
-        gimbal_command.pitch.target_speed_rad_s = pitch_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
+        remote_pitch_rate_deg_s = RampTo(previous_pitch_rate_deg_s, pitch_rate_deg_s,
+                                        MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2 * period_s);
+        gimbal_command.pitch.target_angle_deg = gimbal.pitch.target_angle_deg + remote_pitch_rate_deg_s * period_s;
+        gimbal_command.pitch.target_speed_rad_s = remote_pitch_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
 }
 
