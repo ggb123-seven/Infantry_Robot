@@ -70,10 +70,9 @@ void Task_motor_chassis(void *argument)
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
-        // 获取本周期时间，拒绝过期遥控输入和过长控制周期
+        // 获取本周期节拍，计算实际控制间隔
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0F;
-        const uint64_t now_us = BSP_TIME_Get();
         previous_tick = now_tick;
 
         // 消费最新 CAN 快照，没有新快照时由模块将四轮反馈标记为无效
@@ -82,7 +81,8 @@ void Task_motor_chassis(void *argument)
 
         // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
-        MotorChassis_ApplyDR16Input(&chassis_command, now_us);
+        // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
+        MotorChassis_ApplyDR16Input(&chassis_command, BSP_TIME_Get());
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =

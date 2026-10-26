@@ -16,6 +16,15 @@
 
 ## 底盘当前进度
 
+### 2026-10-26 遥控帧龄竞态修复
+
+- 底盘任务改为先读取 DR16 快照，再采当前时间检查帧龄，保留 100 ms 超时、时间回退检查和自动恢复行为
+- Debug 构建、实际 ARM 编译器 -Wall -Wextra -Werror -fsyntax-only、ARCH/HW/SPEC 及源码格式检查均通过
+- 临时主机 GCC 回归提取实际读取和解析函数，使用替身类型与邮箱：旧顺序复现抢占误停机，新顺序保持运行；100000/100001 us 边界、缓存超时、自动恢复、离线、时间回退和中位停机均通过
+- 验证命令：python .auto-embedded/scripts/check.py；python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug
+- 本轮临时测试源码和程序已清理；未烧录或运行真实底盘
+- 下一步：载入 build/Debug/Infantry_Robot.elf，验证持续遥控无短暂断力，以及真实失联停机和恢复行为
+
 记录日期：2026-10-24；依据底盘重构方案及当前源码。软件步骤 1～5 已完成，Debug 全量构建、主机回归和 ARCH/HW/SPEC 检查通过，尚未烧录或进行上板验收
 
 ### 当前停留阶段
