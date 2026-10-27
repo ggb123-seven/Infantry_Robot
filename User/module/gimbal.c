@@ -16,6 +16,9 @@
  * - GIMBAL_IMU_MAX_RAD_S：拒绝超出 BMI088 当前量程的异常角速度，留取约 40 rad/s 的数值余量
  * - GIMBAL_IMU_MAX_PITCH_DEG：欧拉俯仰有效区保留距奇异点 1 度的余量，单位度
  * - GIMBAL_IMU_JUMP_MARGIN_DEG：相邻姿态物理变化量之外允许的解算修正余量，初始取 1 度
+ * - GIMBAL_YAW_MOTOR_MAX_RAD_S：yaw 编码器绝对转速保护，初始取满杆 6 rad/s 的两倍，即约 115 rpm
+ * - GIMBAL_YAW_BASE_MAX_RAD_S：机械转速幅值超过 IMU 三轴模长的允许余量，初始取 6 rad/s，约 57 rpm
+ *   两项均为本轮手持调试约束，不能自动区分拿起与底座快速转动，正常底座运动范围须实机核定
  */
 #define GIMBAL_RPM_TO_RAD_S (0.10471975512f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
@@ -26,6 +29,8 @@
 #define GIMBAL_IMU_MAX_RAD_S (40.0f)
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
+#define GIMBAL_YAW_MOTOR_MAX_RAD_S (12.0f)
+#define GIMBAL_YAW_BASE_MAX_RAD_S (6.0f)
 
 static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
 static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
@@ -164,7 +169,21 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
         }
     }
 
-    // 两轴共用模式，各自独立推进状态机
+    // 惯性稳向前先检查机械端，三轴模长避免把安装倾斜时的轴分量差直接当作传感器故障
+    const float gyro_norm_rad_s = sqrtf(gimbal->imu.gyro_rad_s[0] * gimbal->imu.gyro_rad_s[0] +
+                                       gimbal->imu.gyro_rad_s[1] * gimbal->imu.gyro_rad_s[1] +
+                                       gimbal->imu.gyro_rad_s[2] * gimbal->imu.gyro_rad_s[2]);
+    const float motor_speed_rad_s = fabsf(gimbal->yaw.motor_speed_rad_s);
+    const bool yaw_motion_unsafe = motor_speed_rad_s > GIMBAL_YAW_MOTOR_MAX_RAD_S ||
+                                   motor_speed_rad_s > gyro_norm_rad_s + GIMBAL_YAW_BASE_MAX_RAD_S;
+    if ((mode == GIMBAL_MODE_ANGLE || mode == GIMBAL_MODE_SPEED) && gimbal->config.yaw.enabled &&
+        gimbal->imu_state == GIMBAL_IMU_READY && yaw_motion_unsafe)
+    {
+        // 复用故障锁存并清除已有积分，反馈恢复或转速下降均不能自动重新出力
+        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
+    }
+
+    // 两轴共用模式，各自独立推进状态机，yaw 机械保护优先于起控和失联自动恢复
     Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s);
     Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &active_command->pitch, period_s);
     gimbal->mode = mode;

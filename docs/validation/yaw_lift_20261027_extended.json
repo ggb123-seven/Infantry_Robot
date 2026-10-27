@@ -1,0 +1,220 @@
+{
+  "source": "data\\emberprobe-live-20261027-122011.csv",
+  "source_sha256": "b7c9bae14ff0321cfc167e06e30c637c23bd2bbfd61f906614709707a6fed021",
+  "rows": 10441,
+  "columns": 265,
+  "duration_s": 271.339,
+  "first_file_prefix_exact": true,
+  "over_5_rad_s_segments": [
+    {
+      "start_s": 4.855,
+      "end_s": 7.524,
+      "samples": 98,
+      "duration_s": 2.6689999999999996,
+      "peak": {
+        "row": 244,
+        "elapsed_s": 6.033,
+        "local_time": "2026-10-27T12:15:51.520000+08:00",
+        "motor_rpm": 343.00000612975,
+        "imu_rad_s": 0.11535924673080444,
+        "target_rad_s": -0.18410241603851318,
+        "current_a": 0.08277618885040283,
+        "angle_deg": 1.3641741275787354,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": 0.10074389208824286
+      },
+      "mechanical_travel_deg": 3740.888641357422,
+      "integral_speed_deg": 3722.232987925489
+    },
+    {
+      "start_s": 11.658,
+      "end_s": 17.654,
+      "samples": 240,
+      "duration_s": 5.996,
+      "peak": {
+        "row": 541,
+        "elapsed_s": 13.665,
+        "local_time": "2026-10-27T12:15:59.152000+08:00",
+        "motor_rpm": 353.0000223451334,
+        "imu_rad_s": 0.014159124344587326,
+        "target_rad_s": 1.9731193780899048,
+        "current_a": 0.5,
+        "angle_deg": -6.872223377227783,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": 0.4287772090199269
+      },
+      "mechanical_travel_deg": 11621.6015625,
+      "integral_speed_deg": 11600.357799613359
+    },
+    {
+      "start_s": 223.959,
+      "end_s": 225.261,
+      "samples": 51,
+      "duration_s": 1.3019999999999925,
+      "peak": {
+        "row": 8657,
+        "elapsed_s": 224.817,
+        "local_time": "2026-10-27T12:19:30.304000+08:00",
+        "motor_rpm": 332.0000137922011,
+        "imu_rad_s": -0.15308739244937897,
+        "target_rad_s": -0.3611520528793335,
+        "current_a": 0.09132064878940582,
+        "angle_deg": 2.0491538047790527,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": 0.1037143985359208
+      },
+      "mechanical_travel_deg": 1899.5419921875,
+      "integral_speed_deg": 1888.9660756906876
+    },
+    {
+      "start_s": 227.945,
+      "end_s": 229.609,
+      "samples": 65,
+      "duration_s": 1.6640000000000157,
+      "peak": {
+        "row": 8805,
+        "elapsed_s": 228.673,
+        "local_time": "2026-10-27T12:19:34.160000+08:00",
+        "motor_rpm": -350.00002112328593,
+        "imu_rad_s": -0.05188727378845215,
+        "target_rad_s": -0.6210428476333618,
+        "current_a": -0.1691422015428543,
+        "angle_deg": 3.040156841278076,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": -0.13513202701462745
+      },
+      "mechanical_travel_deg": -2335.5185546875,
+      "integral_speed_deg": -2337.402325904415
+    },
+    {
+      "start_s": 229.818,
+      "end_s": 235.63,
+      "samples": 224,
+      "duration_s": 5.811999999999983,
+      "peak": {
+        "row": 8995,
+        "elapsed_s": 233.621,
+        "local_time": "2026-10-27T12:19:39.108000+08:00",
+        "motor_rpm": 356.0000235669809,
+        "imu_rad_s": -0.039104100316762924,
+        "target_rad_s": 1.4717365503311157,
+        "current_a": 0.5,
+        "angle_deg": -4.946362018585205,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": 0.46043322580002055
+      },
+      "mechanical_travel_deg": 11245.5869140625,
+      "integral_speed_deg": 11225.47137124995
+    },
+    {
+      "start_s": 237.327,
+      "end_s": 237.327,
+      "samples": 1,
+      "duration_s": 0.0,
+      "peak": {
+        "row": 9137,
+        "elapsed_s": 237.327,
+        "local_time": "2026-10-27T12:19:42.814000+08:00",
+        "motor_rpm": -48.00000133572169,
+        "imu_rad_s": 0.029072824865579605,
+        "target_rad_s": 0.20993995666503906,
+        "current_a": -0.06612291932106018,
+        "angle_deg": -0.12904424965381622,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": -0.0769122781647198
+      },
+      "mechanical_travel_deg": 0.0,
+      "integral_speed_deg": 0.0
+    },
+    {
+      "start_s": 237.562,
+      "end_s": 244.341,
+      "samples": 261,
+      "duration_s": 6.778999999999996,
+      "peak": {
+        "row": 9201,
+        "elapsed_s": 238.995,
+        "local_time": "2026-10-27T12:19:44.482000+08:00",
+        "motor_rpm": -356.0000235669809,
+        "imu_rad_s": -0.0678662359714508,
+        "target_rad_s": -0.8826039433479309,
+        "current_a": -0.3067292273044586,
+        "angle_deg": 4.042938232421875,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": -0.25813488341873914
+      },
+      "mechanical_travel_deg": -12886.564453125,
+      "integral_speed_deg": -12885.842145021272
+    },
+    {
+      "start_s": 245.745,
+      "end_s": 246.656,
+      "samples": 36,
+      "duration_s": 0.9110000000000014,
+      "peak": {
+        "row": 9484,
+        "elapsed_s": 246.369,
+        "local_time": "2026-10-27T12:19:51.856000+08:00",
+        "motor_rpm": 199.99999645858816,
+        "imu_rad_s": 0.2144288420677185,
+        "target_rad_s": -0.3142825663089752,
+        "current_a": 0.04805587977170944,
+        "angle_deg": 1.8679277896881104,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": 0.07977856621820179
+      },
+      "mechanical_travel_deg": 722.4609375,
+      "integral_speed_deg": 717.0978654365365
+    },
+    {
+      "start_s": 255.102,
+      "end_s": 257.183,
+      "samples": 81,
+      "duration_s": 2.080999999999989,
+      "peak": {
+        "row": 9868,
+        "elapsed_s": 256.377,
+        "local_time": "2026-10-27T12:20:01.864000+08:00",
+        "motor_rpm": -356.0000235669809,
+        "imu_rad_s": 0.12814241647720337,
+        "target_rad_s": -0.9585021734237671,
+        "current_a": -0.35441434383392334,
+        "angle_deg": 4.325623989105225,
+        "target_angle_deg": 0.6596940159797668,
+        "integral_current_a": -0.2892156918890336
+      },
+      "mechanical_travel_deg": -3828.69140625,
+      "integral_speed_deg": -3825.4856853570027
+    }
+  ],
+  "mode_values": [
+    2.0
+  ],
+  "yaw_state_values": [
+    1.0
+  ],
+  "imu_state_values": [
+    2.0
+  ],
+  "command_yaw_angle_values": [
+    0.6596940159797668
+  ],
+  "command_yaw_rate_values": [
+    -0.0
+  ],
+  "pitch_offline_spans": [
+    {
+      "start_s": 229.063,
+      "end_s": 229.506,
+      "samples": 18
+    },
+    {
+      "start_s": 252.234,
+      "end_s": 253.069,
+      "samples": 33
+    }
+  ],
+  "motor_rpm_min": -356.0000235669809,
+  "motor_rpm_max": 356.0000235669809,
+  "absolute_mechanical_travel_turns": 136.2484102037218
+}

@@ -44,7 +44,7 @@ typedef enum
  * 单轴运行状态：
  * - GIMBAL_AXIS_RELAX：待机零输出，反馈和配置有效且命令非 RELAX 时进入运行
  * - GIMBAL_AXIS_RUNNING：闭环运行
- * - GIMBAL_AXIS_FAULT：反馈非法、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
+ * - GIMBAL_AXIS_FAULT：反馈非法、机械超速、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
  * - GIMBAL_AXIS_OFFLINE：电机反馈超时，单轴零输出等待，有效反馈恢复且运行请求有效时自动起控
  */
 typedef enum
@@ -137,7 +137,7 @@ typedef struct
  * - state：单轴运行状态
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
- * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，仅供机械观测和诊断
+ * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
  * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
  * - speed_rad_s：当前机体系陀螺仪角速度，单位 rad/s，yaw 使用 Z，pitch 使用 Y
  *   直接轴分量不等同于任意姿态下的欧拉角导数，姿态未就绪时两项均为非数值
@@ -225,6 +225,9 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
 
 /**
  * @brief 根据命令更新两轴状态机并计算输出电流
+ *
+ * yaw 机械转速超过 12 rad/s，或机械转速幅值超过 IMU 三轴模长加 6 rad/s 时进入故障并清空两环历史
+ * 两项为手持调试保护，故障须回 RELAX 解除，撤销电流后仍可能因惯性滑行
  *
  * @param[in,out] gimbal 云台实例
  * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机起控或失联恢复到 ANGLE 时捕获当前姿态并清零前馈

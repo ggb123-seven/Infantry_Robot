@@ -1,0 +1,147 @@
+{
+  "tests": {
+    "baseline": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "FAIL line 388: gimbal.yaw.state == GIMBAL_AXIS_FAULT\n"
+    },
+    "current": {
+      "exit_code": 0,
+      "stdout": "PASS held upper assembly: drive removed and both yaw integrators cleared\nPASS mechanical absolute threshold: both signs and exact boundary\nPASS relative magnitude margin: 3-4-5 gyro norm and exact boundary\nPASS rotated gyro axis and full-stick-scale bidirectional motion\nPASS fault remains latched after speed drops and feedback continues\nPASS manual rearm recaptures current pose without chasing old target\nPASS startup while coasting is rejected; RELAX stays zero drive\nPASS SPEED mode cannot bypass protection\nPASS reversed motor still protected with zero physical output\nPASS normal offline auto-recovery retained; unsafe recovery latches and cannot downgrade\nPASS actual DR16 parser: upper stays stopped, middle then upper rearms\nPASS disabled yaw has zero drive without inventing a run fault\nPASS malformed mechanical feedback and invalid IMU retain safe outputs\n",
+      "stderr": ""
+    }
+  },
+  "native_compile_commands": {
+    "baseline": [
+      "gcc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-ffunction-sections",
+      "-fdata-sections",
+      "-Wl,--gc-sections",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw-lift-test",
+      "-IF:\\RM\\Infantry_Robot\\User",
+      "F:\\RM\\Infantry_Robot\\build\\yaw-lift-test\\test.c",
+      "F:\\RM\\Infantry_Robot\\build\\yaw-lift-test\\baseline.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\pid.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\filter.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\user_math.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\angle_unwrap.c",
+      "-lm",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw-lift-test\\baseline.exe"
+    ],
+    "current": [
+      "gcc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-ffunction-sections",
+      "-fdata-sections",
+      "-Wl,--gc-sections",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw-lift-test",
+      "-IF:\\RM\\Infantry_Robot\\User",
+      "F:\\RM\\Infantry_Robot\\build\\yaw-lift-test\\test.c",
+      "F:\\RM\\Infantry_Robot\\User\\module\\gimbal.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\pid.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\filter.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\user_math.c",
+      "F:\\RM\\Infantry_Robot\\User\\component\\angle_unwrap.c",
+      "-lm",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw-lift-test\\current.exe"
+    ]
+  },
+  "groups_passed": 13,
+  "replay": {
+    "source": "data\\emberprobe-live-20261027-122011.csv",
+    "source_sha256": "b7c9bae14ff0321cfc167e06e30c637c23bd2bbfd61f906614709707a6fed021",
+    "rows": 10441,
+    "windows": [
+      {
+        "window_start_s": 4.855,
+        "window_end_s": 7.524,
+        "first_captured_trip_s": 4.901,
+        "first_captured_trip_csv_row": 201,
+        "guarded_samples": 95
+      },
+      {
+        "window_start_s": 11.658,
+        "window_end_s": 17.654,
+        "first_captured_trip_s": 11.683,
+        "first_captured_trip_csv_row": 462,
+        "guarded_samples": 239
+      },
+      {
+        "window_start_s": 223.959,
+        "window_end_s": 225.261,
+        "first_captured_trip_s": 223.985992,
+        "first_captured_trip_csv_row": 8625,
+        "guarded_samples": 49
+      },
+      {
+        "window_start_s": 227.945,
+        "window_end_s": 229.609,
+        "first_captured_trip_s": 227.998001,
+        "first_captured_trip_csv_row": 8779,
+        "guarded_samples": 63
+      },
+      {
+        "window_start_s": 229.818,
+        "window_end_s": 235.63,
+        "first_captured_trip_s": 229.843994,
+        "first_captured_trip_csv_row": 8850,
+        "guarded_samples": 222
+      },
+      {
+        "window_start_s": 237.562,
+        "window_end_s": 244.341,
+        "first_captured_trip_s": 237.589005,
+        "first_captured_trip_csv_row": 9147,
+        "guarded_samples": 259
+      },
+      {
+        "window_start_s": 245.745,
+        "window_end_s": 246.656,
+        "first_captured_trip_s": 245.798004,
+        "first_captured_trip_csv_row": 9462,
+        "guarded_samples": 33
+      },
+      {
+        "window_start_s": 255.102,
+        "window_end_s": 257.183,
+        "first_captured_trip_s": 255.128998,
+        "first_captured_trip_csv_row": 9820,
+        "guarded_samples": 79
+      }
+    ],
+    "unsafe_samples": 1043,
+    "scope": "独立逐点注入观测值验证实际模块输出，不是加入保护后的真实机械轨迹或停机时延预测"
+  },
+  "harness_sha256": "fea36e0fdf8674445ea46b3298d428f68c2552cecc20fa02338ccd609505dfba",
+  "source_sha256": {
+    "User/module/gimbal.c": "50f49ac5a7bccbfd7d9fac6fc24868bf996915a096b89ea7bfdb2fbf9b4c7597",
+    "User/module/gimbal.h": "c558d5db4cf8d5e0c4770bc35392127988e3897d2fac93c77c18de5b08753a9a",
+    "User/task/motor_gimbal.c": "95297f4274449c5b7bf3d05d9b7860f807d71411706c8bc449cef4edfc0f1559",
+    "User/module/config.c": "77034ae038b30c93401d1e1cb6ed7e23cdf2c494e5b5b8e0d07596403ecd241e"
+  },
+  "hardware_tested": false,
+  "flashed": false,
+  "temporary_tests_cleaned": true,
+  "elf": {
+    "path": "build\\Debug\\Infantry_Robot.elf",
+    "sha256": "b006b56da3fe4ea81adefe88f541ec382d3fa2643c9975f7769dfd75b2b25102",
+    "ram_bytes": 42704,
+    "flash_bytes": 116648
+  },
+  "checks": {
+    "arch_hw_spec": "PASS",
+    "arm_strict_syntax": "Actual compile commands, -Wall -Wextra -Werror -fsyntax-only PASS",
+    "debug_build": "8/8 PASS",
+    "source_format": "Allman, 120 columns and trailing whitespace PASS",
+    "user_config_unchanged": true
+  }
+}
