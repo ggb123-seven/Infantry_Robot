@@ -1,9 +1,7 @@
 #include "module/gimbal.h"
-
 #include <math.h>
 #include <stddef.h>
 #include <string.h>
-
 #include "component/user_math.h"
 #include "module/gimbal_governor.h"
 
@@ -87,6 +85,7 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     {
         return -1;
     }
+    GimbalGovernor_InitYaw(&gimbal->yaw);
     return 0;
 }
 
@@ -171,8 +170,15 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
         }
     }
 
-    // 两轴独立推进原有状态机，仅 yaw 启用残差电流包络，限速不撤销 pitch 使能
-    Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s, true);
+    // 保护状态先冻结 yaw 命令，校验失败仍走原故障停机路径，pitch 独立控制
+    if (GimbalGovernor_PrepareYaw(gimbal, active_command, period_s))
+    {
+        Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s, true);
+    }
+    else
+    {
+        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
+    }
     Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &active_command->pitch,
                        period_s, false);
     gimbal->mode = mode;
@@ -675,6 +681,11 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
+    // 保护期间暂停姿态纠偏，人工重新起控时渐进开放速度权限
+    if (motion_governed)
+    {
+        target_speed_rad_s = GimbalGovernor_LimitSpeed(target_speed_rad_s);
+    }
     // 速度环输出电流，非有限结果视为计算异常
     const float previous_speed_integral = axis->speed_pid.i;
     const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
@@ -684,12 +695,11 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     }
     axis->target_speed_rad_s = target_speed_rad_s;
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
-    // 独立底盘实测转速本轮显式取零，不得使用同源的底座估计抵消残差
     const float candidate_a = axis->output_current_a;
     if (motion_governed)
     {
-        axis->output_current_a = GimbalGovernor_LimitCurrent(axis->motor_speed_rad_s, axis->speed_rad_s, 0.0f,
-                                                            candidate_a, config->max_current_a);
+        axis->output_current_a = GimbalGovernor_ControlCurrent(axis->motor_speed_rad_s, axis->speed_rad_s,
+                                                              candidate_a, config->max_current_a, period_s);
     }
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
@@ -701,19 +711,9 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         mechanically_limited = true;
     }
     // 用机械边界处理后的实际电流反算，避免下游阻断制动后仍按未执行的电流调整积分
-    const float delta_a = axis->output_current_a - candidate_a;
-    if (motion_governed && delta_a != 0.0f)
+    if (motion_governed)
     {
-        if ((axis->speed_pid.i - previous_speed_integral) * delta_a < 0.0f)
-        {
-            axis->speed_pid.i = previous_speed_integral;
-        }
-        axis->speed_pid.i = GimbalGovernor_BackCalculate(axis->speed_pid.i, axis->applied_speed_pid.i,
-            axis->applied_speed_pid.i_limit, delta_a, period_s);
-        if ((axis->angle_pid.i - previous_angle_integral) * delta_a < 0.0f)
-        {
-            axis->angle_pid.i = previous_angle_integral;
-        }
+        GimbalGovernor_TrackCurrent(axis, candidate_a, previous_speed_integral, previous_angle_integral, period_s);
     }
     if (mechanically_limited)
     {

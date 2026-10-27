@@ -204,7 +204,7 @@ typedef struct
 } Gimbal_Output_t;
 
 /**
- * @brief 复制配置并初始化两轴控制器，初始化后两轴处于 RELAX
+ * @brief 复制配置并初始化两轴控制器，初始化后两轴处于 RELAX，仅支持本工程单一云台实例
  *
  * @param[out] gimbal 云台实例
  * @param[in] config 云台配置，内容被复制到实例
@@ -230,7 +230,8 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
  * yaw 按编码器转速减上部惯性 yaw 转速加独立底盘实测转速的残差连续限流及反向制动
- * 本轮底盘实测项取 0，限速不触发故障、不撤销 pitch 闭环、不重置姿态目标，速度积分采用限步长反算
+ * 本轮底盘实测项取 0，持续异常后锁存制动和保持，保留 yaw 目标数值并暂停追赶，速度积分采用限步长反算
+ * 保护不触发故障且 pitch 继续闭环，只有回 RELAX 或明确失能才解除锁存，重新起控渐进放行
  * 真实故障与单轴失联恢复沿用原状态机，小陀螺及底盘跟随兼容尚未完成
  *
  * @param[in,out] gimbal 云台实例

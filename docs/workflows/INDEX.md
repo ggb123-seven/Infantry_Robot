@@ -2,6 +2,7 @@
 
 | 日期 | 类型 | 主题 | 记录 |
 |---|---|---|---|
+| 2026-10-27 | bugfix | yaw 异常制动、停转保持及四轮反馈后续方案 | [记录](2026-10-27_yaw_brake_hold.md) |
 | 2026-10-27 | bugfix | yaw 残差电流包络、反向制动及反算抗饱和 | [记录](2026-10-27_yaw_governor_impl_step12.md) |
 | 2026-10-24 | refactor | 底盘实例、状态机与任务接口迁移 | [记录](2026-10-24_chassis_refactor.md) |
 | 2026-07-16 | feature | 单个 M3508 电机速度环与缓启动 | [记录](2026-07/16_reflection_feature_motor_speed_control.md) |
