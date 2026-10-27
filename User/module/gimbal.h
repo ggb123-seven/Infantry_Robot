@@ -139,8 +139,10 @@ typedef struct
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
  * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
  * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
- * - speed_rad_s：当前机体系陀螺仪角速度，单位 rad/s，yaw 使用 Z，pitch 使用 Y
- *   直接轴分量不等同于任意姿态下的欧拉角导数，姿态未就绪时两项均为非数值
+ * - speed_rad_s：大地系欧拉角速度，单位 rad/s，由机体系陀螺仪按 ZYX 欧拉运动学换算
+ *   yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，姿态未就绪时与角度均为非数值
+ * - base_speed_rad_s：底座大地系角速度估计，单位 rad/s，等于 speed_rad_s − motor_speed_rad_s
+ *   底座水平时精确，倾斜时含投影误差，仅用于观测，任一输入失效时为非数值
  * - target_angle_deg：限幅后实际采用的目标角度，单位度
  * - target_speed_rad_s：限幅后实际送入速度环的目标，单位 rad/s
  * - output_current_a：本周期输出电流，单位 A，正方向与角度增大方向一致
@@ -159,6 +161,7 @@ typedef struct
     float motor_speed_rad_s;
     float angle_deg;
     float speed_rad_s;
+    float base_speed_rad_s;
     float target_angle_deg;
     float target_speed_rad_s;
     float output_current_a;

@@ -75,6 +75,7 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     Gimbal_ClearFeedback(&gimbal->pitch);
     gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
     gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
+    gimbal->yaw.base_speed_rad_s = gimbal->pitch.base_speed_rad_s = NAN;
     if (!isfinite(frequency_hz) || frequency_hz < 10.0f || frequency_hz > 2000.0f ||
         !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f ||
         config->feedback_timeout_s > 1.0f || !isfinite(config->imu_timeout_s) ||
@@ -119,6 +120,10 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
 
     // 惯性快照独立校验时效和连续性，控制量只由该快照更新
     Gimbal_UpdateImu(gimbal, imu, now_us);
+
+    // 两侧反馈更新后估计底座大地系角速度，底座水平时与关节共轴，任一侧为非数值时结果同为非数值
+    gimbal->yaw.base_speed_rad_s = gimbal->yaw.speed_rad_s - gimbal->yaw.motor_speed_rad_s;
+    gimbal->pitch.base_speed_rad_s = gimbal->pitch.speed_rad_s - gimbal->pitch.motor_speed_rad_s;
 }
 
 /**
@@ -285,7 +290,7 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
     axis->applied_angle_pid = config->angle_pid;
     axis->applied_speed_pid = config->speed_pid;
 
-    // 内环直接采用机体系陀螺仪分量，外环保留当前零微分配置
+    // 内环采用大地系欧拉角速度，外环保留当前零微分配置
     if (PID_Init(&axis->angle_pid, KPID_MODE_SET_D, frequency_hz, &axis->applied_angle_pid) != 0 ||
         PID_Init(&axis->speed_pid, KPID_MODE_CALC_D, frequency_hz, &axis->applied_speed_pid) != 0)
     {
@@ -306,6 +311,7 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
     axis->encoder_deg = NAN;
     axis->mechanical_angle_deg = NAN;
     axis->motor_speed_rad_s = NAN;
+    axis->base_speed_rad_s = NAN;
     axis->feedback_time_us = UINT64_MAX;
     AngleUnwrap_Reset(&axis->unwrap);
 }
@@ -438,12 +444,20 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
         }
     }
 
-    // 当前 INS 已完成安装修正，直接取 Pitch/Y 与累计 Yaw/Z，不叠加电机方向
+    // 当前 INS 已完成安装修正，角度直接取 Pitch 与累计 Yaw，不叠加电机方向
     const bool ready = gimbal->imu_state == GIMBAL_IMU_READY;
     gimbal->yaw.angle_deg = ready ? gimbal->imu.angle_deg[2] : NAN;
-    gimbal->yaw.speed_rad_s = ready ? gimbal->imu.gyro_rad_s[2] : NAN;
     gimbal->pitch.angle_deg = ready ? gimbal->imu.angle_deg[1] : NAN;
-    gimbal->pitch.speed_rad_s = ready ? gimbal->imu.gyro_rad_s[1] : NAN;
+
+    // 机体系角速度按 ZYX 欧拉运动学换算为大地系欧拉角速度，有效性校验已保证 |Pitch| < 89°
+    const float roll_rad = gimbal->imu.angle_deg[0] * M_DEG2RAD_MULT;
+    const float sin_roll = sinf(roll_rad);
+    const float cos_roll = cosf(roll_rad);
+    const float gyro_y = gimbal->imu.gyro_rad_s[1];
+    const float gyro_z = gimbal->imu.gyro_rad_s[2];
+    const float yaw_rate = (gyro_y * sin_roll + gyro_z * cos_roll) / cosf(gimbal->imu.angle_deg[1] * M_DEG2RAD_MULT);
+    gimbal->yaw.speed_rad_s = ready ? yaw_rate : NAN;
+    gimbal->pitch.speed_rad_s = ready ? gyro_y * cos_roll - gyro_z * sin_roll : NAN;
 }
 
 /**
@@ -652,7 +666,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         }
         axis->target_angle_deg = target_angle_deg;
 
-        // 角度环输入为弧度，陀螺仪反馈保持机体系分量，当前外环微分增益为零
+        // 角度环输入为弧度，微分反馈为大地系欧拉角速度，当前外环微分增益为零
         const float correction_rad_s = PID_Calc(&axis->angle_pid, target_angle_deg * M_DEG2RAD_MULT,
                                                 axis->angle_deg * M_DEG2RAD_MULT, axis->speed_rad_s, period_s);
         const float combined_rad_s = correction_rad_s + command_speed_rad_s;

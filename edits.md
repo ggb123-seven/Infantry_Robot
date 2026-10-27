@@ -490,3 +490,12 @@
 - 14 组主机回归通过，修改前模块在相同回归中按预期失败；真实 ARM 严格语法检查、Debug 构建、ARCH/HW/SPEC 和格式检查通过
 - 证据：`docs/workflows/2026-10-27_gimbal_feedback_recovery.md`、`docs/validation/gimbal_recovery_20261027.json`；RAM 42704 B、FLASH 116444 B
 - 保存证据后清理本轮临时测试源码、替身与可执行程序；未烧录或执行真实电机恢复验收，不自动推送远端
+
+## GIMBAL-EARTH-FRAME-RATE-20261027
+
+- 数据分析：`data/emberprobe-live-20261027-122011.csv`（早于 `aa6127f` 保护的固件）共 6 段 yaw 失控，编码器 35～37 rad/s、单段最多约 35 圈，同期 IMU gz 与关节转速回归斜率约 0.001；正常小速度段同号 87%，排除坐标符号错误导致正反馈
+- 结论：头部在大地系基本静止，电机反作用力矩转动悬空或轻载底座，底座运动不在闭环反馈中；坐标统一不能单独消除失控，后续须基于底座估计增加约束
+- 用户确认先统一到大地系：两轴 `speed_rad_s` 改为 ZYX 欧拉角速度，yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，字段名保持不变
+- 用户确认新增 `Gimbal_Axis_t.base_speed_rad_s`，等于欧拉角速度减编码器关节转速，底座水平时精确，本步仅观测、不参与控制
+- 主机数值核对：按 `ins.c` 四元数转欧拉定义随机 2000 组姿态与角速度，换算结果与数值微分最大偏差约 1.3e-4 rad/s
+- Debug 构建与 ARCH/HW/SPEC 检查通过；未烧录或实测，pitch 约 20° 时速度环反馈增益约增大 6%，上板后须复核响应并采集 `gimbal.yaw.base_speed_rad_s`
