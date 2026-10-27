@@ -701,6 +701,11 @@
               <FilePath>..\User\module\gimbal.c</FilePath>
             </File>
             <File>
+              <FileName>gimbal_governor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\gimbal_governor.c</FilePath>
+            </File>
+            <File>
               <FileName>config.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\config.c</FilePath>

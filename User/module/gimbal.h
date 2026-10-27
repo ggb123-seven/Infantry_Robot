@@ -44,7 +44,7 @@ typedef enum
  * 单轴运行状态：
  * - GIMBAL_AXIS_RELAX：待机零输出，反馈和配置有效且命令非 RELAX 时进入运行
  * - GIMBAL_AXIS_RUNNING：闭环运行
- * - GIMBAL_AXIS_FAULT：反馈非法、机械超速、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
+ * - GIMBAL_AXIS_FAULT：反馈非法、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
  * - GIMBAL_AXIS_OFFLINE：电机反馈超时，单轴零输出等待，有效反馈恢复且运行请求有效时自动起控
  */
 typedef enum
@@ -229,8 +229,9 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
 /**
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
- * yaw 机械转速超过 12 rad/s，或机械转速幅值超过 IMU 三轴模长加 6 rad/s 时进入故障并清空两环历史
- * 两项为手持调试保护，故障须回 RELAX 解除，撤销电流后仍可能因惯性滑行
+ * yaw 按编码器转速减上部惯性 yaw 转速加独立底盘实测转速的残差连续限流及反向制动
+ * 本轮底盘实测项取 0，限速不触发故障、不撤销 pitch 闭环、不重置姿态目标，速度积分采用限步长反算
+ * 真实故障与单轴失联恢复沿用原状态机，小陀螺及底盘跟随兼容尚未完成
  *
  * @param[in,out] gimbal 云台实例
  * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机起控或失联恢复到 ANGLE 时捕获当前姿态并清零前馈

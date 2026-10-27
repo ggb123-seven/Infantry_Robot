@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "component/user_math.h"
+#include "module/gimbal_governor.h"
 
 /*
  * 云台模块换算与保护常量：
@@ -16,9 +17,6 @@
  * - GIMBAL_IMU_MAX_RAD_S：拒绝超出 BMI088 当前量程的异常角速度，留取约 40 rad/s 的数值余量
  * - GIMBAL_IMU_MAX_PITCH_DEG：欧拉俯仰有效区保留距奇异点 1 度的余量，单位度
  * - GIMBAL_IMU_JUMP_MARGIN_DEG：相邻姿态物理变化量之外允许的解算修正余量，初始取 1 度
- * - GIMBAL_YAW_MOTOR_MAX_RAD_S：yaw 编码器绝对转速保护，初始取满杆 6 rad/s 的两倍，即约 115 rpm
- * - GIMBAL_YAW_BASE_MAX_RAD_S：机械转速幅值超过 IMU 三轴模长的允许余量，初始取 6 rad/s，约 57 rpm
- *   两项均为本轮手持调试约束，不能自动区分拿起与底座快速转动，正常底座运动范围须实机核定
  */
 #define GIMBAL_RPM_TO_RAD_S (0.10471975512f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
@@ -29,8 +27,6 @@
 #define GIMBAL_IMU_MAX_RAD_S (40.0f)
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
-#define GIMBAL_YAW_MOTOR_MAX_RAD_S (12.0f)
-#define GIMBAL_YAW_BASE_MAX_RAD_S (6.0f)
 
 static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
 static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
@@ -47,9 +43,10 @@ static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_
 static void Gimbal_EnterRunning(Gimbal_Axis_t *axis);
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisCommand_t *command, float period_s);
+                           const Gimbal_AxisCommand_t *command, float period_s, bool motion_governed);
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s);
+                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s,
+                               bool motion_governed);
 
 /**
  * @brief 复制配置并初始化两轴控制器，初始化后两轴处于 RELAX
@@ -174,23 +171,10 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
         }
     }
 
-    // 惯性稳向前先检查机械端，三轴模长避免把安装倾斜时的轴分量差直接当作传感器故障
-    const float gyro_norm_rad_s = sqrtf(gimbal->imu.gyro_rad_s[0] * gimbal->imu.gyro_rad_s[0] +
-                                       gimbal->imu.gyro_rad_s[1] * gimbal->imu.gyro_rad_s[1] +
-                                       gimbal->imu.gyro_rad_s[2] * gimbal->imu.gyro_rad_s[2]);
-    const float motor_speed_rad_s = fabsf(gimbal->yaw.motor_speed_rad_s);
-    const bool yaw_motion_unsafe = motor_speed_rad_s > GIMBAL_YAW_MOTOR_MAX_RAD_S ||
-                                   motor_speed_rad_s > gyro_norm_rad_s + GIMBAL_YAW_BASE_MAX_RAD_S;
-    if ((mode == GIMBAL_MODE_ANGLE || mode == GIMBAL_MODE_SPEED) && gimbal->config.yaw.enabled &&
-        gimbal->imu_state == GIMBAL_IMU_READY && yaw_motion_unsafe)
-    {
-        // 复用故障锁存并清除已有积分，反馈恢复或转速下降均不能自动重新出力
-        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
-    }
-
-    // 两轴共用模式，各自独立推进状态机，yaw 机械保护优先于起控和失联自动恢复
-    Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s);
-    Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &active_command->pitch, period_s);
+    // 两轴独立推进原有状态机，仅 yaw 启用残差电流包络，限速不撤销 pitch 使能
+    Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s, true);
+    Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &active_command->pitch,
+                       period_s, false);
     gimbal->mode = mode;
 }
 
@@ -632,10 +616,11 @@ static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
  * @param[in] mode 控制模式，只能为 SPEED 或 ANGLE
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
+ * @param[in] motion_governed 为 true 时按 yaw 转速残差限制电流，pitch 传 false
  * @return 计算成功返回 true；反馈失联、命令或周期非法、计算结果异常时返回 false
  */
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisCommand_t *command, float period_s)
+                           const Gimbal_AxisCommand_t *command, float period_s, bool motion_governed)
 {
     // 反馈、命令和周期任一无效时停止计算，由调用方进入故障
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
@@ -646,7 +631,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     {
         return false;
     }
-
     // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈与角度环修正量合成
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
@@ -665,13 +649,11 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
             mechanically_limited = target_angle_deg != command->target_angle_deg;
         }
         axis->target_angle_deg = target_angle_deg;
-
         // 角度环输入为弧度，微分反馈为大地系欧拉角速度，当前外环微分增益为零
         const float correction_rad_s = PID_Calc(&axis->angle_pid, target_angle_deg * M_DEG2RAD_MULT,
                                                 axis->angle_deg * M_DEG2RAD_MULT, axis->speed_rad_s, period_s);
         const float combined_rad_s = correction_rad_s + command_speed_rad_s;
         target_speed_rad_s = AbsClip(combined_rad_s, max_speed_rad_s);
-
         // 合成速度饱和且误差继续推向饱和方向时撤销本周期积分，保留反向退饱和能力
         if ((combined_rad_s > max_speed_rad_s && target_angle_deg > axis->angle_deg) ||
             (combined_rad_s < -max_speed_rad_s && target_angle_deg < axis->angle_deg))
@@ -683,7 +665,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     {
         axis->target_angle_deg = NAN;
     }
-
     // 速度模式及前馈同样受机械边界约束，越界时只允许零速或向行程内部运动
     if (config->mechanical_limit_enabled)
     {
@@ -694,7 +675,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-
     // 速度环输出电流，非有限结果视为计算异常
     const float previous_speed_integral = axis->speed_pid.i;
     const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
@@ -704,7 +684,13 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     }
     axis->target_speed_rad_s = target_speed_rad_s;
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
-
+    // 独立底盘实测转速本轮显式取零，不得使用同源的底座估计抵消残差
+    const float candidate_a = axis->output_current_a;
+    if (motion_governed)
+    {
+        axis->output_current_a = GimbalGovernor_LimitCurrent(axis->motor_speed_rad_s, axis->speed_rad_s, 0.0f,
+                                                            candidate_a, config->max_current_a);
+    }
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
         ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
@@ -714,11 +700,26 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         axis->speed_pid.i = previous_speed_integral;
         mechanically_limited = true;
     }
+    // 用机械边界处理后的实际电流反算，避免下游阻断制动后仍按未执行的电流调整积分
+    const float delta_a = axis->output_current_a - candidate_a;
+    if (motion_governed && delta_a != 0.0f)
+    {
+        if ((axis->speed_pid.i - previous_speed_integral) * delta_a < 0.0f)
+        {
+            axis->speed_pid.i = previous_speed_integral;
+        }
+        axis->speed_pid.i = GimbalGovernor_BackCalculate(axis->speed_pid.i, axis->applied_speed_pid.i,
+            axis->applied_speed_pid.i_limit, delta_a, period_s);
+        if ((axis->angle_pid.i - previous_angle_integral) * delta_a < 0.0f)
+        {
+            axis->angle_pid.i = previous_angle_integral;
+        }
+    }
     if (mechanically_limited)
     {
         axis->angle_pid.i = previous_angle_integral;
     }
-    return true;
+    return isfinite(axis->output_current_a) && isfinite(axis->speed_pid.i);
 }
 
 /**
@@ -730,10 +731,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
  * @param[in] mode_changed 本周期模式与上一周期不同时为 true
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
+ * @param[in] motion_governed 为 true 时启用 yaw 残差电流包络
  * @return 无返回值
  */
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s)
+                               bool mode_changed, const Gimbal_AxisCommand_t *command, float period_s,
+                               bool motion_governed)
 {
     // 先采纳配置修改，再根据模式和反馈判断本周期能否闭环
     const bool config_valid = Gimbal_ApplyAxisConfig(axis, config);
@@ -762,7 +765,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
                 break;
             }
             Gimbal_EnterRunning(axis);
-            if (!Gimbal_RunAxis(axis, config, mode, command, period_s))
+            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
@@ -779,7 +782,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
             {
                 Gimbal_EnterRunning(axis);
             }
-            if (!config_valid || !Gimbal_RunAxis(axis, config, mode, command, period_s))
+            if (!config_valid || !Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }

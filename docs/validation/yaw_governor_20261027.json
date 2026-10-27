@@ -1,0 +1,70 @@
+{
+  "command": [
+    "gcc",
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-I",
+    "C:\\Users\\seven\\AppData\\Local\\Temp\\yaw_governor_8ab8l0qd",
+    "-I",
+    "F:\\RM\\Infantry_Robot\\User",
+    "-I",
+    "F:\\RM\\Infantry_Robot\\Middlewares\\Third_Party\\FreeRTOS\\Source\\CMSIS_RTOS_V2",
+    "C:\\Users\\seven\\AppData\\Local\\Temp\\yaw_governor_8ab8l0qd\\test.c",
+    "F:\\RM\\Infantry_Robot\\User\\module\\gimbal.c",
+    "F:\\RM\\Infantry_Robot\\User\\module\\gimbal_governor.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\pid.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\filter.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\user_math.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\angle_unwrap.c",
+    "-lm",
+    "-o",
+    "C:\\Users\\seven\\AppData\\Local\\Temp\\yaw_governor_8ab8l0qd\\test.exe"
+  ],
+  "host_output": [
+    "PASS envelope_knots_symmetry_continuity_residual_invalid",
+    "PASS backcalculation_gain_period_step_symmetry",
+    "PASS joint_sustained_governor_pitch_target_integral_sine",
+    "PASS joint_common_rotation_imu_only_reversed",
+    "PASS joint_each_motor_timeout_boundary_auto_recovery",
+    "PASS joint_imu_motor_fault_manual_rearm",
+    "PASS joint_remote_timeout_boundaries_rearm_stop",
+    "PASS joint_mechanical_override_illegal_state",
+    "PASS actual_task_loop_governor_publish_failure",
+    "ALL HOST REGRESSIONS PASS"
+  ],
+  "baseline_exit": 3,
+  "baseline_error": "Assertion failed!\n\nProgram: C:\\Users\\seven\\AppData\\Local\\Temp\\yaw_governor_8ab8l0qd\\baseline.exe\nFile: C:\\Users\\seven\\AppData\\Local\\Temp\\yaw_governor_8ab8l0qd\\test.c, Line 241\n\nExpression: gimbal.yaw.state == GIMBAL_AXIS_RUNNING && gimbal.pitch.state == GIMBAL_AXIS_RUNNING\n",
+  "harness_sha256": "e411ebcdca28d62b46513c27ba59cc5c8854dcac11bf428510eb7097bad377cc",
+  "checks": {
+    "cmake": "python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug: PASS",
+    "arm": "compile_commands.json 原参数加 -Wall -Wextra -Werror -fsyntax-only，模块、新纯函数与遥控任务：PASS",
+    "architecture_hardware_spec": "python .auto-embedded/scripts/check.py: ALL PASS",
+    "keil": "XML 与新增文件路径 PASS，无 UV4，未执行 Keil 编译",
+    "format": "Allman、控制块花括号、120 列、行尾空白、注释人工检查 PASS，gimbal.c 800 行",
+    "structures": "gimbal.h 去除注释与空白后的内容与 HEAD 完全一致，未新增或修改结构体字段",
+    "memory": {
+      "flash_text_plus_data_bytes": 117928,
+      "ram_data_plus_bss_bytes": 42700
+    },
+    "config_sha256_unchanged": "223396b72e41c79b36505ec308c8ac0cc807a7ad09af5b01977fb6b53392f582"
+  },
+  "sha256": {
+    "User/module/gimbal.c": "83f191711fb0e33fee1a83344342f00f7b333d89008044a3ce8baf74ccbe55ef",
+    "User/module/gimbal_governor.c": "b3b6ad37175ef02f7ae5094604cec97f4f4d4730ac8f611d7bb4d50cb6a47d0a",
+    "User/component/pid.c": "e349005d62826ad35c62811cbed3b20f92ac81a14a84b9abb8bdf52f4a0ce90c",
+    "User/component/filter.c": "7d10c82b31da7222b0559f529373ae28b4da9a86a96c6dbb7f338a7175f6c87e",
+    "User/component/user_math.c": "5500936a34ea083caeefff1bea02b4656db915280ccdb55062fd095d76f9a3b3",
+    "User/component/angle_unwrap.c": "43ee4b43060ba690aa86824321f0e4be3bd56fa12271b30416045329dcad2b06",
+    "User/task/motor_gimbal.c": "95297f4274449c5b7bf3d05d9b7860f807d71411706c8bc449cef4edfc0f1559",
+    "User/module/config.c": "223396b72e41c79b36505ec308c8ac0cc807a7ad09af5b01977fb6b53392f582",
+    "build/Debug/Infantry_Robot.elf": "a695a7277ae3834e4ba42a6c34c7216db869540df1da0f5f3e6c9e8d58588089"
+  },
+  "limits": [
+    "仅软件验证，未烧录或运行电机",
+    "RTOS 与时钟为替身，参数及控制与任务实现为实际源码",
+    "底盘独立转速调用方传 0，小陀螺及跟随未完成兼容",
+    "本机无 UV4，未执行 Keil 编译"
+  ]
+}
