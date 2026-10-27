@@ -49,7 +49,7 @@
 
 /*
  * 遥控输入状态仅编排命令来源，闭环和设备故障继续由 Gimbal 模块管理
- * - WAIT_MIDDLE：启动、失联或异常后保持失能，等待收到有效的右拨杆中位
+ * - WAIT_MIDDLE：启动、遥控失联或锁存故障后保持失能，等待收到有效的右拨杆中位
  * - READY：已确认中位，继续零输出，右拨杆上位后允许角度模式
  * - ACTIVE：仅右拨杆上位时发布角度命令，中位退回 READY，其他档位退回 WAIT_MIDDLE
  */
@@ -240,7 +240,7 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
         return;
     }
 
-    // 模块故障后撤销整个遥控使能，避免其中一轴恢复时在旧目标上重新出力
+    // 锁存故障撤销两轴使能，电机反馈超时由模块单轴等待恢复，保留当前拨档状态
     if (gimbal.imu_state == GIMBAL_IMU_FAULT || gimbal.yaw.state == GIMBAL_AXIS_FAULT ||
         gimbal.pitch.state == GIMBAL_AXIS_FAULT)
     {
@@ -281,7 +281,7 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
 
     // 用模块上周期实际限幅后的目标继续积分，避免持续推向机械边界时积累不可达目标
     // 按实际周期平滑摇杆速度的大小变化及换向，同一平滑速度用于目标积分和前馈，避免两者不一致
-    // 首次使能或反馈尚未就绪时不积分且前馈为零，由模块捕获当前姿态作为目标
+    // 首次使能及单轴失联等待期间不积分且前馈为零，由模块在起控或恢复时捕获当前姿态
     gimbal_command.mode = GIMBAL_MODE_ANGLE;
     // 正弦测试接管及退出交接周期不积累遥控速度，避免切回遥控时沿用被覆盖的前馈
     if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg) &&

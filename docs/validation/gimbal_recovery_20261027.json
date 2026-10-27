@@ -1,0 +1,43 @@
+{
+  "tests": {
+    "baseline": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "FAILED line 207: lost->state == GIMBAL_AXIS_OFFLINE\n"
+    },
+    "current": {
+      "exit_code": 0,
+      "stdout": "PASS axis timeout boundary, isolation, long wait, pose recapture, stick restart\nPASS repeated dual-axis loss and independent recovery\nPASS middle/down cancel recovery\nPASS remote timeout remains latched\nPASS IMU timeout remains manual rearm\nPASS invalid/repeated/backward/stale/future frames keep fault protection\nPASS offline config/zero/direction/period faults remain latched\nPASS resumed frame with expired previous reference waits for new reference\nPASS mechanical limit remains active on recovery\nPASS sine test restarts from recovered pose\nPASS offline invalid frame latches and cannot downgrade to offline\nPASS yaw half-turn ambiguity stays fault\nPASS offline invalid speed command remains fault\nPASS invalid state safe output\n",
+      "stderr": "",
+      "groups_passed": 14
+    }
+  },
+  "hardware_tested": false,
+  "flashed": false,
+  "native_adapter_scope": "Actual gimbal module, task DR16/sine functions, PID/filter/math/unwrap code; existing motor/runtime types; mocked RTOS/time; current configuration extracted unchanged",
+  "test_source_sha256": "6afb4ae5cce4bfcd63a7e0e8cf8cd72d90a693e401e8a4c33b4988fa1267aed2",
+  "source_sha256": {
+    "User/module/gimbal.c": "47b9d88689e0783aee96e0ac2201b646a44753d9c29e03372909867641154125",
+    "User/module/gimbal.h": "983f3d3bdbcbef02dd6f5bad863ae9dd3ba62f57c73343add8eefeb9be567e34",
+    "User/task/motor_gimbal.c": "95297f4274449c5b7bf3d05d9b7860f807d71411706c8bc449cef4edfc0f1559",
+    "User/task/motor_gimbal.h": "fc5717fe8490907fce3ec5053a28a46e6d10f251df4c39c8c7256c691fb267d7",
+    "User/module/config.c": "77034ae038b30c93401d1e1cb6ed7e23cdf2c494e5b5b8e0d07596403ecd241e"
+  },
+  "elf": {
+    "path": "build/Debug/Infantry_Robot.elf",
+    "sha256": "60639f2e42b5ed4359f8d58012bd90a4ea66e959e534002b8b2939f6abd6ca18",
+    "ram_bytes": 42704,
+    "flash_bytes": 116444,
+    "generator": "Ninja",
+    "preset": "Debug"
+  },
+  "checks": {
+    "arch_hw_spec": "PASS",
+    "arm_strict_syntax": "-Wall -Wextra -Werror -fsyntax-only PASS",
+    "native_compile": "-std=c11 -Wall -Wextra -Werror PASS",
+    "source_format": "Allman, control braces, 120 columns and trailing whitespace PASS",
+    "user_config_unchanged": true,
+    "diagnostics_still_removed": true
+  },
+  "temporary_tests_cleaned": true
+}

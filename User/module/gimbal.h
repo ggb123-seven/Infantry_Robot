@@ -44,13 +44,15 @@ typedef enum
  * 单轴运行状态：
  * - GIMBAL_AXIS_RELAX：待机零输出，反馈和配置有效且命令非 RELAX 时进入运行
  * - GIMBAL_AXIS_RUNNING：闭环运行
- * - GIMBAL_AXIS_FAULT：运行中反馈超时、连续角断开、零点改变或输入非法，零输出锁存至命令回到 RELAX
+ * - GIMBAL_AXIS_FAULT：反馈非法、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
+ * - GIMBAL_AXIS_OFFLINE：电机反馈超时，单轴零输出等待，有效反馈恢复且运行请求有效时自动起控
  */
 typedef enum
 {
     GIMBAL_AXIS_RELAX = 0,
     GIMBAL_AXIS_RUNNING,
     GIMBAL_AXIS_FAULT,
+    GIMBAL_AXIS_OFFLINE,
 } Gimbal_AxisState_t;
 
 /*
@@ -111,7 +113,7 @@ typedef struct
 /*
  * 单轴命令：
  * - target_angle_deg：当前 INS 坐标下的姿态目标，单位度，仅 ANGLE 模式使用，yaw 为累计角
- *   每次从待机进入 ANGLE 时由模块预置为当前姿态，随后调用方可以修改目标
+ *   每次从待机或失联等待进入 ANGLE 时由模块预置为当前姿态，随后调用方可以修改目标
  * - target_speed_rad_s：SPEED 模式下为速度目标，ANGLE 模式下为角速度前馈，单位 rad/s
  */
 typedef struct
@@ -225,7 +227,7 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
  * @param[in,out] gimbal 云台实例
- * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机进入 ANGLE 时预置当前姿态并清零前馈
+ * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机起控或失联恢复到 ANGLE 时捕获当前姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */

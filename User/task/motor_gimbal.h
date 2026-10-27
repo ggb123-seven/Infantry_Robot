@@ -15,7 +15,8 @@ extern "C"
  *   imu_state 为 2 时惯性反馈就绪，angle_deg/speed_rad_s 为惯性量，mechanical_angle_deg 为编码器机械角
  * - gimbal_command：遥控生成的云台命令，每周期覆盖 mode 和前馈，调试器修改不作为使能入口
  *   右拨杆中位为 RELAX，上位为 ANGLE，下位或非法位置为 RELAX
- *   上电、遥控离线超过 100 毫秒、输入异常或模块故障后，须先右拨杆回中，再拨上重新使能
+ *   上电、遥控离线超过 100 毫秒、输入异常或锁存故障后，须先右拨杆回中，再拨上重新使能
+ *   单轴电机反馈超时只停止该轴，保持上位时有效反馈恢复即可自动起控，目标重置为当前姿态
  *   首次进入 ANGLE 时捕获当前姿态，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
  *   两轴满杆目标角速度均为 6 rad/s，中心死区 5%，方向参数在 motor_gimbal.c 中集中定义
  * - gimbal_sine_test_enabled：默认 false，闭环后以当前 yaw 为中心生成振幅 30°、相位速度 6 rad/s 的正弦轨迹

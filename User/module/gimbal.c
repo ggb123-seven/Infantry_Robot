@@ -32,6 +32,7 @@ static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz);
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
+static void Gimbal_RejectAxisFeedback(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
 static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 static void Gimbal_InvalidateImu(Gimbal_t *gimbal);
 static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config,
@@ -119,7 +120,7 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * @brief 根据命令更新两轴状态机并计算输出电流
  *
  * @param[in,out] gimbal 云台实例
- * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机进入 ANGLE 时预置当前姿态并清零前馈
+ * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机起控或失联恢复到 ANGLE 时捕获当前姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
@@ -146,15 +147,17 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
         gimbal->imu.valid = false;
     }
 
-    // 从待机进入姿态模式时捕获当前姿态，避免旧编码器目标或默认零目标引发回转
+    // 待机起控或失联恢复时捕获当前姿态，避免追赶停止前的旧目标
     if (mode == GIMBAL_MODE_ANGLE && gimbal->imu_state == GIMBAL_IMU_READY)
     {
-        if ((gimbal->yaw.state == GIMBAL_AXIS_RELAX || mode_changed) && isfinite(gimbal->yaw.angle_deg))
+        if ((gimbal->yaw.state == GIMBAL_AXIS_RELAX || gimbal->yaw.state == GIMBAL_AXIS_OFFLINE || mode_changed) &&
+            isfinite(gimbal->yaw.angle_deg))
         {
             active_command->yaw.target_angle_deg = gimbal->yaw.angle_deg;
             active_command->yaw.target_speed_rad_s = 0.0f;
         }
-        if ((gimbal->pitch.state == GIMBAL_AXIS_RELAX || mode_changed) && isfinite(gimbal->pitch.angle_deg))
+        if ((gimbal->pitch.state == GIMBAL_AXIS_RELAX || gimbal->pitch.state == GIMBAL_AXIS_OFFLINE || mode_changed) &&
+            isfinite(gimbal->pitch.angle_deg))
         {
             active_command->pitch.target_angle_deg = gimbal->pitch.angle_deg;
             active_command->pitch.target_speed_rad_s = 0.0f;
@@ -289,6 +292,32 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
 }
 
 /**
+ * @brief 拒绝机械反馈并集中处理失联等待与不可自动恢复的反馈故障
+ *
+ * @param[in,out] axis 单轴运行数据
+ * @param[in] next_state 超时传 OFFLINE，其他反馈异常传 FAULT
+ * @return 无返回值
+ */
+static void Gimbal_RejectAxisFeedback(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
+{
+    // 反馈事件只改变已运行轴的保护状态，待机继续等待，已有故障不得降级为失联
+    switch (axis->state)
+    {
+        case GIMBAL_AXIS_RUNNING:
+        case GIMBAL_AXIS_OFFLINE:
+            Gimbal_StopAxis(axis, next_state);
+            break;
+        case GIMBAL_AXIS_RELAX:
+        case GIMBAL_AXIS_FAULT:
+            break;
+        default:
+            Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
+            break;
+    }
+    Gimbal_ClearFeedback(axis);
+}
+
+/**
  * @brief 撤销惯性控制量并根据当前阶段进入等待或故障
  *
  * @param[in,out] gimbal 云台实例
@@ -401,13 +430,13 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
 /**
  * @brief 校验单轴新反馈帧并换算编码器角度、转速和相对角度
  *
- * 新帧时间倒退、与上一帧间隔超时或展开歧义时清除机械反馈，下一帧重新建立机械角，惯性量独立处理
+ * 超时进入单轴失联等待，非法帧、时间倒退或展开歧义锁存故障，惯性量独立处理
  *
  * @param[in,out] axis 单轴运行数据
  * @param[in] config 单轴配置
  * @param[in] motor 新反馈帧，本周期没有新帧时为 NULL
  * @param[in] now_us 当前单调时刻，单位微秒
- * @param[in] timeout_us 反馈最大间隔，单位微秒，为 0 时全部反馈视为失联
+ * @param[in] timeout_us 反馈最大间隔，单位微秒，为 0 时视为配置故障
  * @param[in] signed_angle 为 true 时使用零点两侧的有符号单圈角，否则展开连续角
  * @return 无返回值
  */
@@ -417,7 +446,7 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
 {
     if (timeout_us == 0U)
     {
-        Gimbal_ClearFeedback(axis);
+        Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
         return;
     }
 
@@ -427,7 +456,8 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
         if (axis->feedback_time_us == UINT64_MAX || now_us < axis->feedback_time_us ||
             now_us - axis->feedback_time_us > timeout_us)
         {
-            Gimbal_ClearFeedback(axis);
+            Gimbal_RejectAxisFeedback(axis, now_us < axis->feedback_time_us &&
+                axis->feedback_time_us != UINT64_MAX ? GIMBAL_AXIS_FAULT : GIMBAL_AXIS_OFFLINE);
         }
         return;
     }
@@ -445,9 +475,14 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
                             frame_time_us - axis->feedback_time_us <= timeout_us;
     const bool has_reference = signed_angle ? isfinite(axis->mechanical_angle_deg) : axis->unwrap.has_reference;
-    if (!frame_valid || (has_reference && !continuous))
+    if (!frame_valid || (has_reference && frame_time_us <= axis->feedback_time_us))
     {
-        Gimbal_ClearFeedback(axis);
+        Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
+        return;
+    }
+    if (has_reference && !continuous)
+    {
+        Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_OFFLINE);
         return;
     }
 
@@ -474,7 +509,8 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     float angle_deg = NAN;
     if (!AngleUnwrap_Update(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
     {
-        angle_deg = NAN;
+        Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
+        return;
     }
     axis->mechanical_angle_deg = angle_deg;
 }
@@ -501,7 +537,7 @@ static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_
         axis->applied_zero_encoder_deg = config->zero_encoder_deg;
         axis->applied_reversed = config->reversed;
         Gimbal_ClearFeedback(axis);
-        if (axis->state == GIMBAL_AXIS_RUNNING)
+        if (axis->state == GIMBAL_AXIS_RUNNING || axis->state == GIMBAL_AXIS_OFFLINE)
         {
             Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
         }
@@ -542,7 +578,7 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
  * @brief 清空两环历史、输出零电流并切换到指定停止状态
  *
  * @param[in,out] axis 单轴运行数据
- * @param[in] next_state 停止后的状态，只能为 RELAX 或 FAULT
+ * @param[in] next_state 停止后的状态，只能为 RELAX、OFFLINE 或 FAULT，非法值按 FAULT 处理
  * @return 无返回值
  */
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
@@ -552,7 +588,7 @@ static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
     axis->target_angle_deg = NAN;
     axis->target_speed_rad_s = 0.0f;
     axis->output_current_a = 0.0f;
-    axis->state = next_state == GIMBAL_AXIS_RELAX ? GIMBAL_AXIS_RELAX : GIMBAL_AXIS_FAULT;
+    axis->state = next_state == GIMBAL_AXIS_RELAX || next_state == GIMBAL_AXIS_OFFLINE ? next_state : GIMBAL_AXIS_FAULT;
 }
 
 /**
@@ -653,7 +689,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
 }
 
 /**
- * @brief 单轴状态机，集中决定进入运行、保持运行、停止和故障锁存
+ * @brief 单轴状态机，集中决定起控、失联恢复、停止和故障锁存
  *
  * @param[in,out] axis 单轴运行数据
  * @param[in] config 单轴配置
@@ -674,11 +710,22 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
 
     switch (axis->state)
     {
-        // 待机时等待运行请求，反馈尚未就绪不算故障，继续零输出等待
+        // 待机与失联恢复共用起控路径，失联期间仍校验共用反馈和控制输入
         case GIMBAL_AXIS_RELAX:
+        case GIMBAL_AXIS_OFFLINE:
+            if (axis->state == GIMBAL_AXIS_OFFLINE && run_requested &&
+                (!config_valid || !isfinite(axis->angle_deg) || !isfinite(axis->speed_rad_s) ||
+                !isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S ||
+                !isfinite(command->target_speed_rad_s) ||
+                (mode == GIMBAL_MODE_ANGLE && !isfinite(command->target_angle_deg))))
+            {
+                Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
+                break;
+            }
             if (!run_requested || !config_valid || !feedback_ready)
             {
-                Gimbal_StopAxis(axis, GIMBAL_AXIS_RELAX);
+                Gimbal_StopAxis(axis, run_requested && axis->state == GIMBAL_AXIS_OFFLINE ?
+                    GIMBAL_AXIS_OFFLINE : GIMBAL_AXIS_RELAX);
                 break;
             }
             Gimbal_EnterRunning(axis);
