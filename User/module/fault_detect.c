@@ -5,7 +5,6 @@
 _Static_assert(FAULT_DETECT_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "故障检测与 CAN 设备数量必须一致");
 _Static_assert(FAULT_DETECT_MOTOR_COUNT == CHASSIS_WHEEL_COUNT, "故障检测与底盘控制电机数量必须一致");
 
-static void FaultDetect_ResetSnapshot(FaultDetect_Snapshot_t *fault_snapshot);
 static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_snapshot);
 static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis);
 static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_snapshot, uint32_t motor_index);
@@ -30,8 +29,10 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
     }
 
     // 每周期从空快照重新汇总，避免历史故障在故障源恢复后残留
-    FaultDetect_ResetSnapshot(fault_snapshot);
-    fault_snapshot->evaluated = true;
+    *fault_snapshot = (FaultDetect_Snapshot_t)
+    {
+        .evaluated = true,
+    };
     fault_snapshot->system_fault_flags = FaultDetect_EvaluateCanSystem(can_snapshot) |
                                          FaultDetect_EvaluateChassisSystem(chassis);
 
@@ -92,20 +93,6 @@ void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
         fault_snapshot->fault_flags |= FAULT_DETECT_DR16_STREAM;
     }
     fault_snapshot->has_fault = fault_snapshot->fault_flags != FAULT_DETECT_DR16_NONE;
-}
-
-/**
- * @brief 恢复故障检测快照的安全默认值
- *
- * @param[out] fault_snapshot 待复位的故障检测快照
- * @return 无返回值
- */
-static void FaultDetect_ResetSnapshot(FaultDetect_Snapshot_t *fault_snapshot)
-{
-    *fault_snapshot = (FaultDetect_Snapshot_t)
-    {
-        0,
-    };
 }
 
 /**
