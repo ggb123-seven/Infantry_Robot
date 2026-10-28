@@ -1,0 +1,247 @@
+{
+  "host_compile": {
+    "command": [
+      "gcc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression",
+      "-IUser",
+      "-IF:\\RM\\Infantry_Robot\\Middlewares\\Third_Party\\FreeRTOS\\Source\\CMSIS_RTOS_V2",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\test.c",
+      "User/module/gimbal.c",
+      "User/component/pid.c",
+      "User/component/filter.c",
+      "User/component/user_math.c",
+      "User/component/angle_unwrap.c",
+      "-lm",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "host": {
+    "command": [
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "physical sign=1 suspended_tail_max=0.1 final_angle=30.0004 target=30 state=1 current_step=0.004\nphysical sign=-1 suspended_tail_max=0.1 final_angle=-30.0004 target=-30 state=1 current_step=0.004\nPASS suspended restraint then grounded posture convergence, automatic recovery, current continuity\nPASS nonzero holding torque mirror target freeze integral tracking and coupled response recovery\nPASS stationary error cannot restore, matched timing reset, settled recovery and relapse\nPASS response ratio prevents false recovery, post recovery retrigger, mode changes preserve target\nPASS period variants drive removal low speed envelope lowered current limits invalid floats zero gain\nPASS protected and normal offline recovery mechanical current veto\nPASS remote sine freeze interrupted recovery 100000/100001 timeout manual fault rearm\nPASS real fault invalid period command imu and corrupt governor state\nPASS actual feedback timeout 90000/90001 and nonfinite motor failure\ntask ground angle=21.2152 target=21.2149 state=1 yaw=1 remote=2\nPASS full task physical feedback remote auto recovery and output mailbox failure\n",
+    "stderr": ""
+  },
+  "baseline_compile": {
+    "command": [
+      "gcc",
+      "-DBASELINE",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression",
+      "-IUser",
+      "-IF:\\RM\\Infantry_Robot\\Middlewares\\Third_Party\\FreeRTOS\\Source\\CMSIS_RTOS_V2",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\test.c",
+      "User/module/gimbal.c",
+      "User/component/pid.c",
+      "User/component/filter.c",
+      "User/component/user_math.c",
+      "User/component/angle_unwrap.c",
+      "-lm",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\baseline.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "baseline": {
+    "command": [
+      "F:\\RM\\Infantry_Robot\\build\\yaw_recovery_regression\\baseline.exe"
+    ],
+    "exit_code": 7,
+    "stdout": "physical sign=1 suspended_tail_max=1.53674e-007 final_angle=0 target=30 state=3 current_step=3.26464e-016\n",
+    "stderr": "ASSERT line 240: fabsf(angle - 30.0f * sign) < .5f\n"
+  },
+  "arm_strict": [
+    {
+      "command": [
+        "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+        "-DARM_MATH_CM4",
+        "-DDEBUG",
+        "-DSTM32F407xx",
+        "-DUSE_HAL_DRIVER",
+        "-D__FPU_PRESENT=1U",
+        "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+        "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+        "-IF:/RM/Infantry_Robot/User",
+        "-IF:/RM/Infantry_Robot/applications",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard",
+        "-Wall",
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-O0",
+        "-g3",
+        "-std=gnu11",
+        "F:/RM/Infantry_Robot/User/module/gimbal.c",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+        "-DARM_MATH_CM4",
+        "-DDEBUG",
+        "-DSTM32F407xx",
+        "-DUSE_HAL_DRIVER",
+        "-D__FPU_PRESENT=1U",
+        "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+        "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+        "-IF:/RM/Infantry_Robot/User",
+        "-IF:/RM/Infantry_Robot/applications",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard",
+        "-Wall",
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-O0",
+        "-g3",
+        "-std=gnu11",
+        "F:/RM/Infantry_Robot/User/module/gimbal_governor.c",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+        "-DARM_MATH_CM4",
+        "-DDEBUG",
+        "-DSTM32F407xx",
+        "-DUSE_HAL_DRIVER",
+        "-D__FPU_PRESENT=1U",
+        "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+        "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+        "-IF:/RM/Infantry_Robot/User",
+        "-IF:/RM/Infantry_Robot/applications",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard",
+        "-Wall",
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-O0",
+        "-g3",
+        "-std=gnu11",
+        "F:/RM/Infantry_Robot/User/task/motor_gimbal.c",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "sha256": {
+    "User/module/gimbal.c": "5eee88a3afb1cccc9954b2f42f907e5bc99289f29ae95f8a0dfd9fefbe01e03b",
+    "User/module/gimbal.h": "614d4e4e5a95b96dbd0cdf3f698fb69e960a367a5a7d7f6cc0b474df0718a42c",
+    "User/module/gimbal_governor.c": "c3a830bb231cc837475069c8f93eb0aeceb20bc988f56f25e9abd4db693c5e98",
+    "User/module/gimbal_governor.h": "46ea1829579e5efbc5c3808e46f5c41bd78b620d2c03a13bb53ad85c55be17e8",
+    "User/module/config.c": "223396b72e41c79b36505ec308c8ac0cc807a7ad09af5b01977fb6b53392f582",
+    "User/task/motor_gimbal.c": "95297f4274449c5b7bf3d05d9b7860f807d71411706c8bc449cef4edfc0f1559",
+    "build/Debug/Infantry_Robot.elf": "38dc354c645762b64234aeb09dedc3376295c19f28e270b08d1321f9922bcba8"
+  },
+  "model": {
+    "acceleration_per_amp": 20,
+    "damping": 3,
+    "period_s": 0.002,
+    "suspended_duration_s": 6,
+    "grounded_duration_s": 20,
+    "sensors": "suspended: upper yaw fixed, motor responds; grounded: motor and upper move together",
+    "limits": "synthetic plant, no contact sensor; physical gains, friction and thresholds unvalidated"
+  },
+  "exploratory_low_damping": {
+    "damping": 0.8,
+    "exit_code": 7,
+    "final_angle_deg": 27.2644,
+    "target_deg": 30,
+    "governor_state": "MONITOR",
+    "max_current_step_a": 0.00400001,
+    "failed_assertion": "abs(angle - target) < 0.5 deg after 20 s",
+    "conclusion": "model dependent convergence; PID unchanged"
+  },
+  "baseline_commit": "3886f4d",
+  "checkpoint_commit": "1b3f72f",
+  "final_checks": {
+    "cmake_debug": {
+      "command": "python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug",
+      "exit_code": 0,
+      "artifact": "build/Debug/Infantry_Robot.elf"
+    },
+    "architecture_hardware_spec": {
+      "command": "python .auto-embedded/scripts/check.py",
+      "exit_code": 0,
+      "result": "ARCH/HW/SPEC PASS"
+    },
+    "keil_xml_and_source_paths": "PASS; UV4 unavailable, Keil compilation not run",
+    "format": "PASS; Allman, <=120 columns, no trailing whitespace; gimbal.c 800 lines",
+    "structures": "gimbal.h code tokens identical to 3886f4d after removing comments; no structures or fields added",
+    "config_unchanged": true,
+    "review": {
+      "software": "host regression and real ARM strict compile pass; low damping exploratory model convergence limitation retained",
+      "hardware": "no ioc, pins, DMA, clocks, interrupts, BSP or device changes; no hardware actions",
+      "quality": "no main.c changes, no ISR shared state or critical sections added; module contains protection; default fault zero output and final mechanical veto preserved"
+    }
+  },
+  "temporary_test_sha256": {
+    "build\\run_yaw_recovery_tests.py": "3585020c32f98576dc9ff2fdcd27dfa4126db9dc8b72d5939ed4e94d39ddd3b1",
+    "build\\yaw_recovery_regression\\test.c": "7f92eed95b66b40123331fcddb7335866781f35e3c67cd0705e4a3b713adb589"
+  }
+}

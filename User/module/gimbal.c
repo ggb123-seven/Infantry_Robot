@@ -681,7 +681,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // 保护期间暂停姿态纠偏，人工重新起控时渐进开放速度权限
+    // 制动时暂停姿态纠偏，停稳后受限保持姿态并自动平滑恢复速度权限
     if (motion_governed)
     {
         target_speed_rad_s = GimbalGovernor_LimitSpeed(target_speed_rad_s);
