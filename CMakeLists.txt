@@ -79,7 +79,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/module/config.c
     User/module/fault_detect.c
     User/module/gimbal.c
-    User/module/gimbal_feedback.c
     User/module/gimbal_governor.c
     User/module/ins.c
 

@@ -706,11 +706,6 @@
               <FilePath>..\User\module\gimbal.c</FilePath>
             </File>
             <File>
-              <FileName>gimbal_feedback.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\User\module\gimbal_feedback.c</FilePath>
-            </File>
-            <File>
               <FileName>cmd.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\cmd.c</FilePath>

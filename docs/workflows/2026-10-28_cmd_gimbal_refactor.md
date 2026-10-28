@@ -90,10 +90,24 @@ git diff --check
 - 采用用户确认的单轴 `source/rate_rad_s/angle_deg` 命令及轴内 `setpoint`；`Gimbal_Control` 输入改为 const，任务删除目标角累加和轴状态清平滑逻辑
 - 首次遥控使能仍将平滑速度置零，随后模块按“解析、姿态捕获、governor、控制”执行；增量以上周期实际限幅目标为基准
 - 正弦留在原文件，以 yaw ABSOLUTE 来源提供目标，退出恢复 INCREMENT；`MOTOR_GIMBAL_ENABLE_SINE_TEST=0` 可编译移除整个实验
-- 原 gimbal.c 达到机械门禁 800 行上限，新增 `gimbal_feedback.c` 搬移现有反馈处理函数，私有头文件只声明共用的清反馈和停轴接口，没有新增转调包装；CMake、Keil 同步
+- 本步骤曾拆出反馈实现和私有头文件，后按用户要求合回 gimbal.c，当前结果及验证见下节
 - governor 仅将输入命令改为模式和模块内部设定值，未改状态机、阈值、包络；公共接口完整说明集中于头文件，避免两份契约重复维护
 - `python build/cmd_refactor/test.py 3`：20 组共 32000 周期，与 f6801cf 比较，状态全部相同，全部 6 个 governor 状态均覆盖
 - 普通场景数值满足 `1e-6 × max(1, |旧值|, |新值|)`，误差来自公开命令改为 rad/s 后的度/弧度浮点换算；不改变旧满杆参数
 - 超出上述容差的差异仅在方案允许的 yaw 超时恢复、pitch 超时恢复及正弦交接场景，各为 177、130、2117 个字段样本；对应命令层不再因单轴失联或正弦接管清空平滑历史
 - 增加绝对角输入、非法来源和逐周期命令不回写断言，均通过；编译关闭正弦的实际 ARM 对象经 nm 确认不含测试函数和变量
 - ARCH/HW/SPEC、Debug 构建、ARM 严格语法检查与格式检查通过；硬件和通信拓扑未改，未上板实测
+
+## 按用户要求合回云台文件
+
+- 将反馈实现和私有头文件内容合回 `User/module/gimbal.c`，删除两个文件，移除 CMake 与 Keil 源文件登记
+- `Gimbal_ClearFeedback`、`Gimbal_StopAxis` 恢复为 static，公共接口保持不变；去除重复说明后 gimbal.c 为 800 行，三个源码文件合计减少 26 行
+- 对照合并前提交 `124ea6e`，逐函数核对全部 19 个函数体的文本完全一致，未改计算、状态机、保护阈值、INS、硬件资源或 RTOS 拓扑
+- `python .auto-embedded/scripts/check.py`：ARCH/HW/SPEC 全 PASS
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug`：构建通过
+- `python build/cmd_refactor/test.py 4 124ea6e`：参数 4 选择精确比较，不表示已实施计划步骤 4；20 组共 32000 周期的电流、目标、轴及 governor 状态逐项精确一致，governor 全部 6 个状态均覆盖
+- 两份最终轨迹 SHA256 均为 `8a96a66508042d60799bb32fcb2ef120844751295864f33186e0ab9d982b3aea`
+- 实际 ARM 编译器 `-Wall -Wextra -Werror -fsyntax-only`、正弦编译关闭检查、Allman/120 列/行尾空白检查、`git diff --check` 通过
+- Keil XML 与工程路径检查通过，未执行 Keil 编译；ELF 确认两个内部函数为局部符号，源码及工程中无已删除文件引用
+- 临时测试源码、程序与轨迹已在记录后清理；未烧录，未进行板上控制或耗时测量
+- 本次仅合并文件，后续步骤尚未实施，不再按每个控制阶段新增函数
