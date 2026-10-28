@@ -16,6 +16,13 @@
 
 ## 底盘当前进度
 
+### 2026-10-28 底盘与云台默认配置接口精简
+
+- 删除底盘故障快照清零包装，在汇总入口直接聚合初始化并设置 evaluated
+- 底盘与云台初始化直接传入只读默认配置 chassis_config、gimbal_config 的地址，模块继续复制至实例，默认参数不变
+- Debug 构建、ARM 编译器 -Wall -Wextra -Werror -fsyntax-only、ARCH/HW/SPEC、格式及旧符号引用检查通过；ELF 确认两份配置位于只读区，三个包装函数已移除
+- 验证命令沿用下节构建与门禁命令；未修改 INS，未烧录、未实测控制耗时，整车验收与下一步仍按下方记录执行
+
 ### 2026-10-26 遥控帧龄竞态修复
 
 - 底盘任务改为先读取 DR16 快照，再采当前时间检查帧龄，保留 100 ms 超时、时间回退检查和自动恢复行为
@@ -37,7 +44,7 @@
 
 ```text
 Task_Init -> Task_can_Init（保留 CAN 设备初始化）-> 创建邮箱和任务
-Task_motor_chassis -> Chassis_Init(&chassis, Config_GetChassis(), 500 Hz)
+Task_motor_chassis -> Chassis_Init(&chassis, &chassis_config, 500 Hz)
 DR16 -> Task_dr16 -> dr16_state 邮箱 -> MotorChassis_ApplyDR16Input -> chassis_command
 Task_can -> can_feedback 邮箱 -> Chassis_UpdateFeedback
   -> Chassis_Control -> Mixer_Apply -> 每轮状态机 -> 斜坡/速度 PID/滤波/限幅

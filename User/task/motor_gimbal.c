@@ -187,7 +187,7 @@ static bool MotorGimbal_Init(void)
     {
         return false;
     }
-    return Gimbal_Init(&gimbal, Config_GetGimbal(), (float)MOTOR_GIMBAL_FREQ) == 0;
+    return Gimbal_Init(&gimbal, &gimbal_config, (float)MOTOR_GIMBAL_FREQ) == 0;
 }
 
 /**

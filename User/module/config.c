@@ -8,7 +8,7 @@
  * - PID 输出限幅 4 A，微分滤波 20 Hz，range=0 表示线性速度误差
  * - 布局及反馈、电流滤波截止频率仅初始化时生效，其他参数可在实例配置中在线调整
  */
-static const Chassis_Config_t chassis_config =
+const Chassis_Config_t chassis_config =
 {
     .layout = MIXER_OMNICROSS,
     .max_wheel_speed_rpm = 300.0F,
@@ -30,16 +30,6 @@ static const Chassis_Config_t chassis_config =
     },
 };
 
-/**
- * @brief 获取整机底盘默认配置
- *
- * @return 指向只读底盘配置的指针，生命周期为整个程序运行期
- */
-const Chassis_Config_t *Config_GetChassis(void)
-{
-    return &chassis_config;
-}
-
 /*
  * 云台默认配置：
  * - yaw 零点 97.0752° 取自用户实测，安装关系改变后须重新标定
@@ -57,7 +47,7 @@ const Chassis_Config_t *Config_GetChassis(void)
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  * - IMU 独立超时初始取 10 ms，以源采样时间校验，后续须通过实机调度抖动核定
  */
-static const Gimbal_Config_t gimbal_config =
+const Gimbal_Config_t gimbal_config =
 {
     .yaw =
     {
@@ -128,13 +118,3 @@ static const Gimbal_Config_t gimbal_config =
     .feedback_timeout_s = 0.09f,
     .imu_timeout_s = 0.01f,
 };
-
-/**
- * @brief 获取整机云台默认配置
- *
- * @return 指向只读云台配置的指针，生命周期为整个程序运行期
- */
-const Gimbal_Config_t *Config_GetGimbal(void)
-{
-    return &gimbal_config;
-}

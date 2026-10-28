@@ -58,8 +58,7 @@ void Task_motor_chassis(void *argument)
     const bool timing_valid = tick_frequency >= MOTOR_CHASSIS_FREQ && tick_frequency % MOTOR_CHASSIS_FREQ == 0U;
     const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_CHASSIS_FREQ : 1U;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
-    const int8_t init_status = Chassis_Init(&chassis, Config_GetChassis(),
-                                           timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F);
+    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F);
     if (init_status != 0)
     {
         FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
