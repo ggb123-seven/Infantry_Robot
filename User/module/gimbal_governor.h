@@ -42,7 +42,7 @@ float GimbalGovernor_BackCalculate(float integral, float integral_gain, float in
 void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis);
 
 /**
- * @brief 推进异常运动保护及自动恢复，保护期间冻结 yaw 命令并保留原姿态目标
+ * @brief 推进异常运动保护，制动及停稳阶段跟随当前 yaw，恢复时捕获新目标
  *
  * @param[in,out] gimbal 云台实例，yaw 须与初始化时绑定的轴一致
  * @param[in,out] command 当前命令，保护时只覆盖 yaw 目标及前馈，不影响 pitch
@@ -52,7 +52,7 @@ void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis);
 bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s);
 
 /**
- * @brief 限制 yaw 速度请求，制动时返回零，停稳后受限保持姿态并渐进恢复
+ * @brief 制动及目标跟随时返回零，捕获新姿态后渐进恢复 yaw 速度权限
  *
  * @param[in] target_speed_rad_s 已校验的速度请求，单位 rad/s
  * @return 本周期允许的速度请求，单位 rad/s
@@ -60,7 +60,7 @@ bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Command_t *command, floa
 float GimbalGovernor_LimitSpeed(float target_speed_rad_s);
 
 /**
- * @brief 生成制动及受限姿态保持电流并平滑恢复，机械边界仍由调用方最后执行
+ * @brief 平滑恢复完整 PID 电流并以低速残差包络监护，机械边界由调用方最后执行
  *
  * @param[in] motor_speed_rad_s 编码器相对转速，单位 rad/s，须有限
  * @param[in] imu_speed_rad_s 上部惯性 yaw 转速，单位 rad/s，须有限

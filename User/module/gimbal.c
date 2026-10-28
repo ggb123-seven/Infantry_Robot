@@ -170,7 +170,7 @@ void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
         }
     }
 
-    // 保护状态先冻结 yaw 命令，校验失败仍走原故障停机路径，pitch 独立控制
+    // yaw 保护先跟随当前姿态再捕获新目标，校验失败仍走原故障停机路径，pitch 独立控制
     if (GimbalGovernor_PrepareYaw(gimbal, active_command, period_s))
     {
         Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed, &active_command->yaw, period_s, true);
@@ -681,7 +681,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // 制动时暂停姿态纠偏，停稳后受限保持姿态并自动平滑恢复速度权限
+    // 制动及目标跟随时暂停姿态纠偏，捕获新目标后平滑恢复速度权限
     if (motion_governed)
     {
         target_speed_rad_s = GimbalGovernor_LimitSpeed(target_speed_rad_s);
