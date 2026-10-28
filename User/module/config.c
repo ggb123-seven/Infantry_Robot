@@ -72,8 +72,8 @@ static const Gimbal_Config_t gimbal_config =
         .angle_pid =
         {
             .k = 1.0f,
-            .p = 0.0f,
-            .i = 0.0f,
+            .p = 15.0f,
+            .i = 0.005f,
             .d = 0.0f,
             .i_limit = 1.0f,
             .out_limit = 320.0f * 0.10471975512f,

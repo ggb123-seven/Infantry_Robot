@@ -45,3 +45,6 @@ desktop.ini
 
 # EmberProbe 本机 Agent Bridge 指针
 .agents/skills/_emberprobe/agent-bridge.json
+
+# JSONL 日志与上下文记录
+*.jsonl

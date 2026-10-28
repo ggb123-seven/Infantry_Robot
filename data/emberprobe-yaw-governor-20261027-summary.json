@@ -1,0 +1,402 @@
+{
+  "operation": "EmberProbe mcu-variables read-only acquisition",
+  "target_writes": false,
+  "flash_or_reset_or_halt": false,
+  "sampling_controls_changed": false,
+  "artifact_sha256": "a695a7277ae3834e4ba42a6c34c7216db869540df1da0f5f3e6c9e8d58588089",
+  "segments": [
+    {
+      "path": "data/emberprobe-yaw-governor-20261027-readonly.jsonl",
+      "sha256": "d90d6cddc1875b8f2d14fb2571c781c7021aa9dcd232853791fdadde5d2667df",
+      "count": 150,
+      "start_utc": "2026-10-27T12:33:53.197000+00:00",
+      "end_utc": "2026-10-27T12:34:12+00:00",
+      "residual_rad_s": {
+        "min": -0.04941080883145332,
+        "max": 0.045961782336235046,
+        "mean": 7.001291611231863e-05,
+        "samples_above_soft_limit": 0
+      },
+      "statistics": {
+        "gimbal.yaw.motor_speed_rad_s": {
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "first": 0,
+          "last": 0
+        },
+        "gimbal.yaw.speed_rad_s": {
+          "min": -0.045961782336235046,
+          "max": 0.04941080883145332,
+          "mean": -7.001291611231863e-05,
+          "first": 0.0027081952430307865,
+          "last": 0.016440752893686295
+        },
+        "gimbal.yaw.output_current_a": {
+          "min": 0.027231642976403236,
+          "max": 0.04735048487782478,
+          "mean": 0.035155004610617956,
+          "first": 0.029233844950795174,
+          "last": 0.046183470636606216
+        },
+        "gimbal.yaw.target_angle_deg": {
+          "min": 25.186426162719727,
+          "max": 25.186426162719727,
+          "mean": 25.186426162719727,
+          "first": 25.186426162719727,
+          "last": 25.186426162719727
+        },
+        "gimbal.yaw.angle_deg": {
+          "min": 25.05443000793457,
+          "max": 25.24653434753418,
+          "mean": 25.147621269226075,
+          "first": 25.090065002441406,
+          "last": 25.122329711914062
+        },
+        "gimbal.yaw.speed_pid.i": {
+          "min": 0.1590299904346466,
+          "max": 0.26227179169654846,
+          "mean": 0.19637357592582702,
+          "first": 0.1590299904346466,
+          "last": 0.26227179169654846
+        },
+        "gimbal.yaw.target_speed_rad_s": {
+          "min": -0.02002938836812973,
+          "max": 0.030296122655272484,
+          "mean": 0.005830556607494751,
+          "first": 0.020908452570438385,
+          "last": 0.012524418532848358
+        },
+        "gimbal.yaw.state": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "first": 1,
+          "last": 1
+        },
+        "gimbal.pitch.state": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "first": 1,
+          "last": 1
+        },
+        "gimbal.imu_state": {
+          "min": 2,
+          "max": 2,
+          "mean": 2,
+          "first": 2,
+          "last": 2
+        },
+        "gimbal_command.yaw.target_speed_rad_s": {
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "first": 0,
+          "last": 0
+        }
+      },
+      "pitch_state_counts": {
+        "1": 150
+      }
+    },
+    {
+      "path": "data/emberprobe-yaw-governor-20261027-feedback.jsonl",
+      "sha256": "7852fe5afef97afa8b638b9b4451469decb5744b99d007d3c737eaad2f51da6a",
+      "count": 200,
+      "start_utc": "2026-10-27T12:35:15.385000+00:00",
+      "end_utc": "2026-10-27T12:35:40.493000+00:00",
+      "residual_rad_s": {
+        "min": -0.37462782859802246,
+        "max": 0.3179755210876465,
+        "mean": -0.027202495296369308,
+        "samples_above_soft_limit": 0
+      },
+      "statistics": {
+        "gimbal.yaw.motor_speed_rad_s": {
+          "min": -6.911503791809082,
+          "max": 6.806784152984619,
+          "mean": 0.12723450362682343,
+          "first": 0,
+          "last": -2.3038346767425537
+        },
+        "gimbal.yaw.speed_rad_s": {
+          "min": -6.607464790344238,
+          "max": 7.041914939880371,
+          "mean": 0.15443699892319274,
+          "first": 0.002778073539957404,
+          "last": -2.432285785675049
+        },
+        "gimbal.yaw.output_current_a": {
+          "min": -0.20780527591705322,
+          "max": 0.2904302775859833,
+          "mean": 0.018971550497226417,
+          "first": -0.13511736690998077,
+          "last": 0.2526717185974121
+        },
+        "gimbal.yaw.target_angle_deg": {
+          "min": -128.85128784179688,
+          "max": 252.4005889892578,
+          "mean": 18.95403708219528,
+          "first": 16.592199325561523,
+          "last": 252.4005889892578
+        },
+        "gimbal.yaw.angle_deg": {
+          "min": -131.61097717285156,
+          "max": 256.470458984375,
+          "mean": 18.713178560733795,
+          "first": 16.976558685302734,
+          "last": 255.0885009765625
+        },
+        "gimbal.yaw.speed_pid.i": {
+          "min": -0.8649401664733887,
+          "max": 1.1725605726242065,
+          "mean": 0.08382974500302226,
+          "first": -0.7282445430755615,
+          "last": 0.8453736901283264
+        },
+        "gimbal.yaw.target_speed_rad_s": {
+          "min": -8.30949878692627,
+          "max": 7.89753532409668,
+          "mean": 0.2237431300524622,
+          "first": -0.10085643082857132,
+          "last": -0.7033745050430298
+        },
+        "gimbal.yaw.encoder_deg": {
+          "min": 3.427734613418579,
+          "max": 352.0458984375,
+          "mean": 116.98616281628608,
+          "first": 107.97364044189453,
+          "last": 345.6298828125
+        },
+        "gimbal.yaw.mechanical_angle_deg": {
+          "min": -5536.845703125,
+          "max": -5149.86328125,
+          "mean": -5387.288598632813,
+          "first": -5389.1015625,
+          "last": -5151.4453125
+        },
+        "gimbal.yaw.feedback_time_us": {
+          "first_exact_text": "342034198",
+          "last_exact_text": "367142211",
+          "unique_exact_text_count": 200
+        },
+        "gimbal.yaw.state": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "first": 1,
+          "last": 1
+        },
+        "gimbal.pitch.state": {
+          "min": 1,
+          "max": 3,
+          "mean": 2.98,
+          "first": 3,
+          "last": 3
+        },
+        "gimbal.imu.sample_time_us": {
+          "first_exact_text": "342038233",
+          "last_exact_text": "367146230",
+          "unique_exact_text_count": 200
+        },
+        "gimbal_command.yaw.target_speed_rad_s": {
+          "min": -6,
+          "max": 6,
+          "mean": 0.16108791378501336,
+          "first": 0,
+          "last": 0
+        }
+      },
+      "pitch_state_counts": {
+        "3": 198,
+        "1": 2
+      }
+    },
+    {
+      "path": "data/emberprobe-yaw-governor-20261027-context.jsonl",
+      "sha256": "32f83f5ff3133e2ff244e5c594797d51ce65e1f942a67c8aa44e879bb6fe8dfa",
+      "count": 300,
+      "start_utc": "2026-10-27T12:36:36.397000+00:00",
+      "end_utc": "2026-10-27T12:37:14.123000+00:00",
+      "residual_rad_s": {
+        "min": -0.4276905059814453,
+        "max": 1.9417572021484375,
+        "mean": -0.011404267354131055,
+        "samples_above_soft_limit": 0
+      },
+      "statistics": {
+        "gimbal_sine_test_enabled": {
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "first": 0,
+          "last": 0
+        },
+        "remote_state": {
+          "min": 2,
+          "max": 2,
+          "mean": 2,
+          "first": 2,
+          "last": 2
+        },
+        "gimbal.yaw.motor_speed_rad_s": {
+          "min": -6.911503791809082,
+          "max": 7.33038330078125,
+          "mean": 0.0038397276401519777,
+          "first": 0,
+          "last": 0
+        },
+        "gimbal.yaw.speed_rad_s": {
+          "min": -6.67249059677124,
+          "max": 7.308178901672363,
+          "mean": 0.015243994994283033,
+          "first": -0.03934973105788231,
+          "last": -0.09281336516141891
+        },
+        "gimbal.yaw.output_current_a": {
+          "min": -0.34563758969306946,
+          "max": 0.3154175281524658,
+          "mean": 0.002777643670948843,
+          "first": 0.03596419095993042,
+          "last": -0.08929643034934998
+        },
+        "gimbal.yaw.target_angle_deg": {
+          "min": -59.86939239501953,
+          "max": 258.22918701171875,
+          "mean": 65.12706901073456,
+          "first": 29.963420867919922,
+          "last": 52.51123046875
+        },
+        "gimbal.yaw.angle_deg": {
+          "min": -65.42412567138672,
+          "max": 263.61614990234375,
+          "mean": 65.17208534638087,
+          "first": 27.53539276123047,
+          "last": 52.98996353149414
+        },
+        "gimbal.yaw.speed_pid.i": {
+          "min": -1.5947526693344116,
+          "max": 1.2208747863769531,
+          "mean": 0.02142902898446967,
+          "first": -0.025623494759202003,
+          "last": -0.49346402287483215
+        },
+        "gimbal.yaw.target_speed_rad_s": {
+          "min": -8.615211486816406,
+          "max": 8.812788963317871,
+          "mean": -0.002017764249467291,
+          "first": 0.6356427669525146,
+          "last": -0.12548546493053436
+        },
+        "gimbal.yaw.encoder_deg": {
+          "min": 8.4375,
+          "max": 346.7724914550781,
+          "mean": 160.9066486008962,
+          "first": 121.59668731689453,
+          "last": 168.7060546875
+        },
+        "gimbal.yaw.mechanical_angle_deg": {
+          "min": -5468.5546875,
+          "max": -5110.0048828125,
+          "mean": -5331.372216796875,
+          "first": -5375.478515625,
+          "last": -5328.369140625
+        },
+        "gimbal.yaw.feedback_time_us": {
+          "first_exact_text": "423050210",
+          "last_exact_text": "460778179",
+          "unique_exact_text_count": 300
+        },
+        "gimbal.yaw.state": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "first": 1,
+          "last": 1
+        },
+        "gimbal.pitch.state": {
+          "min": 1,
+          "max": 3,
+          "mean": 1.8066666666666666,
+          "first": 1,
+          "last": 1
+        },
+        "gimbal.pitch.output_current_a": {
+          "min": -0.5,
+          "max": 0.10864939540624619,
+          "mean": -0.11586203447465475,
+          "first": -0.013898225501179695,
+          "last": -0.1971202790737152
+        },
+        "gimbal.pitch.feedback_time_us": {
+          "first_exact_text": "423052225",
+          "last_exact_text": "460780203",
+          "unique_exact_text_count": 180
+        },
+        "gimbal.imu.sample_time_us": {
+          "first_exact_text": "423054242",
+          "last_exact_text": "460782224",
+          "unique_exact_text_count": 300
+        },
+        "gimbal.imu_state": {
+          "min": 2,
+          "max": 2,
+          "mean": 2,
+          "first": 2,
+          "last": 2
+        },
+        "gimbal_command.yaw.target_speed_rad_s": {
+          "min": -5.71283483505249,
+          "max": 6,
+          "mean": 0.02430757708226641,
+          "first": 0,
+          "last": 0
+        },
+        "gimbal_command.mode": {
+          "min": 2,
+          "max": 2,
+          "mean": 2,
+          "first": 2,
+          "last": 2
+        },
+        "motor_gimbal.c::remote_cache.data.ch_r_x": {
+          "min": -660,
+          "max": 652,
+          "mean": -0.9966666666666667,
+          "first": 0,
+          "last": 0
+        },
+        "motor_gimbal.c::remote_cache.data.sw_r": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "first": 1,
+          "last": 1
+        }
+      },
+      "pitch_state_counts": {
+        "1": 179,
+        "3": 121
+      },
+      "pitch_offline_nonzero_output_samples": 0,
+      "pitch_offline_feedback_time_exact_values": [
+        "18446744073709551615"
+      ]
+    }
+  ],
+  "limitations": [
+    "Live multi-variable reads are not atomic",
+    "Sample interval requested 100 ms; actual intervals are recorded by host timestamps",
+    "No residual sample reached 8 rad/s; the previously reported suspended steady-rotation condition is not confirmed by these records",
+    "Chart history export returned CSV_EXPORT_EMPTY; existing CSV files were not used as current firmware evidence"
+  ],
+  "firmware_consistency": {
+    "status": "match",
+    "elfSha256": "a695a7277ae3834e4ba42a6c34c7216db869540df1da0f5f3e6c9e8d58588089",
+    "flashedSha256": "a695a7277ae3834e4ba42a6c34c7216db869540df1da0f5f3e6c9e8d58588089",
+    "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "flashedAt": "2026-10-27T12:29:33.451Z",
+    "target": "stm32f4x.cfg"
+  }
+}
