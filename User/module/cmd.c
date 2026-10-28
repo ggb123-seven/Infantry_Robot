@@ -110,8 +110,10 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
     // 先撤销本周期使能与前馈，所有异常路径均输出待机
     if (out != NULL)
     {
-        out->mode = GIMBAL_MODE_RELAX;
-        out->yaw.target_speed_rad_s = out->pitch.target_speed_rad_s = 0.0f;
+        *out = (Gimbal_Command_t)
+        {
+            .mode = GIMBAL_MODE_RELAX,
+        };
     }
     if (ctx == NULL || out == NULL || rc == NULL || !rc_valid || !rc->header.online ||
         now_us < rc->header.last_online_time ||
@@ -128,6 +130,7 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
     }
 
     // 只有中位确认后的上位允许持续运行，停机档和非法状态要求重新确认
+    const bool was_active = ctx->state == CMD_GIMBAL_ACTIVE;
     switch (ctx->state)
     {
         case CMD_GIMBAL_WAIT_NEUTRAL:
@@ -162,6 +165,13 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
         ctx->yaw_rate_deg_s = ctx->pitch_rate_deg_s = 0.0f;
         return true;
     }
+    out->mode = GIMBAL_MODE_ANGLE;
+    if (!was_active)
+    {
+        // 首次使能先交给模块捕获姿态，下一周期才开始遥控速度过渡
+        ctx->yaw_rate_deg_s = ctx->pitch_rate_deg_s = 0.0f;
+        return true;
+    }
 
     // 同一平滑速度同时用于目标增量和前馈，命令层不依赖云台轴的运行状态
     const float yaw_rate = CMD_GIMBAL_DIRECTION *
@@ -176,8 +186,7 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
     ctx->pitch_rate_deg_s = InputShaping_SmoothRate(ctx->pitch_rate_deg_s, pitch_rate,
         CMD_GIMBAL_ACCEL_DEG_S2, CMD_GIMBAL_DECEL_DEG_S2,
         period_s, CMD_GIMBAL_SMOOTH_TIME_S, CMD_GIMBAL_SETTLE_DEG_S);
-    out->mode = GIMBAL_MODE_ANGLE;
-    out->yaw.target_speed_rad_s = ctx->yaw_rate_deg_s * CMD_DEG_TO_RAD;
-    out->pitch.target_speed_rad_s = ctx->pitch_rate_deg_s * CMD_DEG_TO_RAD;
+    out->yaw.rate_rad_s = ctx->yaw_rate_deg_s * CMD_DEG_TO_RAD;
+    out->pitch.rate_rad_s = ctx->pitch_rate_deg_s * CMD_DEG_TO_RAD;
     return true;
 }

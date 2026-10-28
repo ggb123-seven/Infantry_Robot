@@ -248,26 +248,28 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
  * @brief 校验本轮输入并在保护后跟随当前 yaw，恢复时捕获新目标，保留 pitch
  *
  * @param[in,out] gimbal 已绑定的唯一云台实例
- * @param[in,out] command 本轮两轴命令，非法值不得被保护覆盖而隐藏
+ * @param[in] mode 当前控制模式
+ * @param[in,out] setpoint 模块持有的 yaw 设定值，非法值不得被保护覆盖而隐藏
  * @param[in] period_s 实际控制周期，单位 s
  * @return 可继续原单轴控制路径时返回 true，否则由调用方故障停机
  */
-bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s)
+bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
+                               Gimbal_AxisSetpoint_t *setpoint, float period_s)
 {
-    if (gimbal == NULL || command == NULL || governor_yaw != &gimbal->yaw)
+    if (gimbal == NULL || setpoint == NULL || governor_yaw != &gimbal->yaw)
     {
         return false;
     }
     // 明确失能立即复位保护，电机失联仍交给原有轴状态机零输出
-    if (command->mode == GIMBAL_MODE_RELAX || !gimbal->config.yaw.enabled)
+    if (mode == GIMBAL_MODE_RELAX || !gimbal->config.yaw.enabled)
     {
         GimbalGovernor_InitYaw(&gimbal->yaw);
         return true;
     }
-    if ((command->mode != GIMBAL_MODE_ANGLE && command->mode != GIMBAL_MODE_SPEED) ||
+    if ((mode != GIMBAL_MODE_ANGLE && mode != GIMBAL_MODE_SPEED) ||
         !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f ||
-        !isfinite(command->yaw.target_speed_rad_s) ||
-        (command->mode == GIMBAL_MODE_ANGLE && !isfinite(command->yaw.target_angle_deg)))
+        !isfinite(setpoint->target_speed_rad_s) ||
+        (mode == GIMBAL_MODE_ANGLE && !isfinite(setpoint->target_angle_deg)))
     {
         return false;
     }
@@ -319,8 +321,8 @@ bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Command_t *command, floa
     }
     if (GimbalGovernor_IsLatched() || was_restoring)
     {
-        command->yaw.target_angle_deg = governor_recovery_angle_deg;
-        command->yaw.target_speed_rad_s = 0.0f;
+        setpoint->target_angle_deg = governor_recovery_angle_deg;
+        setpoint->target_speed_rad_s = 0.0f;
     }
     return true;
 }

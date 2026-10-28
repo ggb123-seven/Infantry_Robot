@@ -5,11 +5,11 @@
 
 #include "bsp/time.h"
 #include "module/cmd.h"
-#include "component/user_math.h"
 #include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
 
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
 /*
  * yaw 正弦跟随测试参数，角度单位为度，相位角速度单位为 rad/s：
  * - 中心取启动测试时的当前姿态，振幅 30°，前馈峰值为 π rad/s
@@ -26,6 +26,7 @@ typedef enum
     MOTOR_GIMBAL_SINE_IDLE = 0,
     MOTOR_GIMBAL_SINE_RUNNING,
 } MotorGimbal_SineState_t;
+#endif
 
 // 调试观测与命令入口，声明及使用方式见 motor_gimbal.h
 Gimbal_t gimbal;
@@ -33,12 +34,14 @@ Gimbal_Command_t gimbal_command =
 {
     .mode = GIMBAL_MODE_RELAX,
 };
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
 
 static MotorGimbal_SineState_t sine_state;
 static float sine_phase_rad;
 static float sine_center_deg;
+#endif
 
 // 遥控缓存及输入状态仅由云台任务访问，不与 ISR 共享
 static DR16_State_t remote_cache;
@@ -47,7 +50,9 @@ static Cmd_Gimbal_t remote_command;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
 static void MotorGimbal_UpdateSineTest(float period_s);
+#endif
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback);
 static bool MotorGimbal_PublishOutput(const Gimbal_Output_t *output);
 
@@ -99,7 +104,9 @@ void Task_motor_gimbal(void *argument)
 
             // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
             MotorGimbal_ApplyDR16Input(period_s);
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
             MotorGimbal_UpdateSineTest(period_s);
+#endif
             Gimbal_Control(&gimbal, &gimbal_command, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
         }
@@ -114,8 +121,8 @@ void Task_motor_gimbal(void *argument)
             Gimbal_Control(&gimbal, &relax_command, period_s);
             Cmd_ResetGimbal(&remote_command);
             gimbal_command.mode = GIMBAL_MODE_RELAX;
-            gimbal_command.yaw.target_speed_rad_s = 0.0f;
-            gimbal_command.pitch.target_speed_rad_s = 0.0f;
+            gimbal_command.yaw.rate_rad_s = 0.0f;
+            gimbal_command.pitch.rate_rad_s = 0.0f;
         }
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
@@ -176,38 +183,13 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         BSP_TIME_Get(), period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
-    if (gimbal_command.mode != GIMBAL_MODE_ANGLE)
-    {
-        return;
-    }
-
-    // 本步骤保留旧语义：目标积分仍在任务中，失联及正弦接管时清除对应平滑历史
-    if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg) &&
-        !gimbal_sine_test_enabled && sine_state == MOTOR_GIMBAL_SINE_IDLE)
-    {
-        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + remote_command.yaw_rate_deg_s * period_s;
-    }
-    else
-    {
-        remote_command.yaw_rate_deg_s = 0.0f;
-        gimbal_command.yaw.target_speed_rad_s = 0.0f;
-    }
-    if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
-    {
-        gimbal_command.pitch.target_angle_deg =
-            gimbal.pitch.target_angle_deg + remote_command.pitch_rate_deg_s * period_s;
-    }
-    else
-    {
-        remote_command.pitch_rate_deg_s = 0.0f;
-        gimbal_command.pitch.target_speed_rad_s = 0.0f;
-    }
 }
 
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
 /**
  * @brief yaw 处于角度闭环时生成正弦目标及其解析角速度前馈
  *
- * 测试只改写 yaw 命令；关闭测试或 yaw 退出角度闭环后保留最后目标角并清零前馈
+ * 测试只改写 yaw 命令；退出时恢复增量来源，沿用模块最后限幅目标并清零前馈
  *
  * @param[in] period_s 实际控制间隔，单位 s
  * @return 无返回值
@@ -234,8 +216,8 @@ static void MotorGimbal_UpdateSineTest(float period_s)
         case MOTOR_GIMBAL_SINE_RUNNING:
             if (!active)
             {
-                // 退出测试时撤销前馈，目标角停在最后位置
-                gimbal_command.yaw.target_speed_rad_s = 0.0f;
+                // 退出测试时撤销前馈，增量来源由本周期命令层恢复
+                gimbal_command.yaw.rate_rad_s = 0.0f;
                 sine_phase_rad = 0.0f;
                 sine_state = MOTOR_GIMBAL_SINE_IDLE;
                 return;
@@ -244,18 +226,21 @@ static void MotorGimbal_UpdateSineTest(float period_s)
             break;
 
         default:
-            gimbal_command.yaw.target_speed_rad_s = 0.0f;
+            gimbal_command.yaw.rate_rad_s = 0.0f;
             sine_phase_rad = 0.0f;
             sine_state = MOTOR_GIMBAL_SINE_IDLE;
             return;
     }
 
     // 角度与前馈来自同一相位，前馈开关不重置轨迹以便连续对比
-    gimbal_command.yaw.target_angle_deg = sine_center_deg + MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * sinf(sine_phase_rad);
-    gimbal_command.yaw.target_speed_rad_s = gimbal_sine_feedforward_enabled ?
+    gimbal_command.yaw.source = GIMBAL_TARGET_ABSOLUTE;
+    gimbal_command.yaw.angle_deg = sine_center_deg + MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * sinf(sine_phase_rad);
+    gimbal_command.yaw.rate_rad_s = gimbal_sine_feedforward_enabled ?
         MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * MOTOR_GIMBAL_DEG_TO_RAD * MOTOR_GIMBAL_SINE_OMEGA_RAD_S *
         cosf(sine_phase_rad) : 0.0f;
 }
+
+#endif
 
 /**
  * @brief 从容量为 1 的反馈邮箱取得一帧新反馈

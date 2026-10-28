@@ -110,17 +110,34 @@ typedef struct
     float imu_timeout_s;
 } Gimbal_Config_t;
 
+// 两轴独立选择目标来源：遥控使用增量，自瞄及调试轨迹使用绝对角度
+typedef enum
+{
+    GIMBAL_TARGET_INCREMENT = 0,
+    GIMBAL_TARGET_ABSOLUTE,
+} Gimbal_TargetSource_t;
+
 /*
- * 单轴命令：
- * - target_angle_deg：当前 INS 坐标下的姿态目标，单位度，仅 ANGLE 模式使用，yaw 为累计角
- *   每次从待机或失联等待进入 ANGLE 时由模块预置为当前姿态，随后调用方可以修改目标
- * - target_speed_rad_s：SPEED 模式下为速度目标，ANGLE 模式下为角速度前馈，单位 rad/s
+ * 单轴命令：source 选择目标来源，angle_deg 仅 ABSOLUTE 使用，为当前 INS 坐标下的角度，yaw 连续累计
+ * rate_rad_s 在 INCREMENT 下为累加速度兼前馈，在 ABSOLUTE 下为前馈，在 SPEED 模式下为速度目标
+ * 模块只读取命令，起控、恢复和模式切换时在内部捕获姿态并清零前馈，不回写调用方
+ */
+typedef struct
+{
+    Gimbal_TargetSource_t source;
+    float rate_rad_s;
+    float angle_deg;
+} Gimbal_AxisCommand_t;
+
+/*
+ * 模块内部持久设定值，供捕获和保护改写：target_angle_deg 为姿态角，单位度
+ * target_speed_rad_s 为速度目标或前馈，单位 rad/s，外部调用方不得写入
  */
 typedef struct
 {
     float target_angle_deg;
     float target_speed_rad_s;
-} Gimbal_AxisCommand_t;
+} Gimbal_AxisSetpoint_t;
 
 /*
  * 云台命令：mode 为两轴共用模式，yaw、pitch 为两轴各自目标
@@ -135,6 +152,7 @@ typedef struct
 /*
  * 单轴运行数据，调试器可直接观察：
  * - state：单轴运行状态
+ * - setpoint：模块持有的原始目标与前馈，起控捕获及 governor 可覆盖，区别于下方实际限幅目标
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
  * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
@@ -156,6 +174,7 @@ typedef struct
 typedef struct
 {
     Gimbal_AxisState_t state;
+    Gimbal_AxisSetpoint_t setpoint;
     float encoder_deg;
     float mechanical_angle_deg;
     float motor_speed_rad_s;
@@ -236,11 +255,11 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * 真实故障与单轴失联恢复沿用原状态机，小陀螺及底盘跟随兼容尚未完成
  *
  * @param[in,out] gimbal 云台实例
- * @param[in,out] command 云台命令，为 NULL 时按 RELAX 处理，待机起控或失联恢复到 ANGLE 时捕获当前姿态并清零前馈
+ * @param[in] command 只读云台命令，为 NULL 时按 RELAX 处理，起控及恢复时内部捕获姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s);
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s);
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

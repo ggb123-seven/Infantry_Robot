@@ -45,11 +45,13 @@ void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis);
  * @brief 推进异常运动保护，制动及停稳阶段跟随当前 yaw，恢复时捕获新目标
  *
  * @param[in,out] gimbal 云台实例，yaw 须与初始化时绑定的轴一致
- * @param[in,out] command 当前命令，保护时只覆盖 yaw 目标及前馈，不影响 pitch
+ * @param[in] mode 当前控制模式
+ * @param[in,out] setpoint 模块持有的 yaw 设定值，保护时覆盖目标及前馈，不影响 pitch
  * @param[in] period_s 实际周期，单位 s，运行时范围为 (0, 0.1]
  * @return 参数、绑定或运行周期非法时返回 false，由调用方按原故障路径停机
  */
-bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s);
+bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
+                               Gimbal_AxisSetpoint_t *setpoint, float period_s);
 
 /**
  * @brief 制动及目标跟随时返回零，捕获新姿态后渐进恢复 yaw 速度权限
