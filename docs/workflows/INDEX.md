@@ -2,6 +2,7 @@
 
 | 日期 | 类型 | 主题 | 记录 |
 |---|---|---|---|
+| 2026-10-28 | bugfix | yaw 恢复误撤目标、低速阻尼偏置与遥控迟滞 | [记录](2026-10-28_yaw_residual_recovery.md) |
 | 2026-10-28 | bugfix | yaw 取消旧目标、恢复完整 PID 并持续残差监护 | [记录](2026-10-28_yaw_follow_recovery.md) |
 | 2026-10-28 | bugfix | yaw 放下后受限姿态保持与自动平滑恢复 | [记录](2026-10-27_yaw_auto_recovery.md) |
 | 2026-10-27 | bugfix | yaw 异常制动、停转保持及四轮反馈后续方案 | [记录](2026-10-27_yaw_brake_hold.md) |

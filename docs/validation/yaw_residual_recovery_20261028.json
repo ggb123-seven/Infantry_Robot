@@ -1,0 +1,344 @@
+{
+  "baseline_compile": {
+    "command": [
+      "gcc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw_residual_regression",
+      "-IUser",
+      "-IMiddlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\test.c",
+      "User/module/gimbal.c",
+      "User/component/pid.c",
+      "User/component/filter.c",
+      "User/component/user_math.c",
+      "User/component/angle_unwrap.c",
+      "-lm",
+      "-DBASELINE",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\baseline.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "baseline": {
+    "command": [
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\baseline.exe",
+      "jitter"
+    ],
+    "exit_code": 7,
+    "stdout": "jitter state=3 target=5 actual=5 current=0.00297111 follow_cycles=1500\n",
+    "stderr": "CHECK 197: fabsf(gimbal.yaw.target_angle_deg) < .001f\n"
+  },
+  "sha256": {
+    "User\\module\\config.c": "223396b72e41c79b36505ec308c8ac0cc807a7ad09af5b01977fb6b53392f582",
+    "User\\module\\gimbal_governor.c": "6506c409f5b599c0834b024e88b84bfcfc41e8b252ad82ec2166e0ef0181c641",
+    "build\\yaw_residual_regression\\test.c": "0f4f047af5bbb27d1701723a0fcbc1c82693abe1dd91b282de60b9565f0f3bfb",
+    "build\\run_yaw_residual_tests.py": "f40e9d712e976fb95a522d809af154c90a549cd33726fa7f14294dd4a4f18b23",
+    "User\\module\\gimbal.c": "a524d1c3fbee1718f000cdd27bf08c4ef0eab9102d51f547d2ae487eb26fbf9a",
+    "User\\task\\motor_gimbal.c": "95297f4274449c5b7bf3d05d9b7860f807d71411706c8bc449cef4edfc0f1559",
+    "build\\Debug\\Infantry_Robot.elf": "7bce476859add086af43ddf508002459e26eaedde7fa3e98a8c46e2497254643"
+  },
+  "baseline_commit": "620e751",
+  "host_compile": {
+    "command": [
+      "gcc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-IF:\\RM\\Infantry_Robot\\build\\yaw_residual_regression",
+      "-IUser",
+      "-IMiddlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\test.c",
+      "User/module/gimbal.c",
+      "User/component/pid.c",
+      "User/component/filter.c",
+      "User/component/user_math.c",
+      "User/component/angle_unwrap.c",
+      "-lm",
+      "-o",
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "host": {
+    "command": [
+      "F:\\RM\\Infantry_Robot\\build\\yaw_residual_regression\\test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "jitter state=5 target=0 actual=5 current=-0.5 follow_cycles=0\nground sign=1 friction=0 target=0 actual=-7.18219e-005 peak_current=0.085891 max_step=0.0790033 retreats=0 state=1\nground sign=-1 friction=0 target=0 actual=0.000148072 peak_current=0.0859132 max_step=0.0790033 retreats=0 state=1\nground sign=1 friction=0.06 target=0 actual=0.0383151 peak_current=0.108403 max_step=0.0790033 retreats=0 state=5\nground sign=-1 friction=0.06 target=0 actual=-0.0382615 peak_current=0.108469 max_step=0.0790033 retreats=0 state=5\nground sign=1 friction=0.12 target=0 actual=-0.124441 peak_current=0.165753 max_step=0.0790033 retreats=0 state=5\nground sign=-1 friction=0.12 target=0 actual=0.124438 peak_current=0.165644 max_step=0.0790033 retreats=0 state=5\nground sign=1 friction=0.25 target=0 actual=0.427404 peak_current=0.295654 max_step=0.0790033 retreats=0 state=5\nground sign=-1 friction=0.25 target=0 actual=-0.426425 peak_current=0.29576 max_step=0.0790033 retreats=0 state=5\nsuspended sign=1 gain=20 peak=0.579432\nsuspended sign=-1 gain=20 peak=0.579432\nsuspended sign=1 gain=100 peak=1.05642\nsuspended sign=-1 gain=100 peak=1.05642\nPASS raw large residual immediately brakes in both directions\nPASS sustained smaller residual retracts permissions\nPASS periods, offline, mechanical veto, illegal states and bounded integral back calculation\nPASS guarded and normal requests pass unchanged without damping bias or permanent slew\nPASS actual remote timeout and manual true fault rearm\ntask angle=45.6582 target=45.8853 state=1 suspended_peak=0.38094\nPASS real task quantized feedback, jitter, friction landing recovery and mailbox failure\n",
+    "stderr": ""
+  },
+  "strict_gimbal_governor.c": {
+    "command": [
+      "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+      "-DARM_MATH_CM4",
+      "-DDEBUG",
+      "-DSTM32F407xx",
+      "-DUSE_HAL_DRIVER",
+      "-D__FPU_PRESENT=1U",
+      "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+      "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+      "-IF:/RM/Infantry_Robot/User",
+      "-IF:/RM/Infantry_Robot/applications",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+      "-mcpu=cortex-m4",
+      "-mfpu=fpv4-sp-d16",
+      "-mfloat-abi=hard",
+      "-Wall",
+      "-fdata-sections",
+      "-ffunction-sections",
+      "-O0",
+      "-g3",
+      "-std=gnu11",
+      "F:/RM/Infantry_Robot/User/module/gimbal_governor.c",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "strict_gimbal.c": {
+    "command": [
+      "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+      "-DARM_MATH_CM4",
+      "-DDEBUG",
+      "-DSTM32F407xx",
+      "-DUSE_HAL_DRIVER",
+      "-D__FPU_PRESENT=1U",
+      "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+      "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+      "-IF:/RM/Infantry_Robot/User",
+      "-IF:/RM/Infantry_Robot/applications",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+      "-mcpu=cortex-m4",
+      "-mfpu=fpv4-sp-d16",
+      "-mfloat-abi=hard",
+      "-Wall",
+      "-fdata-sections",
+      "-ffunction-sections",
+      "-O0",
+      "-g3",
+      "-std=gnu11",
+      "F:/RM/Infantry_Robot/User/module/gimbal.c",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "strict_motor_gimbal.c": {
+    "command": [
+      "C:/Users/seven/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
+      "-DARM_MATH_CM4",
+      "-DDEBUG",
+      "-DSTM32F407xx",
+      "-DUSE_HAL_DRIVER",
+      "-D__FPU_PRESENT=1U",
+      "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+      "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+      "-IF:/RM/Infantry_Robot/User",
+      "-IF:/RM/Infantry_Robot/applications",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+      "-mcpu=cortex-m4",
+      "-mfpu=fpv4-sp-d16",
+      "-mfloat-abi=hard",
+      "-Wall",
+      "-fdata-sections",
+      "-ffunction-sections",
+      "-O0",
+      "-g3",
+      "-std=gnu11",
+      "F:/RM/Infantry_Robot/User/task/motor_gimbal.c",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "final_gate": {
+    "command": [
+      "python",
+      ".auto-embedded/scripts/check.py"
+    ],
+    "exit_code": 0,
+    "stdout": "== ARCH : PASS ==\n== HW : PASS ==\n== SPEC : PASS ==\n\n==> ALL PASS\n",
+    "stderr": ""
+  },
+  "diff_check": {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "warning: in the working copy of '.settings/bundles-lock.store.json', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.settings/bundles.store.json', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'User/module/config.c', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'User/module/gimbal_governor.c', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'docs/workflows/2026-10-28_yaw_follow_recovery.md', LF will be replaced by CRLF the next time Git touches it\n"
+  },
+  "source_review": {
+    "lines": 584,
+    "format_violations": [],
+    "manual_review": [
+      "Allman 与控制块花括号",
+      "120列及无机械拆行",
+      "中文阶段说明与完整Doxygen",
+      "单一任务拥有上下文，无ISR共享及新增RTOS对象",
+      "原始残差快速通道、有限值校验和失联复位",
+      "机械否决、真实故障零输出与人工重启",
+      "正常及监护区域PID电流原样通过",
+      "未新增或修改结构体字段"
+    ]
+  },
+  "keil": {
+    "xml_parse": "PASS",
+    "governor_paths": [
+      "..\\User\\module\\gimbal_governor.c"
+    ],
+    "source_paths_exist": true,
+    "uv4_on_path": null,
+    "compiled": false,
+    "note": "未执行Keil编译，使用CMake ARM构建验证"
+  },
+  "firmware_size": {
+    "command": [
+      "C:\\Users\\seven\\AppData\\Local\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin\\arm-none-eabi-size.exe",
+      "build/Debug/Infantry_Robot.elf"
+    ],
+    "exit_code": 0,
+    "stdout": "   text\t   data\t    bss\t    dec\t    hex\tfilename\n 121716\t    156\t  42592\t 164464\t  28270\tbuild/Debug/Infantry_Robot.elf\n",
+    "stderr": ""
+  },
+  "build": {
+    "command": [
+      "python",
+      ".auto-embedded/tools/build-cmake/scripts/cmake_builder.py",
+      "--source",
+      ".",
+      "--preset",
+      "Debug"
+    ],
+    "exit_code": 0,
+    "configure_command": "cmake --preset Debug -S F:\\RM\\Infantry_Robot",
+    "build_command": "cmake --build --preset Debug",
+    "configure_result": "成功",
+    "build_result": "成功，耗时0.8秒",
+    "project_profile": {
+      "build_system": "cmake",
+      "generator": "Ninja",
+      "build_directory": "F:\\RM\\Infantry_Robot\\build\\Debug",
+      "artifact_path": "F:\\RM\\Infantry_Robot\\build\\Debug\\Infantry_Robot.elf",
+      "artifact_kind": "ELF",
+      "compiler": "C:\\Users\\seven\\AppData\\Local\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin\\arm-none-eabi-gcc.exe"
+    }
+  },
+  "config_preserved": true,
+  "models": {
+    "period_s": 0.002,
+    "encoder_quantum_rad_s": 0.10471975512,
+    "encoder_delay_s": 0.008,
+    "imu_noise_rad_s": "0.02*sin(i*0.37)",
+    "pulse": "每100ms持续2ms的3rpm残差脉冲",
+    "ground_duration_s": 30,
+    "ground_friction_a": [
+      0,
+      0.06,
+      0.12,
+      0.25
+    ],
+    "suspended_acceleration_gains": [
+      20,
+      100
+    ],
+    "directions": [
+      "正",
+      "反"
+    ],
+    "config_source": "当前工作树config.c原样提取"
+  },
+  "exploration_failures": [
+    {
+      "variant": "只加残差滤波，仍保留正常区阻尼及常驻斜坡的中间试验",
+      "observed_angle_deg": -7.9217,
+      "friction_a": 0.06,
+      "duration_s": 30,
+      "result": "失败，未提交",
+      "evidence_origin": "前序试验结果记录，非当前最终回归输出"
+    },
+    {
+      "variant": "正常阶段仍要求每周期不超过0.004A的旧测试断言",
+      "result": "与恢复原PID响应的要求冲突",
+      "resolution": "改查配置电流边界并新增正常PID电流原样通过断言，保护阶段斜坡继续保留"
+    }
+  ],
+  "limits": [
+    "软件反例证明存在误撤目标路径，未证明现场全部根因",
+    "合成阻力、加速度、阻尼非实物辨识结果，不能核定真实峰值或制动距离",
+    "滤波及持续确认增加中小残差响应时间，悬空模型峰值较旧模型约0.218rad/s增大",
+    "当前悬空模型加速度系数20/100时峰值约0.579/1.056rad/s，不是实物测量",
+    "正常闭环不再常驻2A/s斜坡，地面模型单步最大约0.079A",
+    "GUARDED可长期保留但正常区域的完整PID输出通过，不是接地检测",
+    "底盘实测项为0，小陀螺及底盘跟随兼容未完成",
+    "未连接探针、未烧录、未运行真实电机，现场手感及稳定性待验证",
+    "ELF包含用户未提交的config.c，Git提交不夹带该文件"
+  ],
+  "cleanup": {
+    "removed": [
+      "build/run_yaw_residual_tests.py",
+      "build/yaw_residual_regression"
+    ],
+    "verified_absent": true,
+    "scope": "仅清理本轮创建的临时脚本、替身、测试源码及可执行程序，保留正式记录和已有测试资产"
+  },
+  "memory_promotion": {
+    "command": "python .auto-embedded/scripts/task.py promote architecture decision <本轮恢复与遥控响应约定>",
+    "exit_code": 0,
+    "target": ".auto-embedded/spec/architecture/index.md"
+  },
+  "review": {
+    "software": "基线反证、主机模块及真实任务回归、ARM严格检查和Debug构建通过",
+    "hardware": "无引脚、DMA、中断、时钟、CubeMX及底层源码改动，门禁通过",
+    "quality": "分层、上下文所有权、默认安全输出、格式及结构体不变复核通过"
+  }
+}
