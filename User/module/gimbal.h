@@ -6,11 +6,13 @@ extern "C"
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "component/angle_unwrap.h"
 #include "component/pid.h"
 #include "device/motor_rm.h"
+#include "module/chassis_motion.h"
 
 /*
  * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标
@@ -245,8 +247,11 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
                            const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 
+void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
+                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
+
 /**
- * @brief 根据命令更新两轴状态机并计算输出电流
+ * @brief 根据命令更新两轴状态机并计算输出电流，兼容未接入独立底盘观测的调用方
  *
  * yaw 按编码器转速减上部惯性 yaw 转速加独立底盘实测转速的残差连续限流及反向制动
  * 本轮底盘实测项取 0，持续异常后制动并跟随当前 yaw，停稳后捕获新目标并平滑恢复完整 PID
@@ -259,7 +264,23 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s);
+static inline void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
+{
+    Gimbal_ControlWithChassisFeedback(gimbal, command, NULL, 0U, period_s);
+}
+
+/**
+ * @brief 使用独立四轮旋转观测执行云台控制，观测不可用时仅撤销 yaw 输出
+ *
+ * @param[in,out] gimbal 云台实例
+ * @param[in] command 只读两轴命令，可为空
+ * @param[in] chassis 底盘完整观测，可为空，为空时兼容原有无补偿保护
+ * @param[in] now_us 消费全部反馈后的当前时间，单位微秒
+ * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
+ * @return 无返回值，真实故障仍沿用原状态机处理
+ */
+void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
+                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

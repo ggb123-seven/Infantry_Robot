@@ -56,6 +56,7 @@ typedef struct
  * - current_set_status[0~3]：四路 M3508 电流命令的校验与缓存写入结果
  * - motor_online[0~3]：对应 M3508 最近 100 ms 内收到反馈时为 true
  * - actual_speed_rpm[0~3]、temperature_c[0~3]：M3508 输出轴转速和温度，单位分别为 rpm 和摄氏度
+ * - feedback_time_us[0~3]：各轮源反馈解码时间低 32 位，单位微秒，接收端按帧龄恢复完整时刻
  * - applied_current_a[0~3]：经过在线校验和故障归零后写入的 M3508 转子侧电流，单位 A
  * - sequence：设备反馈周期序号，每次反馈更新调用递增
  * - applied_command_sequence：最近一次电流提交采用的命令快照序号
@@ -72,6 +73,7 @@ typedef struct
     int8_t current_set_status[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     bool motor_online[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     float actual_speed_rpm[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
+    uint32_t feedback_time_us[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     float temperature_c[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     float applied_current_a[CAN_DEVICES_CHASSIS_MOTOR_COUNT];
     uint32_t sequence;

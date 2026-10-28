@@ -191,6 +191,7 @@ int8_t CANDevices_UpdateFeedback(CANDevices_Snapshot_t *snapshot)
         snapshot->feedback_update_status[motor_index] = can_devices_state.feedback_update_status[motor_index];
         snapshot->motor_online[motor_index] = motor->motor.header.online;
         snapshot->actual_speed_rpm[motor_index] = motor->feedback.rotor_speed;
+        snapshot->feedback_time_us[motor_index] = motor->feedback.last_update_time;
         snapshot->temperature_c[motor_index] = motor->feedback.temp;
         if (snapshot->feedback_update_status[motor_index] != DEVICE_OK)
         {

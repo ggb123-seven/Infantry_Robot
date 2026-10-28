@@ -47,6 +47,8 @@ static float sine_center_deg;
 static DR16_State_t remote_cache;
 static bool remote_cache_valid;
 static Cmd_Gimbal_t remote_command;
+static Gimbal_ChassisMotion_t remote_motion = GIMBAL_CHASSIS_MOTION_UNKNOWN;
+static Gimbal_ChassisFeedback_t chassis_feedback_cache;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
@@ -102,12 +104,31 @@ void Task_motor_gimbal(void *argument)
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
+            // 底盘观测独占邮箱，空邮箱可保留旧源时间，读取错误立即撤销缓存有效性
+            Gimbal_ChassisFeedback_t received_chassis;
+            const osMessageQueueId_t chassis_queue = task_runtime.msgq.chassis_gimbal;
+            const osStatus_t chassis_status = chassis_queue != NULL ?
+                osMessageQueueGet(chassis_queue, &received_chassis, NULL, 0U) : osErrorParameter;
+            if (chassis_status == osOK)
+            {
+                chassis_feedback_cache = received_chassis;
+            }
+            else if (chassis_status != osErrorResource)
+            {
+                chassis_feedback_cache.valid = false;
+            }
+
             // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
             MotorGimbal_ApplyDR16Input(period_s);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
             MotorGimbal_UpdateSineTest(period_s);
 #endif
-            Gimbal_Control(&gimbal, &gimbal_command, period_s);
+            // 按标定状态选择保护并导出两轴电流，启用后无效观测不能降级为无补偿闭环
+            Gimbal_ChassisFeedback_t active_chassis = chassis_feedback_cache;
+            active_chassis.valid = active_chassis.valid && active_chassis.mode == remote_motion;
+            const bool motion_configured = isfinite(chassis_yaw_rad_s_per_rpm) && chassis_yaw_rad_s_per_rpm > 0.0f;
+            Gimbal_ControlWithChassisFeedback(&gimbal, &gimbal_command, motion_configured ? &active_chassis : NULL,
+                                              BSP_TIME_Get(), period_s);
             Gimbal_DumpOutput(&gimbal, &output);
         }
 
@@ -181,8 +202,10 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     }
 
     // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
+    const uint64_t now_us = BSP_TIME_Get();
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
-        BSP_TIME_Get(), period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+        now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+    remote_motion = Cmd_ParseChassisMotion(&remote_cache, remote_cache_valid, now_us);
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST

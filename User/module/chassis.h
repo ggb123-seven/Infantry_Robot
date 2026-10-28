@@ -8,6 +8,7 @@ extern "C"
 #include "component/mixer.h"
 #include "component/pid.h"
 #include "device/can_devices.h"
+#include "module/chassis_motion.h"
 
 #define CHASSIS_WHEEL_COUNT (4U)
 
@@ -145,6 +146,21 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
  * @return 无返回值
  */
 void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output);
+
+/**
+ * @brief 从独立四轮反馈生成云台所需的底盘旋转观测
+ *
+ * @param[in] chassis 已完成本周期控制的底盘实例，可为空
+ * @param[in] can 本周期四轮反馈快照，可为空
+ * @param[in] mode 有效命令的旋转意图，未知意图不发布有效观测
+ * @param[in] rad_s_per_rpm 平均输出轴轮速到车体转速的标定系数，须为有限正值
+ * @param[in] now_us 读取反馈后的单调时间，单位微秒
+ * @param[out] feedback 完整观测，参数或反馈异常时标为无效，可为空
+ * @return 无返回值
+ */
+void Chassis_DumpGimbalFeedback(const Chassis_t *chassis, const CANDevices_Snapshot_t *can,
+                                Gimbal_ChassisMotion_t mode, float rad_s_per_rpm, uint64_t now_us,
+                                Gimbal_ChassisFeedback_t *feedback);
 
 #ifdef __cplusplus
 }

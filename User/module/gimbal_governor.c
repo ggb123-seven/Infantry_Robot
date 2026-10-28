@@ -11,7 +11,7 @@
  * - INTEGRAL_SLEW_A_S：反算导致的积分电流贡献变化不超过 2 A/s，避免小积分增益放大单步修正
  * - MIN_INTEGRAL_GAIN：沿用通用 PID 的积分启用阈值 0.000001，避免除以接近零的增益
  * 残差为编码器相对转速减上部惯性 yaw 转速加独立底盘实测转速，禁止使用同源估计底盘转速抵消残差
- * 本轮独立底盘项由调用方传 0，小陀螺与底盘跟随兼容尚未完成，倾斜及不同步采样误差仍需实测
+ * 独立底盘项仅接纳标定后的四轮观测，旧接口仍显式取零，倾斜及不同步采样误差仍需实测
  */
 #define GIMBAL_GOVERNOR_SOFT_RAD_S (8.0f)
 #define GIMBAL_GOVERNOR_HARD_RAD_S (12.0f)
@@ -58,6 +58,23 @@
 #define GIMBAL_GOVERNOR_RESIDUAL_FILTER_TIME_S (0.04f)
 #define GIMBAL_GOVERNOR_RELAPSE_TIME_S (0.04f)
 
+/*
+ * 四轮联合识别的初始观测约束，尚待实物录波确认：
+ * - 源帧龄上限 20 毫秒，四轮时间跨度 4 毫秒，与云台反馈总时间跨度 10 毫秒
+ * - 有效源时间持续推进 20 毫秒后才使用观测，重复快照不能累计确认时间
+ * - 误差余量为 0.15 rad/s 加运动幅值的 10%，并计入轮速角加速度与源时间差，最大 0.5 rad/s
+ * - 独立转速及请求上限沿用惯性反馈的 40 rad/s 数据边界
+ * - 可疑阶段沿用 0.08 A 受限电流，持续确认后撤驱，禁止仅凭打滑残差主动反向制动
+ */
+#define GIMBAL_CHASSIS_MAX_AGE_US (20000U)
+#define GIMBAL_CHASSIS_WHEEL_SKEW_US (4000U)
+#define GIMBAL_CHASSIS_ALIGNMENT_US (10000U)
+#define GIMBAL_CHASSIS_CONFIRM_S (0.02f)
+#define GIMBAL_CHASSIS_ERROR_RAD_S (0.15f)
+#define GIMBAL_CHASSIS_ERROR_RATIO (0.10f)
+#define GIMBAL_CHASSIS_MAX_ERROR_RAD_S (0.5f)
+#define GIMBAL_CHASSIS_MAX_SPEED_RAD_S (40.0f)
+
 // 单一云台任务拥有全部保护上下文，不供中断或多个云台实例并发访问
 typedef enum
 {
@@ -67,7 +84,17 @@ typedef enum
     GIMBAL_GOVERNOR_HOLD,
     GIMBAL_GOVERNOR_RESTORING,
     GIMBAL_GOVERNOR_GUARDED,
+    GIMBAL_GOVERNOR_SUSPECT,
 } GimbalGovernor_State_t;
+
+// 观测状态仅描述独立数据是否可用，异常保护阶段仍由原保护状态机唯一持有
+typedef enum
+{
+    GIMBAL_GOVERNOR_OBSERVATION_LEGACY = 0,
+    GIMBAL_GOVERNOR_OBSERVATION_WAITING,
+    GIMBAL_GOVERNOR_OBSERVATION_READY,
+    GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE,
+} GimbalGovernor_ObservationState_t;
 
 static Gimbal_Axis_t *governor_yaw;
 static GimbalGovernor_State_t governor_state;
@@ -80,16 +107,23 @@ static float governor_match_s;
 static float governor_follow_s;
 static float governor_filtered_residual_rad_s;
 static float governor_relapse_s;
+static GimbalGovernor_ObservationState_t governor_observation_state;
+static float governor_chassis_speed_rad_s;
+static float governor_residual_margin_rad_s;
+static float governor_observation_confirm_s;
+static float governor_previous_chassis_speed_rad_s;
+static float governor_chassis_acceleration_rad_s2;
+static uint64_t governor_chassis_time_us;
 
 /**
  * @brief 判断是否需要跟随或捕获当前姿态并暂停外部 yaw 命令
  *
- * @return 制动、目标跟随或渐进恢复时返回 true，监护闭环允许新命令
+ * @return 可疑、制动、目标跟随或渐进恢复时返回 true，监护闭环允许新命令
  */
 static bool GimbalGovernor_IsLatched(void)
 {
     return governor_state == GIMBAL_GOVERNOR_BRAKING || governor_state == GIMBAL_GOVERNOR_HOLD ||
-           governor_state == GIMBAL_GOVERNOR_RESTORING;
+           governor_state == GIMBAL_GOVERNOR_RESTORING || governor_state == GIMBAL_GOVERNOR_SUSPECT;
 }
 
 /**
@@ -110,6 +144,105 @@ void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis)
     governor_match_s = governor_follow_s = 0.0f;
     governor_filtered_residual_rad_s = NAN;
     governor_relapse_s = 0.0f;
+    governor_observation_state = GIMBAL_GOVERNOR_OBSERVATION_LEGACY;
+    governor_chassis_speed_rad_s = governor_residual_margin_rad_s = 0.0f;
+    governor_observation_confirm_s = governor_previous_chassis_speed_rad_s = 0.0f;
+    governor_chassis_acceleration_rad_s2 = 0.0f;
+    governor_chassis_time_us = 0U;
+}
+
+/**
+ * @brief 校验并确认独立观测，不以命令或同源底座估计替代四轮测量
+ *
+ * @param[in] gimbal 已校验本周期反馈的云台实例
+ * @param[in] chassis 独立四轮观测，为空时兼容原保护
+ * @param[in] now_us 消费反馈后的单调时间，单位微秒
+ * @return 无返回值，结果保存在单任务拥有的观测上下文
+ */
+static void GimbalGovernor_UpdateChassisObservation(const Gimbal_t *gimbal,
+                                                    const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us)
+{
+    const GimbalGovernor_ObservationState_t previous = governor_observation_state;
+    if (chassis == NULL)
+    {
+        governor_observation_state = GIMBAL_GOVERNOR_OBSERVATION_LEGACY;
+        governor_chassis_speed_rad_s = governor_residual_margin_rad_s = 0.0f;
+        governor_observation_confirm_s = 0.0f;
+        governor_chassis_time_us = 0U;
+        governor_chassis_acceleration_rad_s2 = 0.0f;
+        if (previous != GIMBAL_GOVERNOR_OBSERVATION_LEGACY)
+        {
+            governor_filtered_residual_rad_s = NAN;
+            governor_detect_s = governor_match_s = governor_follow_s = governor_relapse_s = 0.0f;
+        }
+        return;
+    }
+
+    // 无效观测不保留补偿，也不刷新源时间；四轮和两种云台反馈须处于同一短时间窗
+    const uint64_t oldest_us = chassis->oldest_sample_time_us;
+    const uint64_t newest_us = chassis->newest_sample_time_us;
+    uint64_t first_us = oldest_us;
+    uint64_t last_us = newest_us;
+    first_us = gimbal->yaw.feedback_time_us < first_us ? gimbal->yaw.feedback_time_us : first_us;
+    first_us = gimbal->imu.sample_time_us < first_us ? gimbal->imu.sample_time_us : first_us;
+    last_us = gimbal->yaw.feedback_time_us > last_us ? gimbal->yaw.feedback_time_us : last_us;
+    last_us = gimbal->imu.sample_time_us > last_us ? gimbal->imu.sample_time_us : last_us;
+    const bool valid = chassis->valid && (unsigned)chassis->mode < GIMBAL_CHASSIS_MOTION_UNKNOWN &&
+        oldest_us <= newest_us && last_us <= now_us &&
+        now_us - oldest_us <= GIMBAL_CHASSIS_MAX_AGE_US &&
+        newest_us - oldest_us <= GIMBAL_CHASSIS_WHEEL_SKEW_US &&
+        last_us - first_us <= GIMBAL_CHASSIS_ALIGNMENT_US &&
+        isfinite(chassis->measured_speed_rad_s) && isfinite(chassis->requested_speed_rad_s) &&
+        fabsf(chassis->measured_speed_rad_s) <= GIMBAL_CHASSIS_MAX_SPEED_RAD_S &&
+        fabsf(chassis->requested_speed_rad_s) <= GIMBAL_CHASSIS_MAX_SPEED_RAD_S;
+    const uint64_t source_us = valid ? oldest_us + (newest_us - oldest_us) / 2U : 0U;
+    if (!valid || (governor_chassis_time_us != 0U && source_us < governor_chassis_time_us))
+    {
+        governor_observation_state = GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE;
+        governor_chassis_speed_rad_s = governor_residual_margin_rad_s = 0.0f;
+        governor_observation_confirm_s = 0.0f;
+        governor_chassis_time_us = 0U;
+        governor_chassis_acceleration_rad_s2 = 0.0f;
+        return;
+    }
+
+    // 仅源反馈推进才能累计确认；误差余量包含标度误差与当前时间错位产生的动态误差
+    const float observed_s = governor_chassis_time_us != 0U ?
+        (float)(source_us - governor_chassis_time_us) * 1.0e-6f : 0.0f;
+    if (observed_s > (float)GIMBAL_CHASSIS_MAX_AGE_US * 1.0e-6f)
+    {
+        governor_observation_confirm_s = 0.0f;
+        governor_chassis_acceleration_rad_s2 = 0.0f;
+    }
+    else if (observed_s > 0.0f)
+    {
+        governor_chassis_acceleration_rad_s2 =
+            (chassis->measured_speed_rad_s - governor_previous_chassis_speed_rad_s) / observed_s;
+    }
+    governor_observation_confirm_s = fminf(GIMBAL_CHASSIS_CONFIRM_S,
+        governor_observation_confirm_s +
+        (observed_s <= (float)GIMBAL_CHASSIS_MAX_AGE_US * 1.0e-6f ? observed_s : 0.0f));
+    governor_chassis_speed_rad_s = chassis->measured_speed_rad_s;
+    const float magnitude_rad_s = fmaxf(fabsf(chassis->requested_speed_rad_s),
+        fmaxf(fabsf(governor_chassis_speed_rad_s), fabsf(gimbal->yaw.speed_rad_s - gimbal->yaw.motor_speed_rad_s)));
+    governor_residual_margin_rad_s = fminf(GIMBAL_CHASSIS_MAX_ERROR_RAD_S,
+        GIMBAL_CHASSIS_ERROR_RAD_S + GIMBAL_CHASSIS_ERROR_RATIO * magnitude_rad_s +
+        fabsf(governor_chassis_acceleration_rad_s2) * (float)(last_us - first_us) * 1.0e-6f);
+    governor_previous_chassis_speed_rad_s = chassis->measured_speed_rad_s;
+    governor_chassis_time_us = source_us;
+    governor_observation_state = governor_observation_confirm_s >= GIMBAL_CHASSIS_CONFIRM_S ?
+        GIMBAL_GOVERNOR_OBSERVATION_READY : GIMBAL_GOVERNOR_OBSERVATION_WAITING;
+}
+
+/**
+ * @brief 在联合识别时扣除经过上限约束的观测误差余量
+ *
+ * @param[in] residual_rad_s 四轮补偿后的有限残差，单位 rad/s
+ * @return 用于低速异常状态机的有效残差，旧接口保持原值
+ */
+static float GimbalGovernor_EffectiveResidual(float residual_rad_s)
+{
+    return copysignf(fmaxf(0.0f, fabsf(residual_rad_s) - governor_residual_margin_rad_s), residual_rad_s);
 }
 
 /**
@@ -123,11 +256,16 @@ void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis)
 static bool GimbalGovernor_CanRestore(float residual_rad_s, float imu_speed_rad_s, float period_s)
 {
     // 静止本身不能证明底座获得支撑，运动确认必须同时比较两种反馈
+    const float relative_rad_s = imu_speed_rad_s - governor_chassis_speed_rad_s;
+    const float moving_rad_s = fmaxf(fabsf(relative_rad_s), fabsf(governor_chassis_speed_rad_s));
+    const bool direction_matched = governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_READY ?
+        fabsf(relative_rad_s) < GIMBAL_GOVERNOR_MOVING_RAD_S ||
+        governor_yaw->motor_speed_rad_s * relative_rad_s > 0.0f :
+        governor_yaw->motor_speed_rad_s * imu_speed_rad_s > 0.0f;
     const bool matched = fabsf(residual_rad_s) < GIMBAL_GOVERNOR_RESTART_RAD_S &&
         fabsf(governor_filtered_residual_rad_s) < GIMBAL_GOVERNOR_MATCH_RAD_S &&
-        fabsf(imu_speed_rad_s) > GIMBAL_GOVERNOR_MOVING_RAD_S &&
-        governor_yaw->motor_speed_rad_s * imu_speed_rad_s > 0.0f &&
-        fabsf(governor_filtered_residual_rad_s) < GIMBAL_GOVERNOR_MATCH_RATIO * fabsf(imu_speed_rad_s);
+        moving_rad_s > GIMBAL_GOVERNOR_MOVING_RAD_S && direction_matched &&
+        fabsf(governor_filtered_residual_rad_s) < GIMBAL_GOVERNOR_MATCH_RATIO * moving_rad_s;
     governor_match_s = matched ? governor_match_s + period_s : 0.0f;
     return governor_match_s >= GIMBAL_GOVERNOR_MATCH_TIME_S;
 }
@@ -149,15 +287,25 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
     {
         case GIMBAL_GOVERNOR_RECOVERING:
         case GIMBAL_GOVERNOR_MONITOR:
+        case GIMBAL_GOVERNOR_SUSPECT:
+        {
+            const bool was_suspect = governor_state == GIMBAL_GOVERNOR_SUSPECT;
             governor_recovery_s = fminf(GIMBAL_GOVERNOR_RECOVERY_TIME_S, governor_recovery_s + period_s);
-            if (fabsf(residual_rad_s) > GIMBAL_GOVERNOR_DETECT_RAD_S &&
-                fabsf(imu_speed_rad_s) < GIMBAL_GOVERNOR_IMU_STILL_RAD_S)
+            const bool inconsistent = governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_READY ?
+                raw_abs_rad_s > GIMBAL_GOVERNOR_STOP_RAD_S :
+                raw_abs_rad_s > GIMBAL_GOVERNOR_DETECT_RAD_S &&
+                fabsf(imu_speed_rad_s) < GIMBAL_GOVERNOR_IMU_STILL_RAD_S;
+            if (inconsistent)
             {
                 if (governor_detect_s * residual_rad_s < 0.0f)
                 {
                     governor_detect_s = 0.0f;
                 }
                 governor_detect_s += copysignf(period_s, residual_rad_s);
+                if (governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_READY)
+                {
+                    governor_state = GIMBAL_GOVERNOR_SUSPECT;
+                }
             }
             else
             {
@@ -170,11 +318,18 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
                 governor_relapse_s = 0.0f;
                 governor_state = GIMBAL_GOVERNOR_BRAKING;
             }
-            else if (governor_recovery_s >= GIMBAL_GOVERNOR_RECOVERY_TIME_S)
+            else if (!inconsistent && was_suspect)
+            {
+                governor_state = GIMBAL_GOVERNOR_RECOVERING;
+                governor_recovery_s = 0.0f;
+            }
+            else if (governor_state != GIMBAL_GOVERNOR_SUSPECT &&
+                governor_recovery_s >= GIMBAL_GOVERNOR_RECOVERY_TIME_S)
             {
                 governor_state = GIMBAL_GOVERNOR_MONITOR;
             }
             break;
+        }
 
         case GIMBAL_GOVERNOR_BRAKING:
             governor_stop_s = filtered_abs_rad_s < GIMBAL_GOVERNOR_STOP_RAD_S &&
@@ -245,16 +400,18 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
 }
 
 /**
- * @brief 校验本轮输入并在保护后跟随当前 yaw，恢复时捕获新目标，保留 pitch
+ * @brief 校验独立观测并推进保护，观测不足只撤销 yaw 推动，真实故障路径保留
  *
  * @param[in,out] gimbal 已绑定的唯一云台实例
- * @param[in] mode 当前控制模式
- * @param[in,out] setpoint 模块持有的 yaw 设定值，非法值不得被保护覆盖而隐藏
- * @param[in] period_s 实际控制周期，单位 s
- * @return 可继续原单轴控制路径时返回 true，否则由调用方故障停机
+ * @param[in] mode 本周期控制模式
+ * @param[in,out] setpoint 模块持有的 yaw 目标，非法目标不得被捕获覆盖
+ * @param[in] chassis 独立四轮观测，可为空，为空时兼容原保护
+ * @param[in] now_us 消费反馈后的单调时间，单位微秒
+ * @param[in] period_s 已校验周期，单位秒
+ * @return 参数和绑定合法时为真，真实输入异常时为假
  */
-bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
-                               Gimbal_AxisSetpoint_t *setpoint, float period_s)
+bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
+                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
 {
     if (gimbal == NULL || setpoint == NULL || governor_yaw != &gimbal->yaw)
     {
@@ -294,9 +451,33 @@ bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
         return true;
     }
 
-    // 独立底盘实测项本轮为零，不使用由同一编码器和惯性数据反推的底座速度
-    const float residual_rad_s = gimbal->yaw.motor_speed_rad_s - gimbal->yaw.speed_rad_s;
-    if (!isfinite(residual_rad_s))
+    // 补偿只来自独立四轮观测，模式切换不会自动解除既有异常保护
+    const GimbalGovernor_ObservationState_t previous_observation = governor_observation_state;
+    GimbalGovernor_UpdateChassisObservation(gimbal, chassis, now_us);
+    const bool observation_waiting = governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
+        governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE;
+    if (observation_waiting || previous_observation != governor_observation_state)
+    {
+        governor_filtered_residual_rad_s = NAN;
+        governor_detect_s = governor_stop_s = governor_match_s = governor_follow_s = governor_relapse_s = 0.0f;
+        governor_recovery_s = 0.0f;
+        if (!GimbalGovernor_IsLatched())
+        {
+            governor_state = GIMBAL_GOVERNOR_RECOVERING;
+        }
+    }
+    if (observation_waiting)
+    {
+        governor_previous_current_a = 0.0f;
+        governor_recovery_angle_deg = gimbal->yaw.angle_deg;
+        setpoint->target_angle_deg = gimbal->yaw.angle_deg;
+        setpoint->target_speed_rad_s = 0.0f;
+        return true;
+    }
+    const float compensated_rad_s = gimbal->yaw.motor_speed_rad_s - gimbal->yaw.speed_rad_s +
+        governor_chassis_speed_rad_s;
+    const float residual_rad_s = GimbalGovernor_EffectiveResidual(compensated_rad_s);
+    if (!isfinite(compensated_rad_s) || !isfinite(residual_rad_s))
     {
         return false;
     }
@@ -305,7 +486,8 @@ bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
     governor_filtered_residual_rad_s = isfinite(governor_filtered_residual_rad_s) ?
         (1.0f - weight) * governor_filtered_residual_rad_s + weight * residual_rad_s : residual_rad_s;
     const bool was_restoring = governor_state == GIMBAL_GOVERNOR_RESTORING;
-    if (governor_state == GIMBAL_GOVERNOR_BRAKING || governor_state == GIMBAL_GOVERNOR_HOLD)
+    const bool was_suspect = governor_state == GIMBAL_GOVERNOR_SUSPECT;
+    if (governor_state == GIMBAL_GOVERNOR_BRAKING || governor_state == GIMBAL_GOVERNOR_HOLD || was_suspect)
     {
         governor_recovery_angle_deg = gimbal->yaw.angle_deg;
     }
@@ -315,11 +497,12 @@ bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
         return false;
     }
     // 制动及跟随阶段撤销旧目标，恢复阶段保持入口姿态，交接周期也不接受积累的外部目标
-    if (governor_state == GIMBAL_GOVERNOR_BRAKING || governor_state == GIMBAL_GOVERNOR_HOLD)
+    if (governor_state == GIMBAL_GOVERNOR_BRAKING || governor_state == GIMBAL_GOVERNOR_HOLD ||
+        governor_state == GIMBAL_GOVERNOR_SUSPECT)
     {
         governor_recovery_angle_deg = gimbal->yaw.angle_deg;
     }
-    if (GimbalGovernor_IsLatched() || was_restoring)
+    if (GimbalGovernor_IsLatched() || was_restoring || was_suspect)
     {
         setpoint->target_angle_deg = governor_recovery_angle_deg;
         setpoint->target_speed_rad_s = 0.0f;
@@ -339,6 +522,11 @@ float GimbalGovernor_LimitSpeed(float target_speed_rad_s)
     {
         return NAN;
     }
+    if (governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
+        governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE)
+    {
+        return 0.0f;
+    }
     switch (governor_state)
     {
         case GIMBAL_GOVERNOR_RECOVERING:
@@ -348,6 +536,7 @@ float GimbalGovernor_LimitSpeed(float target_speed_rad_s)
             return target_speed_rad_s;
         case GIMBAL_GOVERNOR_BRAKING:
         case GIMBAL_GOVERNOR_HOLD:
+        case GIMBAL_GOVERNOR_SUSPECT:
             return 0.0f;
         case GIMBAL_GOVERNOR_RESTORING:
             return target_speed_rad_s * governor_recovery_s / GIMBAL_GOVERNOR_RESTORE_TIME_S;
@@ -388,13 +577,20 @@ static float GimbalGovernor_LimitHolding(float residual_rad_s, float requested_a
 float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad_s, float requested_current_a,
                                     float max_current_a, float period_s)
 {
-    float current_a = GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, 0.0f,
+    float current_a = GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, governor_chassis_speed_rad_s,
                                                  requested_current_a, max_current_a);
     if (!isfinite(current_a) || !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f)
     {
         return NAN;
     }
-    const float residual_rad_s = motor_speed_rad_s - imu_speed_rad_s;
+    if (governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
+        governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE)
+    {
+        return 0.0f;
+    }
+    const bool independent = governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_READY;
+    const float residual_rad_s =
+        GimbalGovernor_EffectiveResidual(motor_speed_rad_s - imu_speed_rad_s + governor_chassis_speed_rad_s);
     const float holding_residual_rad_s = isfinite(governor_filtered_residual_rad_s) ?
         governor_filtered_residual_rad_s : residual_rad_s;
     const float step_a = GIMBAL_GOVERNOR_CURRENT_SLEW_A_S * period_s;
@@ -403,6 +599,10 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
     switch (governor_state)
     {
         case GIMBAL_GOVERNOR_MONITOR:
+            break;
+        case GIMBAL_GOVERNOR_SUSPECT:
+            permitted_a = fminf(GIMBAL_GOVERNOR_HOLD_CURRENT_A, max_current_a);
+            current_a = fminf(permitted_a, fmaxf(-permitted_a, current_a));
             break;
         case GIMBAL_GOVERNOR_RECOVERING:
         {
@@ -415,9 +615,11 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
         {
             const float limit_a = fminf(GIMBAL_GOVERNOR_BRAKE_CURRENT_A, max_current_a);
             permitted_a = limit_a;
-            current_a = fminf(limit_a, fmaxf(-limit_a, -GIMBAL_GOVERNOR_DAMPING * residual_rad_s));
+            // 四轮异常可能来自空转或打滑，只撤驱，不能按不可信轮速强迫底座匹配
+            current_a = independent ? 0.0f :
+                fminf(limit_a, fmaxf(-limit_a, -GIMBAL_GOVERNOR_DAMPING * residual_rad_s));
             // 进入制动或运动换向时先撤销同向推动，不能为保持斜率继续加速
-            if (previous_a * residual_rad_s >= 0.0f)
+            if (independent || previous_a * residual_rad_s >= 0.0f)
             {
                 previous_a = 0.0f;
             }
@@ -440,7 +642,10 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
             // 低于停稳阈值不额外出力，正常采样差不得持续反算成新的积分偏置
             const float excess_rad_s = copysignf(fmaxf(0.0f,
                 fabsf(holding_residual_rad_s) - GIMBAL_GOVERNOR_STOP_RAD_S), holding_residual_rad_s);
-            current_a -= GIMBAL_GOVERNOR_DAMPING * excess_rad_s;
+            if (!independent)
+            {
+                current_a -= GIMBAL_GOVERNOR_DAMPING * excess_rad_s;
+            }
             current_a = GimbalGovernor_LimitHolding(holding_residual_rad_s, current_a, permitted_a);
             // 超过重新制动阈值时不沿用上周期的同向推动
             if (fabsf(residual_rad_s) >= GIMBAL_GOVERNOR_RESTART_RAD_S && previous_a * residual_rad_s > 0.0f)
@@ -465,8 +670,11 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
         // 斜率历史不得绕过低速电流包络，此处只夹紧，不重复叠加阻尼
         current_a = GimbalGovernor_LimitHolding(holding_residual_rad_s, current_a, permitted_a);
     }
-    return GimbalGovernor_IsLatched() || governor_state == GIMBAL_GOVERNOR_GUARDED ? current_a :
-        GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, 0.0f, current_a, max_current_a);
+    // 联合残差只撤销或收紧原请求，不凭轮速偏差生成反向电流
+    current_a = GimbalGovernor_IsLatched() || governor_state == GIMBAL_GOVERNOR_GUARDED ? current_a :
+        GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, governor_chassis_speed_rad_s,
+                                    current_a, max_current_a);
+    return independent && current_a * requested_current_a <= 0.0f ? 0.0f : current_a;
 }
 
 /**
@@ -501,7 +709,8 @@ void GimbalGovernor_TrackCurrent(Gimbal_Axis_t *axis, float candidate_a, float p
             axis->angle_pid.i = previous_angle_integral;
         }
     }
-    if (GimbalGovernor_IsLatched())
+    if (GimbalGovernor_IsLatched() || governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
+        governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE)
     {
         axis->angle_pid.i = previous_angle_integral;
     }

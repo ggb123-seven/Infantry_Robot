@@ -28,7 +28,6 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
 
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
-
 static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
 static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
@@ -112,7 +111,8 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
     }
 }
 
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
+void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
+                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
 {
     if (gimbal == NULL)
     {
@@ -159,7 +159,7 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float per
     }
 
     // yaw 保护先跟随当前姿态再捕获新目标，校验失败仍走原故障停机路径，pitch 独立控制
-    if (GimbalGovernor_PrepareYaw(gimbal, mode, &gimbal->yaw.setpoint, period_s))
+    if (GimbalGovernor_PrepareYawWithChassis(gimbal, mode, &gimbal->yaw.setpoint, chassis, now_us, period_s))
     {
         Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed,
                            &gimbal->yaw.setpoint, period_s, true);

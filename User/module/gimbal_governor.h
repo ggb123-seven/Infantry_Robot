@@ -12,7 +12,7 @@ extern "C"
  *
  * @param[in] motor_speed_rad_s 模块坐标下编码器相对转速，单位 rad/s，须有限
  * @param[in] imu_speed_rad_s 上部惯性 yaw 转速，单位 rad/s，须与编码器同向且有限
- * @param[in] chassis_speed_rad_s 独立实测底盘转速，单位 rad/s，须同向且有限，本轮调用方传 0
+ * @param[in] chassis_speed_rad_s 独立轮速估计的底盘转速，单位 rad/s，须同向且有限，无观测时传零
  * @param[in] requested_current_a 候选电流，单位 A，须有限
  * @param[in] max_current_a 电流绝对值上限，单位 A，须为有限正值
  * @return 包络内的电流，单位 A，输入或残差非法时返回非数值供调用方故障停机
@@ -41,6 +41,9 @@ float GimbalGovernor_BackCalculate(float integral, float integral_gain, float in
  */
 void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis);
 
+bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
+                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
+
 /**
  * @brief 推进异常运动保护，制动及停稳阶段跟随当前 yaw，恢复时捕获新目标
  *
@@ -50,8 +53,25 @@ void GimbalGovernor_InitYaw(Gimbal_Axis_t *axis);
  * @param[in] period_s 实际周期，单位 s，运行时范围为 (0, 0.1]
  * @return 参数、绑定或运行周期非法时返回 false，由调用方按原故障路径停机
  */
-bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
-                               Gimbal_AxisSetpoint_t *setpoint, float period_s);
+static inline bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
+                                            Gimbal_AxisSetpoint_t *setpoint, float period_s)
+{
+    return GimbalGovernor_PrepareYawWithChassis(gimbal, mode, setpoint, NULL, 0U, period_s);
+}
+
+/**
+ * @brief 对齐独立底盘观测并推进 yaw 异常运动保护
+ *
+ * @param[in,out] gimbal 已绑定的唯一云台实例
+ * @param[in] mode 本周期云台模式
+ * @param[in,out] setpoint 模块持有的 yaw 目标，保护可以捕获当前姿态
+ * @param[in] chassis 独立底盘观测，可为空，为空时使用原有无补偿保护
+ * @param[in] now_us 消费反馈后的当前时间，单位微秒
+ * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
+ * @return 输入与绑定合法时为真，底盘观测缺失只限制 yaw，真实参数异常仍返回假
+ */
+bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
+                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
 
 /**
  * @brief 制动及目标跟随时返回零，捕获新姿态后渐进恢复 yaw 速度权限
