@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # User/component 源文件
     User/component/angle_unwrap.c
     User/component/filter.c
+    User/component/input_shaping.c
     User/component/madgwick_ahrs.c
     User/component/mixer.c
     User/component/pid.c

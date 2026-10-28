@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "bsp/time.h"
+#include "component/input_shaping.h"
 #include "component/user_math.h"
 #include "device/dr16.h"
 #include "module/config.h"
@@ -89,8 +90,6 @@ static float remote_pitch_rate_deg_s;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
-static float MotorGimbal_NormalizeChannel(int16_t channel);
-static float MotorGimbal_UpdateRemoteRate(float current, float requested, float accel, float decel, float period_s);
 static void MotorGimbal_UpdateSineTest(float period_s);
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback);
 static bool MotorGimbal_PublishOutput(const Gimbal_Output_t *output);
@@ -288,68 +287,27 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
         !gimbal_sine_test_enabled && sine_state == MOTOR_GIMBAL_SINE_IDLE)
     {
         const float yaw_rate_deg_s = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
-                                     MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_x) *
+                                     InputShaping_NormalizeChannel(remote_cache.data.ch_r_x,
+                                         MOTOR_GIMBAL_DR16_CHANNEL_LIMIT, MOTOR_GIMBAL_DR16_DEADZONE) *
                                      MOTOR_GIMBAL_DR16_YAW_RATE_RAD_S * M_RAD2DEG_MULT;
-        remote_yaw_rate_deg_s = MotorGimbal_UpdateRemoteRate(previous_yaw_rate_deg_s, yaw_rate_deg_s,
-            MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_YAW_DECEL_DEG_S2, period_s);
+        remote_yaw_rate_deg_s = InputShaping_SmoothRate(previous_yaw_rate_deg_s, yaw_rate_deg_s,
+            MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_YAW_DECEL_DEG_S2,
+            period_s, MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S, MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S);
         gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + remote_yaw_rate_deg_s * period_s;
         gimbal_command.yaw.target_speed_rad_s = remote_yaw_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
     if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
     {
         const float pitch_rate_deg_s = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
-                                       MotorGimbal_NormalizeChannel(remote_cache.data.ch_r_y) *
+                                       InputShaping_NormalizeChannel(remote_cache.data.ch_r_y,
+                                           MOTOR_GIMBAL_DR16_CHANNEL_LIMIT, MOTOR_GIMBAL_DR16_DEADZONE) *
                                        MOTOR_GIMBAL_DR16_PITCH_RATE_RAD_S * M_RAD2DEG_MULT;
-        remote_pitch_rate_deg_s = MotorGimbal_UpdateRemoteRate(previous_pitch_rate_deg_s, pitch_rate_deg_s,
-            MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_PITCH_DECEL_DEG_S2, period_s);
+        remote_pitch_rate_deg_s = InputShaping_SmoothRate(previous_pitch_rate_deg_s, pitch_rate_deg_s,
+            MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_PITCH_DECEL_DEG_S2,
+            period_s, MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S, MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S);
         gimbal_command.pitch.target_angle_deg = gimbal.pitch.target_angle_deg + remote_pitch_rate_deg_s * period_s;
         gimbal_command.pitch.target_speed_rad_s = remote_pitch_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
     }
-}
-
-/**
- * @brief 将遥控速度指令按加减速上限平滑到目标值，换向时先经过零速
- *
- * @param[in] current 上周期遥控角速度，单位度每秒，须为有限值
- * @param[in] requested 本周期摇杆请求角速度，单位度每秒，须为有限值
- * @param[in] accel 加速上限，单位度每平方秒，须为有限正值
- * @param[in] decel 减速上限，单位度每平方秒，须为有限正值
- * @param[in] period_s 已校验的控制周期，单位秒，范围为 (0, 0.1]
- * @return 本周期遥控角速度，单位度每秒
- */
-static float MotorGimbal_UpdateRemoteRate(float current, float requested, float accel, float decel, float period_s)
-{
-    // 换向先以零速为本周期边界，避免同一步骤越过零速后仍沿用较大的减速上限
-    const float target = current * requested < 0.0f ? 0.0f : requested;
-    const float rate_limit = fabsf(target) < fabsf(current) ? decel : accel;
-    const float max_step = rate_limit * period_s;
-    const float difference = fabsf(target - current);
-
-    // 小误差有限时间收敛且仍受变化上限约束，保证松杆后目标角能停止推进
-    if (difference <= MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S && difference <= max_step)
-    {
-        return target;
-    }
-
-    // 小幅输入和接近目标时也保留过渡，实际周期决定平滑比例，较大变化继续交给通用斜坡限幅
-    const float blend = 1.0f - expf(-period_s / MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S);
-    return RampTo(current, target, fminf(max_step, difference * blend));
-}
-
-/**
- * @brief 将 DR16 右摇杆原始计数限幅并去除中心死区
- *
- * @param[in] channel 去中心后的原始计数，典型范围为 [-660, 660]
- * @return 死区内为零，死区外线性映射到 [-1, 1]
- */
-static float MotorGimbal_NormalizeChannel(int16_t channel)
-{
-    const float value = fmaxf(-1.0f, fminf(1.0f, (float)channel / MOTOR_GIMBAL_DR16_CHANNEL_LIMIT));
-    if (fabsf(value) <= MOTOR_GIMBAL_DR16_DEADZONE)
-    {
-        return 0.0f;
-    }
-    return copysignf((fabsf(value) - MOTOR_GIMBAL_DR16_DEADZONE) / (1.0f - MOTOR_GIMBAL_DR16_DEADZONE), value);
 }
 
 /**

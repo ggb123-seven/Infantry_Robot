@@ -1,6 +1,7 @@
 #include "task/motor_chassis.h"
 
 #include "bsp/time.h"
+#include "component/input_shaping.h"
 #include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
@@ -39,8 +40,6 @@ static bool dr16_state_cache_valid;
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
 static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now_us);
-static float MotorChassis_NormalizeDR16Channel(int16_t channel);
-static float MotorChassis_ApplyDeadzone(float value);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
 
 /**
@@ -163,8 +162,10 @@ static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now
 
     // 对遥控通道限幅和去死区，再按拨杆枚举集中选择运动模式
     // 上位和下位为运动档，摇杆回中时保持速度环并以零目标主动制动
-    const float lateral_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_x);
-    const float forward_channel = MotorChassis_NormalizeDR16Channel(dr16_state_cache.data.ch_l_y);
+    const float lateral_channel = InputShaping_NormalizeChannel(dr16_state_cache.data.ch_l_x,
+        MOTOR_CHASSIS_DR16_CHANNEL_LIMIT, MOTOR_CHASSIS_DR16_DEADZONE);
+    const float forward_channel = InputShaping_NormalizeChannel(dr16_state_cache.data.ch_l_y,
+        MOTOR_CHASSIS_DR16_CHANNEL_LIMIT, MOTOR_CHASSIS_DR16_DEADZONE);
     switch (dr16_state_cache.data.sw_l)
     {
         case DR16_SWITCH_UP:
@@ -186,46 +187,6 @@ static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now
         default:
             break;
     }
-}
-
-/**
- * @brief 将 DR16 通道原始值归一化并执行中心死区处理
- *
- * @param[in] channel DR16 已减去中心值的通道原始值，典型范围 -660~660
- * @return 归一化后的通道值，范围 [-1, 1]
- */
-static float MotorChassis_NormalizeDR16Channel(int16_t channel)
-{
-    float normalized = (float)channel / MOTOR_CHASSIS_DR16_CHANNEL_LIMIT;
-    if (normalized > 1.0F)
-    {
-        normalized = 1.0F;
-    }
-    else if (normalized < -1.0F)
-    {
-        normalized = -1.0F;
-    }
-    return MotorChassis_ApplyDeadzone(normalized);
-}
-
-/**
- * @brief 对归一化摇杆值执行中心死区处理
- *
- * @param[in] value 归一化摇杆值
- * @return 处理后的归一化摇杆值
- */
-static float MotorChassis_ApplyDeadzone(float value)
-{
-    if (value > -MOTOR_CHASSIS_DR16_DEADZONE && value < MOTOR_CHASSIS_DR16_DEADZONE)
-    {
-        return 0.0F;
-    }
-
-    if (value > 0.0F)
-    {
-        return (value - MOTOR_CHASSIS_DR16_DEADZONE) / (1.0F - MOTOR_CHASSIS_DR16_DEADZONE);
-    }
-    return (value + MOTOR_CHASSIS_DR16_DEADZONE) / (1.0F - MOTOR_CHASSIS_DR16_DEADZONE);
 }
 
 /**

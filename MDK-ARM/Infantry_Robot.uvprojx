@@ -661,6 +661,11 @@
               <FilePath>..\User\component\filter.c</FilePath>
             </File>
             <File>
+              <FileName>input_shaping.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\input_shaping.c</FilePath>
+            </File>
+            <File>
               <FileName>madgwick_ahrs.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\component\madgwick_ahrs.c</FilePath>
