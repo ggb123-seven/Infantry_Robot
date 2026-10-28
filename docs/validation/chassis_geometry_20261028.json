@@ -1,0 +1,134 @@
+{
+  "host_compile": {
+    "command": [
+      "E:/movie/vscode+/c_c++/mingw64/bin/gcc.exe",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Ibuild/geometry_validation",
+      "-IUser",
+      "build/geometry_validation/test.c",
+      "User/module/gimbal.c",
+      "User/module/chassis.c",
+      "User/module/config.c",
+      "User/component/mixer.c",
+      "User/component/pid.c",
+      "User/component/filter.c",
+      "User/component/user_math.c",
+      "User/component/angle_unwrap.c",
+      "-lm",
+      "-o",
+      "build/geometry_validation/test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "host_test": {
+    "command": [
+      "build/geometry_validation/test.exe"
+    ],
+    "exit_code": 0,
+    "stdout": "geometry coefficient, 72 normal cases, 12 anomalies, 72 missing-wheel cases PASS\n",
+    "stderr": ""
+  },
+  "arm_strict": {
+    "command": [
+      "C:\\Users\\seven\\AppData\\Local\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin\\arm-none-eabi-gcc.exe",
+      "-DARM_MATH_CM4",
+      "-DDEBUG",
+      "-DSTM32F407xx",
+      "-DUSE_HAL_DRIVER",
+      "-D__FPU_PRESENT=1U",
+      "-IF:/RM/Infantry_Robot/Middlewares/Third_Party/RingBuffer/src/include",
+      "-IF:/RM/Infantry_Robot/Drivers/CMSIS/DSP/Include",
+      "-IF:/RM/Infantry_Robot/User",
+      "-IF:/RM/Infantry_Robot/applications",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+      "-IF:/RM/Infantry_Robot/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+      "-mcpu=cortex-m4",
+      "-mfpu=fpv4-sp-d16",
+      "-mfloat-abi=hard",
+      "-Wall",
+      "-fdata-sections",
+      "-ffunction-sections",
+      "-O0",
+      "-g3",
+      "-std=gnu11",
+      "F:\\RM\\Infantry_Robot\\User\\module\\config.c",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "build": {
+    "command": [
+      "python",
+      ".auto-embedded/tools/build-cmake/scripts/cmake_builder.py",
+      "--source",
+      ".",
+      "--preset",
+      "Debug"
+    ],
+    "exit_code": 0,
+    "stdout": "🔧 配置命令: cmake --preset Debug -S F:\\RM\\Infantry_Robot\n✅ CMake 配置成功\n🔨 构建命令: cmake --build --preset Debug\n✅ 构建成功（耗时 0.8 秒）\n\n📊 构建结果: ✅ 构建成功，找到 7 个产物\n\n  配置命令: cmake --preset Debug -S F:\\RM\\Infantry_Robot\n  构建命令: cmake --build --preset Debug\n  构建目录: F:\\RM\\Infantry_Robot\\build\\Debug\n\n📦 找到 7 个固件产物：\n  1. [ELF] F:\\RM\\Infantry_Robot\\build\\Debug\\Infantry_Robot.elf (1880.4 KB) ⭐ 首选\n  2. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\4.3.1\\CMakeDetermineCompilerABI_CXX.bin (2.3 KB)\n  3. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\4.4.0\\CMakeDetermineCompilerABI_CXX.bin (2.3 KB)\n  4. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\4.3.1\\CMakeDetermineCompilerABI_C.bin (2.3 KB)\n  5. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\4.4.0\\CMakeDetermineCompilerABI_C.bin (2.3 KB)\n  6. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\3.31.4\\CMakeDetermineCompilerABI_CXX.bin (1.9 KB)\n  7. [BIN] F:\\RM\\Infantry_Robot\\build\\Debug\\CMakeFiles\\3.31.4\\CMakeDetermineCompilerABI_C.bin (1.9 KB)\n\n📝 证据:\n  构建耗时: 0.8 秒\n",
+    "stderr": ""
+  },
+  "source_document": {
+    "path": "F:\\RM\\底盘几何与运动学参数清单.pdf",
+    "sha256": "b3d99ff9bf65f4161f19b6d1330e7999b3de0d24b198f9865d7ea322112b7de8",
+    "pages": 3,
+    "measured_on": "2026-09-22",
+    "effective_radius_m": 0.0765,
+    "wheel_center_forward_offset_m": 0.1681,
+    "wheel_center_lateral_offset_m": 0.1681,
+    "effective_arm_m": 0.23772929983491728,
+    "coefficient_rad_s_per_rpm": 0.033698249530945364,
+    "sign_convention": "程序约定俯视逆时针为正，实车极性尚未核验"
+  },
+  "test_method": "独立双精度几何投影生成四轮速度并模拟减速比3591/187后的整数转子rpm量化，使用实际Chassis观测和Gimbal反馈/控制；测试编译单元包含生产governor源码以读取内部状态，不复制算法",
+  "test_correction": "初始模拟电机帧误用rotor_abs_angle且未设置angle_valid，修正为生产入口要求的rotor_single_angle和angle_valid=true后通过；生产保护逻辑未修改",
+  "hashes": {
+    "User\\module\\config.c": "652400c303cc0e1ce7b6421a6deb9dc8153cf4bb4bde1eeb9aafb72974354bd2",
+    "User\\module\\chassis.c": "bb4fa708aebb3cc454e516d2b611e4c080905c05a1d69c779850a476c311f411",
+    "User\\module\\gimbal.c": "116717baf369b8dcbe817b78abc77933d386d4727899ccac6b5411c06d63e79e",
+    "User\\module\\gimbal_governor.c": "161434a88c737203cdfa10a5c594b6ed92ace34a4ef2de67db27c0d85ed87e4f",
+    "build\\geometry_validation\\test.c": "c0fb3a068117e6b25b74e8fd2fe1240ce6fa6e7c6ffd050f7df96c5b54b5c843",
+    "build\\geometry_validation\\bsp\\can.h": "c152431b34f219d5826bcc7963b7ed0cef5bace26734ab8a272393d2e56a9838",
+    "build\\Debug\\Infantry_Robot.elf": "a96df151e2b36b1411e93315b0d79aca85b78d254144c2aa3e8dcdb47ea0bbfa"
+  },
+  "gates": {
+    "command": [
+      "python",
+      ".auto-embedded/scripts/check.py"
+    ],
+    "exit_code": 0,
+    "stdout": "== ARCH : PASS ==\n== HW : PASS ==\n== SPEC : PASS ==\n\n==> ALL PASS\n",
+    "stderr": ""
+  },
+  "quality_review": {
+    "format": "UTF-8、Allman、120列、行尾空白扫描通过；人工复核注释集中说明来源、单位、公式、方向和实测边界",
+    "scope": "仅修改config.c只读常量及集中注释；未新增结构体、分支、运行时对象、ISR共享状态或底层依赖；未改.ioc",
+    "hardware": "无引脚、外设、时钟、DMA或中断变更，HW门禁通过"
+  },
+  "limitations": [
+    "未烧录或操作真实电机，未确认四轮极性及惯性方向",
+    "CAD有效轮径未包含载荷下压缩变形，尚无实车误报率与漏报率",
+    "轮速/关节/IMU一致不能证明接地，FOLLOW仍仅预留入口",
+    "本轮使用实际模块软件合成工况，未重跑已清理的历史RTOS替身测试，也不把历史测试计为本轮结果"
+  ],
+  "cleanup": "已清理build/geometry_validation内临时测试源码、BSP替身、主机可执行程序、PDF渲染图与中间日志；保留正式验证JSON和工程Debug固件"
+}
