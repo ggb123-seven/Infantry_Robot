@@ -75,6 +75,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     # User/module 源文件
     User/module/chassis.c
+    User/module/cmd.c
     User/module/config.c
     User/module/fault_detect.c
     User/module/gimbal.c

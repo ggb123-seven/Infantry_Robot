@@ -706,6 +706,11 @@
               <FilePath>..\User\module\gimbal.c</FilePath>
             </File>
             <File>
+              <FileName>cmd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\cmd.c</FilePath>
+            </File>
+            <File>
               <FileName>gimbal_governor.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\module\gimbal_governor.c</FilePath>

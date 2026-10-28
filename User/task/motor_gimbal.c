@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 #include "bsp/time.h"
-#include "component/input_shaping.h"
+#include "module/cmd.h"
 #include "component/user_math.h"
 #include "device/dr16.h"
 #include "module/config.h"
@@ -19,47 +19,6 @@
 #define MOTOR_GIMBAL_SINE_OMEGA_RAD_S (6.0f)
 #define MOTOR_GIMBAL_TWO_PI (6.28318530718f)
 #define MOTOR_GIMBAL_DEG_TO_RAD (0.0174532925199f)
-
-/*
- * DR16 云台命令参数，使用右拨杆和右摇杆，左侧输入继续分配给底盘
- * - CHANNEL_LIMIT：DR16 去中心后的满量程计数，来源为设备协议的 ±660
- * - DEADZONE：中心死区比例 5%，死区外重新归一化到满量程
- * - YAW_RATE_RAD_S、PITCH_RATE_RAD_S：满杆目标角速度均取 6 rad/s，对齐参考工程的遥控灵敏度
- * - YAW_ACCEL_DEG_S2、PITCH_ACCEL_DEG_S2：速度指令加速上限均取 60000 度每平方秒，限制满杆突变
- * - YAW_DECEL_DEG_S2、PITCH_DECEL_DEG_S2：速度指令减速上限均取 60000 度每平方秒，松杆后快速停止推进目标角
- * - RATE_SMOOTH_TIME_S：速度指令的一阶平滑时间常数为 4 毫秒，抑制小幅输入和换向突变
- * - RATE_SETTLE_DEG_S：速度误差不超过 0.1 度每秒且满足单周期变化上限时直接收敛，避免回中长尾
- *   实际过渡包含末端平滑时间，换向先减到零再反向加速，以上参数作为待实机调整的手感起点
- * - YAW_DIRECTION、PITCH_DIRECTION：通道到当前 INS 角度坐标的符号，初始均取反向，实机核对左右与抬头方向
- * - MAX_PERIOD_S：输入积分允许的最大间隔，沿用云台模块的 0.1 秒控制周期上限
- * 遥控帧龄使用 DR16_RECEIVER_OFFLINE_TIMEOUT_US，沿用设备层的 100 毫秒离线阈值
- */
-#define MOTOR_GIMBAL_DR16_CHANNEL_LIMIT (660.0f)
-#define MOTOR_GIMBAL_DR16_DEADZONE (0.05f)
-#define MOTOR_GIMBAL_DR16_YAW_RATE_RAD_S (6.0f)
-#define MOTOR_GIMBAL_DR16_PITCH_RATE_RAD_S (6.0f)
-#define MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2 (60000.0f)
-#define MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2 (60000.0f)
-#define MOTOR_GIMBAL_DR16_YAW_DECEL_DEG_S2 (60000.0f)
-#define MOTOR_GIMBAL_DR16_PITCH_DECEL_DEG_S2 (60000.0f)
-#define MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S (0.004f)
-#define MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S (0.1f)
-#define MOTOR_GIMBAL_DR16_YAW_DIRECTION (-1.0f)
-#define MOTOR_GIMBAL_DR16_PITCH_DIRECTION (-1.0f)
-#define MOTOR_GIMBAL_MAX_PERIOD_S (0.1f)
-
-/*
- * 遥控输入状态仅编排命令来源，闭环和设备故障继续由 Gimbal 模块管理
- * - WAIT_MIDDLE：启动、遥控失联或锁存故障后保持失能，等待收到有效的右拨杆中位
- * - READY：已确认中位，继续零输出，右拨杆上位后允许角度模式
- * - ACTIVE：仅右拨杆上位时发布角度命令，中位退回 READY，其他档位退回 WAIT_MIDDLE
- */
-typedef enum
-{
-    MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE = 0,
-    MOTOR_GIMBAL_REMOTE_READY,
-    MOTOR_GIMBAL_REMOTE_ACTIVE,
-} MotorGimbal_RemoteState_t;
 
 // 正弦测试待机时相位归零，yaw 进入角度闭环后才开始推进，异常状态回到待机
 typedef enum
@@ -84,9 +43,7 @@ static float sine_center_deg;
 // 遥控缓存及输入状态仅由云台任务访问，不与 ISR 共享
 static DR16_State_t remote_cache;
 static bool remote_cache_valid;
-static MotorGimbal_RemoteState_t remote_state;
-static float remote_yaw_rate_deg_s;
-static float remote_pitch_rate_deg_s;
+static Cmd_Gimbal_t remote_command;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
@@ -155,12 +112,10 @@ void Task_motor_gimbal(void *argument)
                 .mode = GIMBAL_MODE_RELAX,
             };
             Gimbal_Control(&gimbal, &relax_command, period_s);
-            remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+            Cmd_ResetGimbal(&remote_command);
             gimbal_command.mode = GIMBAL_MODE_RELAX;
             gimbal_command.yaw.target_speed_rad_s = 0.0f;
             gimbal_command.pitch.target_speed_rad_s = 0.0f;
-            remote_yaw_rate_deg_s = 0.0f;
-            remote_pitch_rate_deg_s = 0.0f;
         }
 
         // 正常运行使用绝对节拍，错过周期时跳过补算，避免追赶产生连续重复输出
@@ -197,116 +152,55 @@ static bool MotorGimbal_Init(void)
  */
 static void MotorGimbal_ApplyDR16Input(float period_s)
 {
-    // 先保存上周期速度再默认清零，所有失能和异常早退均立即撤销平滑状态与前馈
-    const float previous_yaw_rate_deg_s = remote_yaw_rate_deg_s;
-    const float previous_pitch_rate_deg_s = remote_pitch_rate_deg_s;
-    remote_yaw_rate_deg_s = 0.0f;
-    remote_pitch_rate_deg_s = 0.0f;
-    gimbal_command.mode = GIMBAL_MODE_RELAX;
-    gimbal_command.yaw.target_speed_rad_s = 0.0f;
-    gimbal_command.pitch.target_speed_rad_s = 0.0f;
+    // 邮箱只更新缓存，不改写源时间，读取错误和空句柄立即撤销缓存
     const osMessageQueueId_t queue = task_runtime.msgq.dr16_gimbal_state;
     if (queue == NULL)
     {
         remote_cache_valid = false;
-        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
+    }
+    else
+    {
+        DR16_State_t received;
+        const osStatus_t status = osMessageQueueGet(queue, &received, NULL, 0U);
+        if (status == osOK)
+        {
+            remote_cache = received;
+            remote_cache_valid = true;
+        }
+        else if (status != osErrorResource)
+        {
+            remote_cache_valid = false;
+        }
+    }
+
+    // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
+    remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
+        BSP_TIME_Get(), period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+    if (gimbal_command.mode != GIMBAL_MODE_ANGLE)
+    {
         return;
     }
 
-    // 空邮箱保留最近合法帧的源时间，实际读取错误立即撤销缓存，避免沿用故障前的使能
-    DR16_State_t received;
-    const osStatus_t status = osMessageQueueGet(queue, &received, NULL, 0U);
-    if (status == osOK)
-    {
-        remote_cache = received;
-        remote_cache_valid = true;
-    }
-    else if (status != osErrorResource)
-    {
-        remote_cache_valid = false;
-    }
-
-    // 取得遥控快照后再采当前时间，避免高优先级接收任务抢占时将合法新帧误判为未来时间
-    const uint64_t now_us = BSP_TIME_Get();
-
-    // 帧龄、时基或控制周期异常均回到人工确认状态，恢复上位帧不会自动使能
-    if (!remote_cache_valid || !remote_cache.header.online || now_us < remote_cache.header.last_online_time ||
-        now_us - remote_cache.header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US ||
-        !isfinite(period_s) || period_s <= 0.0f || period_s > MOTOR_GIMBAL_MAX_PERIOD_S)
-    {
-        remote_cache_valid = false;
-        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
-        return;
-    }
-
-    // 锁存故障撤销两轴使能，电机反馈超时由模块单轴等待恢复，保留当前拨档状态
-    if (gimbal.imu_state == GIMBAL_IMU_FAULT || gimbal.yaw.state == GIMBAL_AXIS_FAULT ||
-        gimbal.pitch.state == GIMBAL_AXIS_FAULT)
-    {
-        remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
-        return;
-    }
-
-    // 集中管理输入使能顺序，非法状态和中位以外的停机档都要求重新确认中位
-    const DR16_SwitchPosition_t position = remote_cache.data.sw_r;
-    switch (remote_state)
-    {
-        case MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE:
-            if (position == DR16_SWITCH_MIDDLE)
-            {
-                remote_state = MOTOR_GIMBAL_REMOTE_READY;
-            }
-            return;
-
-        case MOTOR_GIMBAL_REMOTE_READY:
-        case MOTOR_GIMBAL_REMOTE_ACTIVE:
-            if (position == DR16_SWITCH_MIDDLE)
-            {
-                remote_state = MOTOR_GIMBAL_REMOTE_READY;
-                return;
-            }
-            if (position != DR16_SWITCH_UP)
-            {
-                remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
-                return;
-            }
-            remote_state = MOTOR_GIMBAL_REMOTE_ACTIVE;
-            break;
-
-        default:
-            remote_state = MOTOR_GIMBAL_REMOTE_WAIT_MIDDLE;
-            return;
-    }
-
-    // 用模块上周期实际限幅后的目标继续积分，避免持续推向机械边界时积累不可达目标
-    // 按实际周期平滑摇杆速度的大小变化及换向，同一平滑速度用于目标积分和前馈，避免两者不一致
-    // 首次使能及单轴失联等待期间不积分且前馈为零，由模块在起控或恢复时捕获当前姿态
-    gimbal_command.mode = GIMBAL_MODE_ANGLE;
-    // 正弦测试接管及退出交接周期不积累遥控速度，避免切回遥控时沿用被覆盖的前馈
+    // 本步骤保留旧语义：目标积分仍在任务中，失联及正弦接管时清除对应平滑历史
     if (gimbal.yaw.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.yaw.target_angle_deg) &&
         !gimbal_sine_test_enabled && sine_state == MOTOR_GIMBAL_SINE_IDLE)
     {
-        const float yaw_rate_deg_s = MOTOR_GIMBAL_DR16_YAW_DIRECTION *
-                                     InputShaping_NormalizeChannel(remote_cache.data.ch_r_x,
-                                         MOTOR_GIMBAL_DR16_CHANNEL_LIMIT, MOTOR_GIMBAL_DR16_DEADZONE) *
-                                     MOTOR_GIMBAL_DR16_YAW_RATE_RAD_S * M_RAD2DEG_MULT;
-        remote_yaw_rate_deg_s = InputShaping_SmoothRate(previous_yaw_rate_deg_s, yaw_rate_deg_s,
-            MOTOR_GIMBAL_DR16_YAW_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_YAW_DECEL_DEG_S2,
-            period_s, MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S, MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S);
-        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + remote_yaw_rate_deg_s * period_s;
-        gimbal_command.yaw.target_speed_rad_s = remote_yaw_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
+        gimbal_command.yaw.target_angle_deg = gimbal.yaw.target_angle_deg + remote_command.yaw_rate_deg_s * period_s;
+    }
+    else
+    {
+        remote_command.yaw_rate_deg_s = 0.0f;
+        gimbal_command.yaw.target_speed_rad_s = 0.0f;
     }
     if (gimbal.pitch.state == GIMBAL_AXIS_RUNNING && isfinite(gimbal.pitch.target_angle_deg))
     {
-        const float pitch_rate_deg_s = MOTOR_GIMBAL_DR16_PITCH_DIRECTION *
-                                       InputShaping_NormalizeChannel(remote_cache.data.ch_r_y,
-                                           MOTOR_GIMBAL_DR16_CHANNEL_LIMIT, MOTOR_GIMBAL_DR16_DEADZONE) *
-                                       MOTOR_GIMBAL_DR16_PITCH_RATE_RAD_S * M_RAD2DEG_MULT;
-        remote_pitch_rate_deg_s = InputShaping_SmoothRate(previous_pitch_rate_deg_s, pitch_rate_deg_s,
-            MOTOR_GIMBAL_DR16_PITCH_ACCEL_DEG_S2, MOTOR_GIMBAL_DR16_PITCH_DECEL_DEG_S2,
-            period_s, MOTOR_GIMBAL_DR16_RATE_SMOOTH_TIME_S, MOTOR_GIMBAL_DR16_RATE_SETTLE_DEG_S);
-        gimbal_command.pitch.target_angle_deg = gimbal.pitch.target_angle_deg + remote_pitch_rate_deg_s * period_s;
-        gimbal_command.pitch.target_speed_rad_s = remote_pitch_rate_deg_s * MOTOR_GIMBAL_DEG_TO_RAD;
+        gimbal_command.pitch.target_angle_deg =
+            gimbal.pitch.target_angle_deg + remote_command.pitch_rate_deg_s * period_s;
+    }
+    else
+    {
+        remote_command.pitch_rate_deg_s = 0.0f;
+        gimbal_command.pitch.target_speed_rad_s = 0.0f;
     }
 }
 

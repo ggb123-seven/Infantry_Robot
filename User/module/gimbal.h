@@ -243,6 +243,18 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
 void Gimbal_Control(Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s);
 
 /**
+ * @brief 查询任一轴或共用惯性源是否存在锁存故障
+ *
+ * @param[in] gimbal 云台实例，可为 NULL
+ * @return 实例无效或存在锁存故障时为 true，电机单轴超时不算锁存故障
+ */
+static inline bool Gimbal_HasLatchedFault(const Gimbal_t *gimbal)
+{
+    return gimbal == NULL || gimbal->imu_state == GIMBAL_IMU_FAULT ||
+           gimbal->yaw.state == GIMBAL_AXIS_FAULT || gimbal->pitch.state == GIMBAL_AXIS_FAULT;
+}
+
+/**
  * @brief 导出两轴电机方向的输出电流
  *
  * @param[in] gimbal 云台实例

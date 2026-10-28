@@ -1,6 +1,6 @@
 # 命令层拆分与云台模块精简方案
 
-状态：步骤 1 已完成并通过软件验证；步骤 2～5 涉及的结构体和配置策略仍待用户确认，尚未实施
+状态：步骤 1、2 已完成并通过软件验证；用户已确认结构体草案、rejected_version 和非法配置拒绝策略，正弦测试留在原文件使用编译开关隔离
 
 实施记录：[命令层拆分与云台模块精简验证记录](2026-10-28_cmd_gimbal_refactor.md)
 
@@ -191,12 +191,18 @@ typedef struct
 
 ### 步骤 5：配置版本号
 
-- 需用户先确认两点：版本字段放置位置；版本递增时配置非法的处理方式
-- 版本递增时按修改内容分三类处理，推荐方案如下：
+- 用户已确认采用版本号方案，字段设计如下：
+  - `Gimbal_t` 保留 `config` 作为调试器可写的待提交配置，新增 `config_version`、`active_config`、`active_version`、`config_reject_count`
+  - 非法新配置保留旧配置并记录拒绝次数；同一版本只处理一次，改正后须再递增版本号
+  - 用户已确认增加 `rejected_version`，记录最近拒绝的版本，使 `active_version` 始终表示正在运行的配置版本；处理条件为 `config_version != active_version && config_version != rejected_version`
+  - 调试器须先改完 `config` 各字段再递增 `config_version`；版本号为 `uint32_t`，用 `!=` 比较以容忍回绕，`config_version` 加 `volatile` 并注明由调试器写入、云台任务读取
+  - 初始化时 `config`、`active_config` 均复制默认配置，版本号与拒绝计数置 0；初始配置非法时 `Gimbal_Init` 仍返回失败
+  - `d_cutoff_freq` 本轮仍只在初始化时生效
+- 版本递增时按修改内容分三类处理：
   - 配置非法（非有限值、限幅非正、`min_angle_deg > max_angle_deg`、PID `range` 非 0 等）：整份拒绝，保留旧配置，拒绝计数加 1，运行中的轴继续运行。这是相对现有“运行中配置非法即 FAULT”的唯一行为变化
   - 合法且零点或 `reversed` 改变：采纳，运行中或失联等待的轴进入 FAULT，与现状一致，因为机械坐标已失效
   - 合法且仅 PID、限幅等改变：采纳并清空对应积分，轴继续运行，与现状一致
-- 草案：`Gimbal_t` 中 `config` 保持调试器可写，新增 `config_version`（调试器递增），模块私有 `active_config` 与 `active_version`。版本变化时校验整份 `config`，合法则复制到 `active_config`，零点或方向变化仍按现有规则令运行轴故障，PID 参数变化仍清空积分
+- 版本变化时校验整份 `config`（含两个超时参数），合法则复制到 `active_config`；零点或方向变化以新配置与 `active_config` 比较判定
 - 模块所有运行时读取改用 `active_config`；PID 参数指针指向 `active_config` 中的两环参数。删除 `applied_zero_encoder_deg`、`applied_reversed`、`applied_angle_pid`、`applied_speed_pid` 与 `Gimbal_IsPidChanged`
 - `GimbalGovernor_TrackCurrent` 读取的 `axis->applied_speed_pid` 改为 `axis->speed_pid.param`，这是对 governor 唯一允许的改动
 - `Gimbal_EnterRunning` 中读取的 `applied_speed_pid.k` 同步改为新位置

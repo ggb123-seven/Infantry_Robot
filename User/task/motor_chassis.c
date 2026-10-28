@@ -1,24 +1,12 @@
 #include "task/motor_chassis.h"
 
 #include "bsp/time.h"
-#include "component/input_shaping.h"
+#include "module/cmd.h"
 #include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
-
-/*
- * DR16 底盘输入参数，沿用底盘重构方案：
- * - CHANNEL_LIMIT：摇杆去中心后的有效计数上限 660
- * - DEADZONE：摇杆中心死区比例 5%
- * - SPIN_WZ：左拨杆下位固定自旋归一化值 +0.30，正值为俯视逆时针
- * - SCALE_RPM：归一化轮速尺度，单位输出轴 rpm
- */
-#define MOTOR_CHASSIS_DR16_CHANNEL_LIMIT (660.0F)
-#define MOTOR_CHASSIS_DR16_DEADZONE (0.05F)
-#define MOTOR_CHASSIS_DR16_SPIN_WZ (0.30F)
-#define MOTOR_CHASSIS_SCALE_RPM (100.0F)
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
@@ -39,7 +27,6 @@ static bool dr16_state_cache_valid;
 
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
-static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now_us);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
 
 /**
@@ -80,7 +67,7 @@ void Task_motor_chassis(void *argument)
         // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
-        MotorChassis_ApplyDR16Input(&chassis_command, BSP_TIME_Get());
+        Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, BSP_TIME_Get(), &chassis_command);
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =
@@ -130,63 +117,6 @@ static bool MotorChassis_ReadLatestDR16(void)
     dr16_state_cache = received_state;
     dr16_state_cache_valid = true;
     return true;
-}
-
-/**
- * @brief 将 DR16 状态转换为当前底盘控制模式和运动向量
- *
- * @param[out] command 待覆盖的底盘控制命令
- * @param[in] now_us 当前时间，单位微秒
- * @return 无返回值
- */
-static void MotorChassis_ApplyDR16Input(Chassis_Command_t *command, uint64_t now_us)
-{
-    if (command == NULL)
-    {
-        return;
-    }
-
-    // 先复位运动请求，确保遥控无效或超时不会沿用上一周期输出
-    command->mode = CHASSIS_MODE_RELAX;
-    command->wheel_speed_scale_rpm = MOTOR_CHASSIS_SCALE_RPM;
-    command->move = (MoveVector_t)
-    {
-        0,
-    };
-    if (!dr16_state_cache_valid || !dr16_state_cache.header.online ||
-        now_us < dr16_state_cache.header.last_online_time ||
-        now_us - dr16_state_cache.header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
-    {
-        return;
-    }
-
-    // 对遥控通道限幅和去死区，再按拨杆枚举集中选择运动模式
-    // 上位和下位为运动档，摇杆回中时保持速度环并以零目标主动制动
-    const float lateral_channel = InputShaping_NormalizeChannel(dr16_state_cache.data.ch_l_x,
-        MOTOR_CHASSIS_DR16_CHANNEL_LIMIT, MOTOR_CHASSIS_DR16_DEADZONE);
-    const float forward_channel = InputShaping_NormalizeChannel(dr16_state_cache.data.ch_l_y,
-        MOTOR_CHASSIS_DR16_CHANNEL_LIMIT, MOTOR_CHASSIS_DR16_DEADZONE);
-    switch (dr16_state_cache.data.sw_l)
-    {
-        case DR16_SWITCH_UP:
-            command->mode = CHASSIS_MODE_INDEPENDENT;
-            command->move.vx = -forward_channel;
-            command->move.vy = lateral_channel;
-            break;
-
-        case DR16_SWITCH_DOWN:
-            command->mode = CHASSIS_MODE_INDEPENDENT;
-            command->move.vx = -forward_channel;
-            command->move.vy = lateral_channel;
-            command->move.wz = MOTOR_CHASSIS_DR16_SPIN_WZ;
-            break;
-
-        // 中位和异常拨杆作为停机档，关闭速度环并输出零电流
-        case DR16_SWITCH_MIDDLE:
-        case DR16_SWITCH_ERROR:
-        default:
-            break;
-    }
 }
 
 /**
