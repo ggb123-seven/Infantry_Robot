@@ -8,6 +8,8 @@
 #include "task/ins_task.h"
 #include "task/motor_chassis.h"
 #include "task/motor_gimbal.h"
+#include "task/motor_shoot.h"
+#include "task/motor_trigger.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -143,6 +145,56 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 三路电机反馈与两个模块的命令、输出各用独立邮箱，先于消费者任务完成创建
+    task_runtime.init_status = TASK_INIT_SHOOT_FRIC1_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_fric1_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.shoot_fric1_feedback == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_SHOOT_FRIC2_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_fric2_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.shoot_fric2_feedback == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_TRIGGER_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.trigger_feedback == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_SHOOT_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_command = osMessageQueueNew(1U, sizeof(Shoot_Command_t), NULL);
+    if (task_runtime.msgq.shoot_command == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_TRIGGER_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_command = osMessageQueueNew(1U, sizeof(Trigger_Command_t), NULL);
+    if (task_runtime.msgq.trigger_command == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_SHOOT_OUTPUT_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_output = osMessageQueueNew(1U, sizeof(Shoot_Output_t), NULL);
+    if (task_runtime.msgq.shoot_output == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_TRIGGER_OUTPUT_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_output = osMessageQueueNew(1U, sizeof(Trigger_Output_t), NULL);
+    if (task_runtime.msgq.trigger_output == NULL)
+    {
+        return false;
+    }
+
     // 创建独立 INS 任务，设备初始化在任务获得调度后执行
     task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
     task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
@@ -171,6 +223,21 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_GIMBAL_THREAD_FAILED;
     task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
     if (task_runtime.thread.motor_gimbal == NULL)
+    {
+        return false;
+    }
+
+    // 反馈、命令与输出邮箱就绪后创建两个独立业务任务
+    task_runtime.init_status = TASK_INIT_SHOOT_THREAD_FAILED;
+    task_runtime.thread.motor_shoot = osThreadNew(Task_motor_shoot, NULL, &attr_motor_shoot);
+    if (task_runtime.thread.motor_shoot == NULL)
+    {
+        return false;
+    }
+
+    task_runtime.init_status = TASK_INIT_TRIGGER_THREAD_FAILED;
+    task_runtime.thread.motor_trigger = osThreadNew(Task_motor_trigger, NULL, &attr_motor_trigger);
+    if (task_runtime.thread.motor_trigger == NULL)
     {
         return false;
     }
@@ -232,6 +299,22 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.motor_gimbal = NULL;
     }
+    if (task_runtime.thread.motor_trigger != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.motor_trigger) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.motor_trigger = NULL;
+    }
+    if (task_runtime.thread.motor_shoot != NULL)
+    {
+        if (osThreadTerminate(task_runtime.thread.motor_shoot) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.thread.motor_shoot = NULL;
+    }
     if (task_runtime.thread.can != NULL)
     {
         if (osThreadTerminate(task_runtime.thread.can) != osOK)
@@ -248,7 +331,63 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.thread.ins = NULL;
     }
-    // 观测邮箱与其他业务对象同样由统一装配入口创建和失败回收
+    // 业务任务终止后统一回收其全部反馈、命令与输出邮箱
+    if (task_runtime.msgq.trigger_output != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_output) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.trigger_output = NULL;
+    }
+    if (task_runtime.msgq.shoot_output != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_output) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_output = NULL;
+    }
+    if (task_runtime.msgq.trigger_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.trigger_command = NULL;
+    }
+    if (task_runtime.msgq.shoot_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_command = NULL;
+    }
+    if (task_runtime.msgq.trigger_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.trigger_feedback = NULL;
+    }
+    if (task_runtime.msgq.shoot_fric2_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_fric2_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_fric2_feedback = NULL;
+    }
+    if (task_runtime.msgq.shoot_fric1_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_fric1_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_fric1_feedback = NULL;
+    }
     if (task_runtime.msgq.chassis_gimbal != NULL)
     {
         if (osMessageQueueDelete(task_runtime.msgq.chassis_gimbal) != osOK)

@@ -170,8 +170,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
     if (pid_changed || previous_state != TRIGGER_RUNNING)
     {
         trigger->applied_speed_pid = trigger->config.speed_pid;
-        if (PID_Init(&trigger->speed_pid, KPID_MODE_CALC_D, trigger->frequency_hz,
-                     &trigger->applied_speed_pid) != 0)
+        if (PID_Init(&trigger->speed_pid, KPID_MODE_CALC_D, trigger->frequency_hz, &trigger->applied_speed_pid) != 0)
         {
             trigger->state = TRIGGER_FAULT;
             return;

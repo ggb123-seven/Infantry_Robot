@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-30",
+  "scope": "CAN2 device IDs, independent Shoot/Trigger modules and tasks",
+  "can2_feedback": {
+    "shoot_fric1": "0x205 / M3508 ID5",
+    "shoot_fric2": "0x206 / M3508 ID6",
+    "trigger": "0x207 / M2006 ID7",
+    "gimbal_yaw": "0x209 / GM6020 ID5",
+    "gimbal_pitch": "0x20A / GM6020 ID6"
+  },
+  "can2_current_frames": {
+    "shoot_trigger": "0x1FF",
+    "gimbal": "0x2FE"
+  },
+  "units": {
+    "shoot_speed": "rotor rpm",
+    "trigger_speed": "output rpm, gear ratio 36:1",
+    "current": "rotor A"
+  },
+  "device_regression": {
+    "commit": "d6c4dd1",
+    "mixed_cases": 10000,
+    "result": "PASS",
+    "coverage": [
+      "registration and bus",
+      "mixed protocol caches",
+      "both send orders",
+      "single-slot rewrite and full-group resend",
+      "current scales",
+      "reserved zero bytes",
+      "NaN",
+      "transmit failure retry",
+      "invalid feedback index and null"
+    ]
+  },
+  "module_regression": {
+    "command": "python build/shoot_sync_modules.py",
+    "production_components": [
+      "trigger.c",
+      "shoot.c",
+      "config.c",
+      "pid.c",
+      "filter.c",
+      "user_math.c"
+    ],
+    "result": "PASS",
+    "coverage": [
+      "zero-gain defaults",
+      "positive and negative targets",
+      "speed and current limits",
+      "PID parameter changes",
+      "100000/100001 us timeout",
+      "single friction wheel offline stops both",
+      "feedback recovery",
+      "32-bit microsecond wrap and stale cache",
+      "fault latch and disable recovery",
+      "invalid state and configuration",
+      "null inputs"
+    ]
+  },
+  "task_regression": {
+    "command": "python build/shoot_sync_tasks.py",
+    "result": "PASS",
+    "failed_creation_positions": 23,
+    "success_queues": 16,
+    "success_threads": 7,
+    "coverage": [
+      "actual initialization and cleanup",
+      "actual two control loops",
+      "missing commands",
+      "message get failure",
+      "output reset failure",
+      "invalid 333 Hz kernel frequency",
+      "tick counter wrap",
+      "CAN output merge and empty mailboxes",
+      "independent feedback routing"
+    ]
+  },
+  "build": {
+    "command": "python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug",
+    "result": "PASS",
+    "artifact": "build/Debug/Infantry_Robot.elf",
+    "ram_bytes": 43504,
+    "flash_bytes": 133620
+  },
+  "strict_arm_syntax": {
+    "flags": "-Wall -Wextra -Werror -fsyntax-only",
+    "files": [
+      "User/module/trigger.c",
+      "User/module/shoot.c",
+      "User/module/config.c",
+      "User/task/motor_trigger.c",
+      "User/task/motor_shoot.c",
+      "User/task/user_task.c",
+      "User/task/init.c",
+      "User/task/can_task.c"
+    ],
+    "result": "PASS"
+  },
+  "gates": {
+    "ARCH": "PASS",
+    "HW": "PASS",
+    "SPEC": "PASS",
+    "format": "PASS",
+    "Keil_XML_and_source_registration": "PASS"
+  },
+  "single_function_static_stack_bytes": {
+    "Task_motor_trigger": 96,
+    "Task_motor_shoot": 144,
+    "Task_can": 72
+  },
+  "not_performed": [
+    "hardware flashing",
+    "physical motor direction check",
+    "speed PID tuning",
+    "bullet speed calibration",
+    "real CAN latency",
+    "runtime stack high water mark",
+    "Keil compilation"
+  ],
+  "temporary_tests_cleaned": true,
+  "source_sha256": {
+    "User/device/can_devices.c": "4ae8663fea8c5b604942042932609a86c1eb42888c60465b28af760aeb39b868",
+    "User/device/can_devices.h": "9dba6c2a0012fc7ea84cf8e11dea3edb6ed8a768e218e9126a4c42965b5fbef1",
+    "User/device/motor_rm.c": "ffc95ed1c3d016e2b0b73255d7d98354a5ea9ecc44cf64d98a4eb65de9021026",
+    "User/device/motor_rm.h": "2a350ae5f088bc810b174507c54340d27edef1539d6819e4175aabc32d8cdf96",
+    "User/module/shoot.c": "14ac24b8ee6eccbe2e3c057396d489c96a01ed720d209b5031d071f695a10868",
+    "User/module/shoot.h": "4112d852d1aee81bead11ed4122f12054d8ae19c57a403bfc0057cc7a84662c6",
+    "User/module/trigger.c": "2d2dabc4fe05065c386b406e72751a13d7adc4dca0325a5bcf4fcc723482509d",
+    "User/module/trigger.h": "78db9608575c7e536f9180887485fe6fa856ead447175136563627bb710b7263",
+    "User/module/config.c": "2a6da2abf4a0dae67b2e08654f605c2280ec6f27c8ce100987c12c9c9b08ad88",
+    "User/module/config.h": "ff270ecc1cb1ff9b5298c4e0faea539be69a05a7acdc76c12c0051b6d6d48e32",
+    "User/task/motor_shoot.c": "383c85eb2c2b00a6eb301056e5727d1bdb54d6b7822ebcee4feecc179e732200",
+    "User/task/motor_shoot.h": "3d981d50b6fc790b20907b47088d4f2859b6d62618aa3c396b9a52993a987571",
+    "User/task/motor_trigger.c": "dc528509961b0541b1937b5e38c8859cc3a60cfaa1804bbb42359c80df25017c",
+    "User/task/motor_trigger.h": "deeb4146fdd604411eef2511a41c03665f3e3c576ef91f71804ac888dbaba26a",
+    "User/task/can_task.c": "f91bf61a1064d85d5b8a5730f8d252372a378ec7e471f6835eb278820ca47605",
+    "User/task/init.c": "c73c52b18167e774eba9d5bc597eb78c0bc3f7304fbecd4a7f1f9a92806963da",
+    "User/task/user_task.c": "5dce596be05817e3c856a690fed5b96dc2a3396d6b7a060f8a4738a173590a97",
+    "User/task/user_task.h": "138f8883800b0ab81d9a67588c96baa71fde32e339c187230a4aaa49ef658f43",
+    "CMakeLists.txt": "ad983d5dc92dae294c25296e414652b4c223361bae5c5c79661db6160f3c127f",
+    "MDK-ARM/Infantry_Robot.uvprojx": "4577000b46c6adf6cf44df9a62235875477ed509614b7909011fca7cc34326f5"
+  }
+}

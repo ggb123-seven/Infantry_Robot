@@ -91,6 +91,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/task/ins_task.c
     User/task/motor_chassis.c
     User/task/motor_gimbal.c
+    User/task/motor_shoot.c
+    User/task/motor_trigger.c
     User/task/user_task.c
 
     # 现有 LED 任务

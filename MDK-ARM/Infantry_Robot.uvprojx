@@ -626,6 +626,16 @@
               <FilePath>..\User\task\motor_gimbal.c</FilePath>
             </File>
             <File>
+              <FileName>motor_shoot.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\motor_shoot.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor_trigger.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\task\motor_trigger.c</FilePath>
+            </File>
+            <File>
               <FileName>ins_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\task\ins_task.c</FilePath>

@@ -33,6 +33,15 @@ extern "C"
 #define MOTOR_GIMBAL_INIT_DELAY (0U)
 
 /*
+ * 发射机构任务参数：MOTOR_SHOOT_FREQ、MOTOR_TRIGGER_FREQ 分别为双摩擦轮与拨弹频率，单位 Hz
+ * MOTOR_SHOOT_INIT_DELAY、MOTOR_TRIGGER_INIT_DELAY 为启动延时，单位内核节拍
+ */
+#define MOTOR_SHOOT_FREQ (500U)
+#define MOTOR_SHOOT_INIT_DELAY (0U)
+#define MOTOR_TRIGGER_FREQ (500U)
+#define MOTOR_TRIGGER_INIT_DELAY (0U)
+
+/*
  * INS 任务运行参数：
  * - INS_TASK_FREQ：BMI088 采集和姿态更新频率，单位赫兹
  * - INS_TASK_INIT_DELAY：INS 任务启动延时，单位内核节拍
@@ -66,6 +75,15 @@ typedef enum
     TASK_INIT_KERNEL_UNLOCK_FAILED,
     TASK_INIT_DR16_GIMBAL_MAILBOX_FAILED,
     TASK_INIT_CHASSIS_GIMBAL_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_FRIC1_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_FRIC2_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_COMMAND_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_COMMAND_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_OUTPUT_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_OUTPUT_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_THREAD_FAILED,
+    TASK_INIT_TRIGGER_THREAD_FAILED,
 } Task_InitStatus_t;
 
 /*
@@ -73,6 +91,8 @@ typedef enum
  * - thread.can：CAN 设备反馈采集和电流发送任务句柄
  * - thread.motor_chassis：底盘周期控制任务句柄
  * - thread.motor_gimbal：云台模块初始化与两轴周期控制任务句柄
+ * - thread.motor_shoot：双摩擦轮周期控制任务句柄
+ * - thread.motor_trigger：M2006 拨弹周期控制任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入、底盘任务读取
@@ -86,6 +106,14 @@ typedef enum
  * - msgq.gimbal_imu：长度为 1 的同帧惯性反馈邮箱，元素为 Gimbal_ImuFeedback_t，由 INS 任务写入、云台任务读取
  * - msgq.chassis_gimbal：长度为 1 的独立底盘观测邮箱，由底盘任务写入、云台任务读取
  *   元素为 Gimbal_ChassisFeedback_t，转速单位为 rad/s，源时间单位为微秒
+ * - msgq.shoot_fric1_feedback、shoot_fric2_feedback：CAN 任务到摩擦轮任务的独立最新反馈邮箱
+ *   元素为 MOTOR_RM_Feedback_t，转子速度单位 rpm，源时间单位微秒
+ * - msgq.trigger_feedback：CAN 任务到拨弹任务的最新反馈邮箱，元素为 MOTOR_RM_Feedback_t
+ *   转速为 36:1 减速后的输出轴 rpm，源时间单位微秒
+ * - msgq.shoot_command、trigger_command：对应任务的连续速度命令邮箱，元素为 Shoot_Command_t、Trigger_Command_t
+ *   当前没有自动命令发布者，容量均为 1，每个控制周期缺少新命令时失能
+ * - msgq.shoot_output、trigger_output：两个控制任务到 CAN 任务的最新电流邮箱，元素为 Shoot_Output_t、Trigger_Output_t
+ *   电流单位 A，容量均为 1，CAN 任务合并后只发送一次 0x1FF
  * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果
  */
 typedef struct
@@ -95,6 +123,8 @@ typedef struct
         osThreadId_t can;
         osThreadId_t motor_chassis;
         osThreadId_t motor_gimbal;
+        osThreadId_t motor_shoot;
+        osThreadId_t motor_trigger;
         osThreadId_t dr16;
         osThreadId_t ins;
     } thread;
@@ -109,6 +139,13 @@ typedef struct
         osMessageQueueId_t gimbal_output;
         osMessageQueueId_t gimbal_imu;
         osMessageQueueId_t chassis_gimbal;
+        osMessageQueueId_t shoot_fric1_feedback;
+        osMessageQueueId_t shoot_fric2_feedback;
+        osMessageQueueId_t trigger_feedback;
+        osMessageQueueId_t shoot_command;
+        osMessageQueueId_t trigger_command;
+        osMessageQueueId_t shoot_output;
+        osMessageQueueId_t trigger_output;
     } msgq;
     volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;
@@ -119,6 +156,8 @@ extern const osThreadAttr_t attr_init;
 extern const osThreadAttr_t attr_can;
 extern const osThreadAttr_t attr_motor_chassis;
 extern const osThreadAttr_t attr_motor_gimbal;
+extern const osThreadAttr_t attr_motor_shoot;
+extern const osThreadAttr_t attr_motor_trigger;
 extern const osThreadAttr_t attr_dr16;
 extern const osThreadAttr_t attr_ins;
 
