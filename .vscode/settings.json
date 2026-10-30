@@ -1,15 +1,22 @@
 {
     "editor.inlayHints.enabled": "off",
     "cmake.cmakePath": "cube-cmake",
-    "stm32cube-ide-clangd.path":  "cube",
-    "stm32cube-ide-clangd.arguments":  [
+    "stm32cube-ide-clangd.path": "cube",
+    "stm32cube-ide-clangd.arguments": [
         "starm-clangd",
         "--query-driver=${env:CUBE_BUNDLE_PATH}/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc*",
         "--query-driver=${env:CUBE_BUNDLE_PATH}/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-g++*"
     ],
-    "cortex-debug.JLinkGDBServerPath.windows":  "${env:LOCALAPPDATA}\\stm32cube\\bundles\\jlink-gdbserver\\9.24.0+st.1\\bin\\JLinkGDBServerCL.exe",
+    "cortex-debug.JLinkGDBServerPath.windows": "${env:LOCALAPPDATA}\\stm32cube\\bundles\\jlink-gdbserver\\9.24.0+st.1\\bin\\JLinkGDBServerCL.exe",
     "cortex-debug.JLinkGDBServerPath": "${env:LOCALAPPDATA}\\stm32cube\\bundles\\jlink-gdbserver\\9.24.0+st.1\\bin\\JLinkGDBServerCL.exe",
     "cmake.configureArgs": [
         "-DCMAKE_COMMAND=cube-cmake"
-    ]
+    ],
+    "python.analysis.extraPaths": [
+        "C:\\Users\\seven\\.kendryte\\k230_canmv_stubs\\2ed654466151c7333df8487852516258d7a9c299"
+    ],
+    "python.analysis.stubPath": "C:\\Users\\seven\\.kendryte\\k230_canmv_pylance\\7d8342b583d34153\\typings",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none"
+    }
 }
