@@ -11,3 +11,4 @@
 
 ## 沉淀（promote 回流）
 > REVIEW 阶段把"某类问题该考虑什么"的清单式经验沉淀于此（`task.py promote guides "..."`）。
+- [约定] INS 数据全零时先查 task_runtime.init_status 和 INS.module_state：INS.status 的 OK(0) 可能只是零初始化。2026-10-30 板上确认 TASK_INIT_SHOOT_THREAD_FAILED(27)，15360 字节 FreeRTOS 堆启动最低剩余 832 字节，创建 1024 字节栈失败后 Task_Init 回收全部业务对象，INS 尚未运行。DR16、射击和拨弹任务已提供独立静态控制块与 8 字节对齐的 1024 字节栈，构建及 ELF 布局验证通过，尚未烧录验收；详见 docs/workflows/2026-10-30_ins_startup_heap_fix.md
