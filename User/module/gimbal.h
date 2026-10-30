@@ -54,6 +54,20 @@ typedef enum
 } Gimbal_Mode_t;
 
 /*
+ * 底盘任务发布的运行状态，在线状态与已采纳的自旋命令共同决定：
+ * - GIMBAL_CHASSIS_OFFLINE：四个底盘电机全部无有效在线反馈，单独调试云台时也使用此值
+ * - GIMBAL_CHASSIS_ONLINE：至少一个底盘电机在线，未进入小陀螺
+ * - GIMBAL_CHASSIS_SPINNING：至少一个底盘电机在线，且底盘已采纳非零自旋命令
+ * 状态通过最新值邮箱传递，云台不直接读取底盘或遥控任务的全局变量
+ */
+typedef enum
+{
+    GIMBAL_CHASSIS_OFFLINE = 0,
+    GIMBAL_CHASSIS_ONLINE,
+    GIMBAL_CHASSIS_SPINNING,
+} Gimbal_ChassisState_t;
+
+/*
  * 单轴运行状态：
  * - GIMBAL_AXIS_RELAX：待机零输出，反馈和配置有效且命令非 RELAX 时进入运行
  * - GIMBAL_AXIS_RUNNING：闭环运行
@@ -273,16 +287,18 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  * @brief 根据命令更新两轴状态机并计算输出电流，yaw 悬空带转时单独撤驱
  *
  * 底盘四个电机持续全部离线时底座转速视为零，此时编码器与惯性转速持续不一致视为悬空带转并撤驱
- * 任一底盘电机在线时，异常高速按小陀螺处理，不检测悬空带转，也不按相对转速单独撤驱
+ * 电机在线且自旋命令已采纳时明确按小陀螺处理；在线未自旋单独标记，两种在线状态均不检测悬空带转
+ * 不按编码器相对转速单独撤驱
  * 撤驱只作用于 yaw，pitch 继续闭环，命令回到 RELAX 后解除并在下次起控时捕获当前姿态
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] command 只读云台命令，为 NULL 时按 RELAX 处理，起控及恢复时内部捕获姿态并清零前馈
- * @param[in] chassis_online 本周期底盘任一电机在线时为 true，云台单独调试时传 false
+ * @param[in] chassis_state 底盘任务发布的离线、在线未自旋或在线小陀螺状态
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chassis_online, float period_s);
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command,
+                    Gimbal_ChassisState_t chassis_state, float period_s);
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

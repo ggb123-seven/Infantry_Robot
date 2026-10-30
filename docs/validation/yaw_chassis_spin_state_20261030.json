@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-30",
+  "change": "底盘在线与小陀螺标志合并为三态枚举，经独立邮箱传给云台",
+  "source_files": [
+    "User/module/gimbal.c",
+    "User/module/gimbal.h",
+    "User/task/motor_chassis.c",
+    "User/task/motor_gimbal.c",
+    "User/task/init.c",
+    "User/task/user_task.h"
+  ],
+  "contract": {
+    "message_type": "Gimbal_ChassisState_t",
+    "states": {
+      "GIMBAL_CHASSIS_OFFLINE": "四轮均无有效在线反馈",
+      "GIMBAL_CHASSIS_ONLINE": "至少一轮在线，未采纳自旋命令",
+      "GIMBAL_CHASSIS_SPINNING": "至少一轮在线，底盘处于 INDEPENDENT 且已采纳命令 move.wz 非零"
+    },
+    "spin_source": "Cmd_ParseChassis 已校验的左拨杆下位命令",
+    "queue": "task_runtime.msgq.chassis_gimbal，长度 1，元素大小 sizeof(Gimbal_ChassisState_t)",
+    "consumer": "云台任务独占缓存，空邮箱保留状态，读取错误撤销为 OFFLINE",
+    "protection": "ONLINE 与 SPINNING 均清零离线确认；仅 OFFLINE 持续 1 s 后进入原悬空带转判定，15 rad/s 独立高速撤驱继续保持删除"
+  },
+  "checks": [
+    {
+      "command": "python .auto-embedded/scripts/check.py",
+      "result": "ARCH/HW/SPEC 全部通过"
+    },
+    {
+      "command": "cmake --build build/Debug --parallel",
+      "result": "最终增量 11/11 通过，无警告",
+      "ram_bytes": 46944,
+      "flash_bytes": 123760
+    },
+    {
+      "command": "沿用 compile_commands.json 的目标 ARM 参数，对 gimbal.c、motor_chassis.c、motor_gimbal.c、init.c 执行 -fsyntax-only -Wextra -Werror",
+      "result": "四个修改 C 文件全部通过，无诊断"
+    },
+    {
+      "command": "GCC -std=gnu11 -O0 -g -Wall -Wextra -Wno-int-to-pointer-cast 编译临时测试，纳入正式两任务源码并链接正式模块后运行",
+      "result": "35 项检查通过，无编译诊断",
+      "scope": "模拟 CMSIS-RTOS 邮箱与节拍，生产底盘和云台任务各运行完整周期；模块保护按 500 Hz 连续运行",
+      "cases": [
+        "底盘在线且左拨杆下位发布 SPINNING，云台消费完整状态",
+        "在线未自旋、待机、四轮离线分别发布对应状态，云台分别消费",
+        "空邮箱保留完整状态，读取错误撤销为 OFFLINE",
+        "遥控过期、轮反馈更新失败、电流发布失败不误报小陀螺",
+        "状态邮箱重置或写入失败时不宣称成功发布",
+        "ONLINE 与 SPINNING 分别覆盖 15、15.1、33、-33 rad/s 持续高速不撤驱",
+        "全离线确认窗口、持续悬空撤驱及 yaw 零输出保留",
+        "yaw 撤驱后 pitch 独立闭环，不计入设备锁存故障",
+        "小陀螺状态不自动解除 TRIPPED，RELAX 解除后重新起控",
+        "编码器与惯性高速一致不触发悬空带转",
+        "短时异常不撤驱，进入小陀螺时清空离线和带转计时",
+        "退出小陀螺保持在线不视为悬空，非法枚举走离线确认路径",
+        "小陀螺状态不绕过 IMU 非法数据及反馈超时检查"
+      ]
+    },
+    {
+      "command": "UTF-8/Allman/120 列/行尾空白扫描，git diff --check，生产者/消费者/创建处枚举类型核对",
+      "result": "全部通过"
+    }
+  ],
+  "manual_review": {
+    "architecture": "task 汇聚已校验命令及在线反馈，module 接收枚举，不跨任务读取裸全局状态",
+    "hardware": "机械门禁已核对 hw-lock，未改 .ioc、引脚、外设、DMA 或中断",
+    "concurrency": "消息使用一个枚举表达唯一状态，不新增结构体或共享布尔组合，不修改 ISR、临界区及配置快照",
+    "output": "保持 DumpOutput 唯一输出闸门，pitch 独立运行，配置副本与 PID 持久参数指针不变",
+    "validation_inventory": {
+      "added_null_checks": [],
+      "added_isfinite_checks": [],
+      "added_range_checks": [],
+      "added_protective_returns": [],
+      "added_business_condition": "在底盘发布边界依据已采纳模式与非零 move.wz 生成小陀螺标志，输入合法性由 Cmd_ParseChassis 和 Chassis_Control 已检查，下游不重复校验",
+      "removed_redundant_checks": []
+    }
+  },
+  "config_c_changed": false,
+  "temporary_test_files_cleaned": true,
+  "flashed": false,
+  "hardware_tested": false
+}

@@ -137,9 +137,9 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 底盘在线状态单独分发给云台，不与底盘控制任务争抢原 CAN 反馈邮箱
+    // 底盘在线与小陀螺共用状态邮箱，不与底盘控制任务争抢原 CAN 反馈邮箱
     task_runtime.init_status = TASK_INIT_CHASSIS_GIMBAL_MAILBOX_FAILED;
-    task_runtime.msgq.chassis_gimbal = osMessageQueueNew(1U, sizeof(bool), NULL);
+    task_runtime.msgq.chassis_gimbal = osMessageQueueNew(1U, sizeof(Gimbal_ChassisState_t), NULL);
     if (task_runtime.msgq.chassis_gimbal == NULL)
     {
         return false;

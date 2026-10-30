@@ -197,7 +197,8 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
     }
 }
 
-void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chassis_online, float period_s)
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command,
+                    Gimbal_ChassisState_t chassis_state, float period_s)
 {
     // 在线调参只在 Control 入口复制并校验，失败时不采纳快照中的任何字段
     const Gimbal_Config_t snapshot = *(const volatile Gimbal_Config_t *)&gimbal->config;
@@ -277,9 +278,19 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chas
         Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
     }
 
-    // 底盘电机在线时的异常高速按小陀螺处理，四个全部离线持续确认后才启用悬空带转检测
-    gimbal->chassis_offline_s = chassis_online ? 0.0f :
-        fminf(GIMBAL_CHASSIS_OFFLINE_TIME_S, gimbal->chassis_offline_s + period_s);
+    // 小陀螺由底盘在线与已采纳的自旋命令共同确认，在线未自旋不混同为小陀螺
+    switch (chassis_state)
+    {
+        case GIMBAL_CHASSIS_SPINNING:
+        case GIMBAL_CHASSIS_ONLINE:
+            gimbal->chassis_offline_s = 0.0f;
+            break;
+
+        case GIMBAL_CHASSIS_OFFLINE:
+        default:
+            gimbal->chassis_offline_s = fminf(GIMBAL_CHASSIS_OFFLINE_TIME_S, gimbal->chassis_offline_s + period_s);
+            break;
+    }
 
     // yaw 闭环后仅检查悬空带转，运行状态保证两种转速有限，撤驱在本周期输出闸门前生效
     const Gimbal_Axis_t *yaw = &gimbal->yaw;

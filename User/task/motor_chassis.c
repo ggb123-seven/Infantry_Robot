@@ -28,7 +28,7 @@ static bool dr16_state_cache_valid;
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
-static bool MotorChassis_PublishOnline(bool online);
+static bool MotorChassis_PublishState(void);
 
 /**
  * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布
@@ -83,8 +83,8 @@ void Task_motor_chassis(void *argument)
             Chassis_Control(&chassis, NULL, period_s);
         }
 
-        // 向云台发布底盘在线状态，云台据此决定是否检测悬空带转，不读取跨任务裸全局变量
-        MotorChassis_PublishOnline(Chassis_HasOnlineWheel(&chassis));
+        // 将底盘在线与已采纳的自旋标志合并发布，云台不读取跨任务裸全局变量
+        MotorChassis_PublishState();
 
         // 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源
         FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis,
@@ -142,13 +142,16 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 }
 
 /**
- * @brief 发布仅供云台消费的最新底盘在线状态
+ * @brief 发布仅供云台消费的底盘在线及小陀螺状态
  *
- * @param[in] online 本周期任一底盘电机在线时为 true
  * @return 邮箱覆盖写入成功时为真，失败时云台按邮箱为空保留上次状态
  */
-static bool MotorChassis_PublishOnline(bool online)
+static bool MotorChassis_PublishState(void)
 {
+    // 命令已由命令层校验，当前非零旋转分量只来自左拨杆下位的小陀螺映射
+    const bool spinning = chassis.mode == CHASSIS_MODE_INDEPENDENT && chassis_command.move.wz != 0.0f;
+    const Gimbal_ChassisState_t state = !Chassis_HasOnlineWheel(&chassis) ? GIMBAL_CHASSIS_OFFLINE :
+        (spinning ? GIMBAL_CHASSIS_SPINNING : GIMBAL_CHASSIS_ONLINE);
     const osMessageQueueId_t queue = task_runtime.msgq.chassis_gimbal;
-    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &online, 0U, 0U) == osOK;
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &state, 0U, 0U) == osOK;
 }

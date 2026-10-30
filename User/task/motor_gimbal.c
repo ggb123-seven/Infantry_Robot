@@ -47,7 +47,8 @@ static float sine_center_deg;
 static DR16_State_t remote_cache;
 static bool remote_cache_valid;
 static Cmd_Gimbal_t remote_command;
-static bool chassis_online_cache;
+// 底盘状态仅由本任务消费，零初始化对应离线，在线未自旋与在线小陀螺独立表示
+static Gimbal_ChassisState_t chassis_state_cache;
 
 static void MotorGimbal_ApplyDR16Input(float period_s);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
@@ -101,17 +102,17 @@ void Task_motor_gimbal(void *argument)
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
-            // 底盘在线状态独占邮箱，空邮箱保留上次状态，读取错误按离线处理并由模块去抖确认
-            bool received_online;
-            const osStatus_t chassis_status = osMessageQueueGet(task_runtime.msgq.chassis_gimbal, &received_online,
+            // 底盘在线与小陀螺共用同一状态快照，空邮箱保留上次状态，读取错误按离线确认
+            Gimbal_ChassisState_t received_state;
+            const osStatus_t chassis_status = osMessageQueueGet(task_runtime.msgq.chassis_gimbal, &received_state,
                                                                 NULL, 0U);
             if (chassis_status == osOK)
             {
-                chassis_online_cache = received_online;
+                chassis_state_cache = received_state;
             }
             else if (chassis_status != osErrorResource)
             {
-                chassis_online_cache = false;
+                chassis_state_cache = GIMBAL_CHASSIS_OFFLINE;
             }
 
             // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
@@ -119,8 +120,8 @@ void Task_motor_gimbal(void *argument)
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
             MotorGimbal_UpdateSineTest(period_s);
 #endif
-            // 按底盘在线状态执行两轴闭环与 yaw 撤驱保护，再导出两轴电流
-            Gimbal_Control(&gimbal, &gimbal_command, chassis_online_cache, period_s);
+            // 按底盘在线及小陀螺状态执行两轴闭环与 yaw 悬空保护，再导出两轴电流
+            Gimbal_Control(&gimbal, &gimbal_command, chassis_state_cache, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
         }
 
@@ -131,7 +132,7 @@ void Task_motor_gimbal(void *argument)
             {
                 .mode = GIMBAL_MODE_RELAX,
             };
-            Gimbal_Control(&gimbal, &relax_command, chassis_online_cache, period_s);
+            Gimbal_Control(&gimbal, &relax_command, chassis_state_cache, period_s);
             Cmd_ResetGimbal(&remote_command);
             gimbal_command.mode = GIMBAL_MODE_RELAX;
             gimbal_command.yaw.rate_rad_s = 0.0f;
