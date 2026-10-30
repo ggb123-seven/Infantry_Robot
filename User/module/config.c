@@ -1,6 +1,53 @@
 #include "module/config.h"
 
 /*
+ * 拨弹接入阶段默认配置：输出轴目标限幅 300 rpm，转子电流限幅 2 A
+ * 速度 PID 的 k=1、p/i/d=0，未调参时即使命令使能也保持零电流
+ * 积分限幅 20 rpm·s、输出限幅 2 A、微分截止 20 Hz、range=0
+ * 这些限幅仅作为初始调试边界，不表示已完成真实机构整定
+ */
+const Trigger_Config_t trigger_config =
+{
+    .max_speed_rpm = 300.0f,
+    .max_current_a = 2.0f,
+    .speed_pid =
+    {
+        .k = 1.0f,
+        .p = 0.0f,
+        .i = 0.0f,
+        .d = 0.0f,
+        .i_limit = 20.0f,
+        .out_limit = 2.0f,
+        .d_cutoff_freq = 20.0f,
+        .range = 0.0f,
+    },
+};
+
+/*
+ * 双摩擦轮接入阶段默认配置：转子目标限幅 8000 rpm，每轮转子电流限幅 3 A
+ * 两轮使用相同参数、独立控制历史，目标符号由各自命令指定
+ * 速度 PID 的 k=1、p/i/d=0，未调参时保持零电流
+ * 积分限幅 20 rpm·s、输出限幅 3 A、微分截止 20 Hz、range=0
+ * 尚未标定实际弹速，当前只提供独立转速命令接口
+ */
+const Shoot_Config_t shoot_config =
+{
+    .max_speed_rpm = 8000.0f,
+    .max_current_a = 3.0f,
+    .speed_pid =
+    {
+        .k = 1.0f,
+        .p = 0.0f,
+        .i = 0.0f,
+        .d = 0.0f,
+        .i_limit = 20.0f,
+        .out_limit = 3.0f,
+        .d_cutoff_freq = 20.0f,
+        .range = 0.0f,
+    },
+};
+
+/*
  * 轮速旋转标定系数，单位为每 rpm 对应的 rad/s
  * 来源为用户提供的《底盘几何与运动学参数清单》第 1 至 3 页，测量日期为 2026-09-22
  * 接地有效半径为 76.50 mm，轮心纵横偏距各 168.10 mm，径向轮轴对应切向滚动

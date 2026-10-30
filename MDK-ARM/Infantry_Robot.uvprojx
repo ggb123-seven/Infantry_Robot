@@ -721,6 +721,16 @@
               <FilePath>..\User\module\config.c</FilePath>
             </File>
             <File>
+              <FileName>shoot.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\shoot.c</FilePath>
+            </File>
+            <File>
+              <FileName>trigger.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\trigger.c</FilePath>
+            </File>
+            <File>
               <FileName>gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\bsp\gpio.c</FilePath>
