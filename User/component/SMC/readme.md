@@ -14,7 +14,7 @@ SMC_t YawSMC;
 
 void YawControl_Init(void)
 {
-    SMC_Init(&YawSMC, 20.0f, 120.0f, 0.0f, 0.001f, 21.0f, 27.0f, 25000.0f, 0.8f, 0.5f);
+SMC_Init(&YawSMC, 5.0f, 10.0f, 0.0f, 1.0f, 21.0f, 27.0f, 0.5f, 0.001f, 0.5f);
 }
 ```
 
@@ -22,15 +22,20 @@ void YawControl_Init(void)
 
 ```c
 YawSMC.target = target_angle;
-SMC_Tick(&YawSMC, angle_now, angle_vel);
+bool computed = SMC_Tick(&YawSMC, angle_now, angle_vel, target_speed, target_acceleration);
 ```
 
-角度单位为度，角速度单位为度每秒，输出为 `YawSMC.u`，电流指令尺度沿用原算法。
+角度单位为度，角速度单位为度每秒，角加速度单位为度每平方秒，`YawSMC.u` 的单位为安培。
+`target_speed` 与 `target_acceleration` 必须来自同一时刻的受限参考轨迹，由调用方按实际周期生成。
+`computed` 为假时必须进入故障并由模块输出闸门阻断输出，禁止使用上周期电流。
 输出应交给工程现有的通信链路；接入时检查反馈与电流输出的符号，避免正反馈。
 
-`error_eps` 必须大于零，`p` 必须非零，`u_max` 必须非负；其余参数沿用原控制律整定值。
-本次只做 C 语言迁移，保留原目标逐周期差分、死区提前返回及限幅逻辑；未新增采样周期参数。
+初始化和每周期在线调参边界先调用 `SMC_IsConfigValid`，计算函数信任已校验的参数与非空实例。
+`error_eps` 现表示近零连续过渡尺度，必须大于零，不再表示角度误差死区。
+过渡区使用三次多项式，与外侧幂函数同时匹配值和导数；零误差但存在速度误差时仍输出制动电流。
+保留全部 19 个字段及顺序，`target_dot`、`target_ddot` 现保存有物理单位的本周期参考导数。
+示例参数是本工程移植的未上板试验起点，不能视为原作者参数或已整定结果。
 数学函数使用 `<math.h>` 中的 `fabsf`、`powf`，GCC 链接时需要数学库 `m`。
-CMake 和 Keil 工程均已加入 `.c` 文件，目前业务模块尚未调用此控制器。
+CMake 和 Keil 工程均已加入 `.c` 文件，yaw 模块接入与验证见 `docs/workflows/2026-10-30_yaw_smc_implementation.md`。
 
 原作者：李欣睿、任轩呈、梅峻炜

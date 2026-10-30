@@ -1,19 +1,21 @@
 #ifndef SMC_H
 #define SMC_H
 
+#include <stdbool.h>
+
 /*
  * 滑模控制器实例，保留原类的全部字段及排列顺序
- * C：滑模面系数；K：趋近律增益，均按原控制律整定
- * target：目标角度，单位为度；error_eps：角度误差死区，单位为度，必须大于零
- * q、p：终端滑模幂指数的分子、分母，p 必须非零
- * u_max：输出绝对值上限，必须非负，单位与 u 相同；J：原控制律的等效惯量系数
+ * C：滑模面系数，单位每秒；K：趋近律增益，单位每秒
+ * target：参考角度，单位度；error_eps：近零连续过渡尺度，单位度，必须大于零，不再作为撤驱死区
+ * q、p：终端滑模幂指数的分子、分母，满足零小于 q/p 且 q/p 不超过一
+ * u_max：输出电流绝对值上限，单位安培，必须大于零；J：安培每度每平方秒的等效输出增益
  * angle：当前角度，单位为度；ang_vel：当前角速度，单位为度每秒
- * epsilon：饱和趋近项增益；u：控制输出，沿用原工程的电流指令尺度
- * error：当前角度误差，单位为度；error_last：原类保留的历史误差字段，当前算法未使用
- * target_dot、target_ddot：目标角度的一阶、二阶逐周期差分，未按采样周期归一化
+ * epsilon：饱和趋近项增益，单位度每平方秒；u：保护前电流，单位安培
+ * error、error_last：本周期及上周期的实际角减参考角，单位度
+ * target_dot、target_ddot：本周期参考角速度和角加速度，单位度每秒、度每平方秒
  * target_last：上一次完成计算的目标角度，单位为度
- * s：滑模面数值；ds：滑模面趋近律数值，均为算法内部状态
- * 原 private 字段在 C 中可见，由控制器维护，初始化时全部清零
+ * s：滑模变量，单位度每秒；ds：趋近律，单位度每平方秒
+ * 参数及运行状态仍沿用原字段布局，计算入口由调用方保证参数有效、指针非空
  */
 typedef struct
 {
@@ -40,18 +42,26 @@ typedef struct
 } SMC_t;
 
 /**
+ * @brief 在初始化或在线调参边界校验控制参数
+ *
+ * @param[in] smc 参数快照，调用方保证非空，仅检查参数字段
+ * @return 参数有限且满足正增益、正过渡尺度、合法幂指数及正电流上限时为真
+ */
+bool SMC_IsConfigValid(const SMC_t *smc);
+
+/**
  * @brief 设置控制参数并清零控制器历史状态，替代原 C++ 构造函数
  *
- * @param[out] smc 控制器实例，空指针时不执行操作
- * @param[in] C 滑模面系数，沿用原控制律整定值
- * @param[in] K 趋近律增益，沿用原控制律整定值
+ * @param[out] smc 控制器实例，调用方保证非空且所有参数已经校验
+ * @param[in] C 滑模面系数，单位每秒
+ * @param[in] K 趋近律增益，单位每秒
  * @param[in] ref 初始目标角度，单位为度
- * @param[in] error_eps 角度误差死区，单位为度，必须大于零
+ * @param[in] error_eps 近零连续过渡尺度，单位度，必须大于零
  * @param[in] q 终端滑模幂指数的分子
- * @param[in] p 终端滑模幂指数的分母，必须非零
- * @param[in] u_max 输出绝对值上限，必须非负，单位与输出相同
- * @param[in] J 等效惯量系数，沿用原控制律整定值
- * @param[in] epsilon 饱和趋近项增益，沿用原控制律整定值
+ * @param[in] p 终端滑模幂指数的分母，必须不小于正分子
+ * @param[in] u_max 正电流限幅，单位安培
+ * @param[in] J 正等效输出增益，单位安培每度每平方秒
+ * @param[in] epsilon 非负趋近项增益，单位度每平方秒
  * @return 无返回值
  */
 void SMC_Init(SMC_t *smc, float C, float K, float ref, float error_eps,
@@ -60,11 +70,13 @@ void SMC_Init(SMC_t *smc, float C, float K, float ref, float error_eps,
 /**
  * @brief 执行一次滑模控制计算，将输出保存到 smc->u
  *
- * @param[in,out] smc 已初始化的控制器实例，空指针时不执行操作
+ * @param[in,out] smc 已初始化的控制器实例，调用方保证非空、参数有效且参考角度已更新
  * @param[in] angle_now 当前角度，单位为度
  * @param[in] angle_vel 当前角速度，单位为度每秒
- * @return 无返回值
+ * @param[in] target_speed 同时刻参考角速度，单位度每秒，由调用方按实际周期生成
+ * @param[in] target_acceleration 同时刻参考角加速度，单位度每平方秒
+ * @return 计算成功为真；浮点运算异常为假，由调用方进入故障并阻断输出
  */
-void SMC_Tick(SMC_t *smc, float angle_now, float angle_vel);
+bool SMC_Tick(SMC_t *smc, float angle_now, float angle_vel, float target_speed, float target_acceleration);
 
 #endif

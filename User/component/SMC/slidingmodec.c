@@ -8,33 +8,35 @@
 #include <string.h>
 
 /**
- * @brief 将滑模面数值饱和限制在原控制律的单位边界层内
+ * @brief 将滑模变量限制在固定单位边界层，避免零点硬切换
  *
- * @param[in] y 待限制的滑模面数值
- * @return 位于负一到正一之间的饱和值
+ * @param[in] y 滑模变量，单位度每秒
+ * @return 范围为负一到正一的饱和值
  */
 static float SMC_Sat(float y)
 {
-    if (fabsf(y) <= 1.0f)
-    {
-        return y;
-    }
-    return y > 0.0f ? 1.0f : -1.0f;
+    return fminf(1.0f, fmaxf(-1.0f, y));
+}
+
+bool SMC_IsConfigValid(const SMC_t *smc)
+{
+    // 在线调参可写入零分母或非有限值，统一在调用边界拒绝，计算函数不重复校验
+    return isfinite(smc->C) && smc->C > 0.0f && isfinite(smc->K) && smc->K >= 0.0f &&
+           isfinite(smc->error_eps) && smc->error_eps > 0.0f &&
+           isfinite(smc->q) && isfinite(smc->p) && smc->q > 0.0f && smc->p >= smc->q &&
+           smc->q / smc->p > 0.0f && isfinite(smc->u_max) && smc->u_max > 0.0f &&
+           isfinite(smc->J) && smc->J > 0.0f && isfinite(smc->epsilon) && smc->epsilon >= 0.0f;
 }
 
 void SMC_Init(SMC_t *smc, float C, float K, float ref, float error_eps,
               float q, float p, float u_max, float J, float epsilon)
 {
-    if (smc == NULL)
-    {
-        return;
-    }
-
-    // 清除历史状态，使局部实例和静态实例具有一致的初始行为
+    // 调用方保证实例有效及参数已经校验，初始化只建立参数与历史
     memset(smc, 0, sizeof(*smc));
     smc->C = C;
     smc->K = K;
     smc->target = ref;
+    smc->target_last = ref;
     smc->error_eps = error_eps;
     smc->q = q;
     smc->p = p;
@@ -43,63 +45,47 @@ void SMC_Init(SMC_t *smc, float C, float K, float ref, float error_eps,
     smc->epsilon = epsilon;
 }
 
-void SMC_Tick(SMC_t *smc, float angle_now, float angle_vel)
+bool SMC_Tick(SMC_t *smc, float angle_now, float angle_vel, float target_speed, float target_acceleration)
 {
-    float e_qp;
-    float qp;
-    float error_dot;
-
-    if (smc == NULL)
-    {
-        return;
-    }
-
-    // 沿用原算法的目标逐周期差分和反馈计算顺序
+    // 参考导数由模块按实际周期生成，先使用本周期参考，避免旧导数滞后一拍
     smc->angle = angle_now;
     smc->ang_vel = angle_vel;
-    qp = smc->q / smc->p;
-    smc->error = smc->angle - smc->target;
-    error_dot = smc->ang_vel - smc->target_dot;
-    smc->target_ddot = (smc->target - smc->target_last) - smc->target_dot;
-    smc->target_dot = smc->target - smc->target_last;
+    smc->error_last = smc->error;
+    smc->error = angle_now - smc->target;
+    smc->target_dot = target_speed;
+    smc->target_ddot = target_acceleration;
+    const float error_dot = angle_vel - target_speed;
+    const float ratio = smc->q / smc->p;
+    const float normalized_error = fabsf(smc->error) / smc->error_eps;
+    float surface_error;
+    float surface_derivative;
 
-    // 误差进入死区时保持原算法的零输出及提前返回行为
-    if (fabsf(smc->error) < smc->error_eps)
+    // 近零三次多项式在过渡点同时匹配幂函数的值和一阶导数，不以角度死区撤掉制动
+    if (normalized_error < 1.0f)
     {
-        smc->u = 0.0f;
-        return;
-    }
-
-    // 使用浮点绝对值和幂函数保留原 C++ 浮点运算语义
-    if (smc->error < 0.0f)
-    {
-        e_qp = -powf(fabsf(smc->error), qp);
+        const float t = normalized_error;
+        surface_error = smc->error * (1.0f + (ratio - 1.0f) * t * (t - 1.0f));
+        surface_derivative = 1.0f + (ratio - 1.0f) * (3.0f * t * t - 2.0f * t);
     }
     else
     {
-        e_qp = powf(fabsf(smc->error), qp);
+        const float power = powf(normalized_error, ratio);
+        surface_error = copysignf(smc->error_eps * power, smc->error);
+        surface_derivative = ratio * power / normalized_error;
     }
 
-    smc->s = error_dot + smc->C * e_qp;
-    smc->ds = -smc->epsilon * SMC_Sat(smc->s) - smc->K * smc->s;
-    smc->u = smc->J * (smc->target_ddot + smc->ds - smc->C * qp * error_dot * e_qp / smc->error);
+    // 实际值减参考值配合负反馈趋近律，等效增益将角加速度换算为安培
+    smc->s = error_dot + smc->C * surface_error;
+    smc->ds = -smc->K * smc->s - smc->epsilon * SMC_Sat(smc->s);
+    const float current_a = smc->J * (target_acceleration + smc->ds -
+                                     smc->C * surface_derivative * error_dot);
 
-    // 小于一度时沿用原算法的线性滑模面，减小近零误差的非线性影响
-    if (fabsf(smc->error) < 1.0f)
+    // 浮点运算可能溢出，限幅前检查计算链出口，避免饱和函数吞掉非数值
+    if (!isfinite(current_a))
     {
-        smc->error = smc->angle - smc->target;
-        smc->s = smc->C * smc->error + error_dot;
-        smc->u = smc->J * (smc->target_ddot - smc->C * error_dot - smc->epsilon * SMC_Sat(smc->s) - smc->K * smc->s);
+        return false;
     }
-
-    // 限制输出并保存下一周期需要的目标历史值
-    if (smc->u > smc->u_max)
-    {
-        smc->u = smc->u_max;
-    }
-    if (smc->u < -smc->u_max)
-    {
-        smc->u = -smc->u_max;
-    }
+    smc->u = fminf(smc->u_max, fmaxf(-smc->u_max, current_a));
     smc->target_last = smc->target;
+    return true;
 }
