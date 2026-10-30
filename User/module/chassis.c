@@ -7,13 +7,6 @@
 // 控制周期上限取自底盘重构方案，超过 100 ms 时禁止追赶计算
 #define CHASSIS_MAX_PERIOD_S (0.1F)
 
-/*
- * 独立轮速观测的初始时效约束：帧龄不超过 20 毫秒，四轮源时间跨度不超过 4 毫秒
- * 时间来自设备解码时刻，不代表电机内部采样时刻，实际总线延迟仍需录波核对
- */
-#define CHASSIS_MOTION_MAX_AGE_US (20000U)
-#define CHASSIS_MOTION_MAX_SKEW_US (4000U)
-
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
@@ -165,61 +158,22 @@ void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output)
 }
 
 /**
- * @brief 从四轮源反馈生成旋转观测，不使用云台同源数据校正轮速
+ * @brief 查询本周期是否至少一轮取得有效在线反馈，接口说明见头文件
  *
- * @param[in] chassis 已完成本周期控制的底盘实例，调用方保证非空
- * @param[in] can 本周期独立反馈快照，可为空
- * @param[in] mode 有效命令的旋转意图，未知值输出无效观测
- * @param[in] rad_s_per_rpm 平均轮速到车体转速的有限正标定系数
- * @param[in] now_us 读取反馈后的当前时间，单位微秒
- * @param[out] feedback 输出完整观测，调用方保证非空，失败时有效标志为假
- * @return 无返回值
+ * @param[in] chassis 已完成本周期反馈更新的底盘实例，调用方保证非空
+ * @return 任一轮实测转速有效时返回 true
  */
-void Chassis_DumpGimbalFeedback(const Chassis_t *chassis, const CANDevices_Snapshot_t *can,
-                                Gimbal_ChassisMotion_t mode, float rad_s_per_rpm, uint64_t now_us,
-                                Gimbal_ChassisFeedback_t *feedback)
+bool Chassis_HasOnlineWheel(const Chassis_t *chassis)
 {
-    // 每周期先撤销有效性，未标定、来源缺失和不支持的布局不得沿用旧观测
-    *feedback = (Gimbal_ChassisFeedback_t)
-    {
-        .mode = mode,
-    };
-    if (can == NULL || !chassis->initialized || !chassis->config_valid ||
-        !can->initialized || chassis->mixer.mode != MIXER_OMNICROSS ||
-        (unsigned)mode >= GIMBAL_CHASSIS_MOTION_UNKNOWN ||
-        !isfinite(rad_s_per_rpm) || rad_s_per_rpm <= 0.0f)
-    {
-        return;
-    }
-
-    // 逐轮检查独立源时间与反馈状态，低位时间戳允许跨越微秒计数器回绕
-    uint64_t oldest_us = now_us;
-    uint64_t newest_us = 0U;
-    float measured_sum_rpm = 0.0f;
-    float requested_sum_rpm = 0.0f;
+    // 反馈入口已把离线、更新失败及缺少快照的轮速写为非数值，此处不重复检查 CAN 状态
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
-        const uint32_t age_us = (uint32_t)now_us - can->feedback_time_us[i];
-        const Chassis_Wheel_t *wheel = &chassis->wheel[i];
-        if (!can->motor_online[i] || can->feedback_update_status[i] != DEVICE_OK ||
-            age_us > CHASSIS_MOTION_MAX_AGE_US || now_us < age_us)
+        if (isfinite(chassis->wheel[i].measured_speed_rpm))
         {
-            return;
+            return true;
         }
-        const uint64_t source_us = now_us - age_us;
-        oldest_us = source_us < oldest_us ? source_us : oldest_us;
-        newest_us = source_us > newest_us ? source_us : newest_us;
-        measured_sum_rpm += can->actual_speed_rpm[i];
-        requested_sum_rpm += wheel->state == CHASSIS_WHEEL_RUNNING ? wheel->target_speed_rpm : 0.0f;
     }
-
-    // 对称十字全向布局的平移项在四轮求和后抵消，目标使用限幅及斜坡后的实际值
-    feedback->measured_speed_rad_s = 0.25f * measured_sum_rpm * rad_s_per_rpm;
-    feedback->requested_speed_rad_s = 0.25f * requested_sum_rpm * rad_s_per_rpm;
-    feedback->oldest_sample_time_us = oldest_us;
-    feedback->newest_sample_time_us = newest_us;
-    feedback->valid = newest_us - oldest_us <= CHASSIS_MOTION_MAX_SKEW_US &&
-        isfinite(feedback->measured_speed_rad_s) && isfinite(feedback->requested_speed_rad_s);
+    return false;
 }
 
 /**

@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <string.h>
 #include "component/user_math.h"
-#include "module/gimbal_governor.h"
 
 /*
  * 参数沿用合并前值：周期上限 0.1 秒、PID 增益上限 1000；rpm 按每分钟 60 秒、每圈 2π 换算，完整一圈为 360 度
@@ -16,6 +15,21 @@
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
+
+/*
+ * yaw 撤驱保护阈值，均为待实物确认的起点：
+ * - SPIN_RAD_S、SPIN_TIME_S：编码器相对转速超过 15 rad/s 持续 0.05 s 判为疯转
+ *   遥控命令上限 6 rad/s、当前小陀螺约 1 rad/s、GM6020 空载约 33 rad/s，阈值位于两者之间
+ * - DRAG_RAD_S、DRAG_IMU_STILL_RAD_S、DRAG_TIME_S：底盘离线时编码器与惯性转速差超过 1 rad/s
+ *   且上部惯性转速低于 0.3 rad/s，持续 0.15 s 判为悬空带转，沿用原低速检测阈值
+ * - CHASSIS_OFFLINE_TIME_S：四个底盘电机全部离线持续 1 s 才启用悬空带转检测，覆盖小陀螺掉线后的惯性滑转
+ */
+#define GIMBAL_YAW_SPIN_RAD_S (15.0f)
+#define GIMBAL_YAW_SPIN_TIME_S (0.05f)
+#define GIMBAL_YAW_DRAG_RAD_S (1.0f)
+#define GIMBAL_YAW_DRAG_IMU_STILL_RAD_S (0.3f)
+#define GIMBAL_YAW_DRAG_TIME_S (0.15f)
+#define GIMBAL_CHASSIS_OFFLINE_TIME_S (1.0f)
 
 static void Gimbal_RejectAxisFeedback(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
 static void Gimbal_InvalidateImu(Gimbal_t *gimbal);
@@ -34,10 +48,10 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
 static void Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
 static void Gimbal_EnterRunning(Gimbal_Axis_t *axis);
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisSetpoint_t *command, float period_s, bool motion_governed);
+                           const Gimbal_AxisSetpoint_t *command, float period_s);
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed, bool imu_ready);
+                               bool imu_ready);
 
 /**
  * @brief 将有限角度环绕到单圈区间
@@ -143,7 +157,6 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     {
         return -1;
     }
-    GimbalGovernor_InitYaw(&gimbal->yaw);
     return 0;
 }
 
@@ -188,8 +201,7 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
     }
 }
 
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chassis_online, float period_s)
 {
     // 在线调参只在 Control 入口复制并校验，失败时不采纳快照中的任何字段
     const Gimbal_Config_t snapshot = *(const volatile Gimbal_Config_t *)&gimbal->config;
@@ -249,13 +261,11 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
         }
     }
 
-    // yaw 保护先跟随当前姿态再捕获新目标，校验失败仍走原故障停机路径，pitch 独立控制
+    // 两轴独立推进状态机，非法目标只使对应轴进入故障
     const bool imu_ready = gimbal->imu_state == GIMBAL_IMU_READY;
-    if (yaw_valid && GimbalGovernor_PrepareYawWithChassis(gimbal, mode, &gimbal->yaw.setpoint,
-                                                        chassis, now_us, period_s))
+    if (yaw_valid)
     {
-        Gimbal_ControlAxis(&gimbal->yaw, &snapshot.yaw, mode, mode_changed,
-                           &gimbal->yaw.setpoint, period_s, true, imu_ready);
+        Gimbal_ControlAxis(&gimbal->yaw, &snapshot.yaw, mode, mode_changed, &gimbal->yaw.setpoint, period_s, imu_ready);
     }
     else
     {
@@ -264,11 +274,29 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
     if (pitch_valid)
     {
         Gimbal_ControlAxis(&gimbal->pitch, &snapshot.pitch, mode, mode_changed, &gimbal->pitch.setpoint,
-                           period_s, false, imu_ready);
+                           period_s, imu_ready);
     }
     else
     {
         Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
+    }
+
+    // 任一底盘电机在线即可能主动旋转，四个全部离线持续确认后底座转速才视为零
+    gimbal->chassis_offline_s = chassis_online ? 0.0f :
+        fminf(GIMBAL_CHASSIS_OFFLINE_TIME_S, gimbal->chassis_offline_s + period_s);
+
+    // yaw 闭环后检查疯转与悬空带转，运行状态保证两种转速有限，撤驱在本周期输出闸门前生效
+    const Gimbal_Axis_t *yaw = &gimbal->yaw;
+    const bool running = yaw->state == GIMBAL_AXIS_RUNNING;
+    const bool spinning = running && fabsf(yaw->motor_speed_rad_s) > GIMBAL_YAW_SPIN_RAD_S;
+    const bool dragged = running && gimbal->chassis_offline_s >= GIMBAL_CHASSIS_OFFLINE_TIME_S &&
+        fabsf(yaw->motor_speed_rad_s - yaw->speed_rad_s) > GIMBAL_YAW_DRAG_RAD_S &&
+        fabsf(yaw->speed_rad_s) < GIMBAL_YAW_DRAG_IMU_STILL_RAD_S;
+    gimbal->yaw_spin_s = spinning ? gimbal->yaw_spin_s + period_s : 0.0f;
+    gimbal->yaw_drag_s = dragged ? gimbal->yaw_drag_s + period_s : 0.0f;
+    if (gimbal->yaw_spin_s >= GIMBAL_YAW_SPIN_TIME_S || gimbal->yaw_drag_s >= GIMBAL_YAW_DRAG_TIME_S)
+    {
+        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_TRIPPED);
     }
     gimbal->mode = mode;
 }
@@ -447,11 +475,10 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
  * @param[in] mode 控制模式，只能为 SPEED 或 ANGLE
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
- * @param[in] motion_governed 为 true 时按 yaw 转速残差限制电流，pitch 传 false
  * @return 计算成功返回 true；反馈失联、命令或周期非法、计算结果异常时返回 false
  */
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisSetpoint_t *command, float period_s, bool motion_governed)
+                           const Gimbal_AxisSetpoint_t *command, float period_s)
 {
     // 调用方已保证反馈就绪、命令合法及周期有效，本层只执行控制计算
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
@@ -499,11 +526,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // 制动及目标跟随时暂停姿态纠偏，捕获新目标后平滑恢复速度权限
-    if (motion_governed)
-    {
-        target_speed_rad_s = GimbalGovernor_LimitSpeed(target_speed_rad_s);
-    }
     // 速度环输出电流，非有限结果视为计算异常
     const float previous_speed_integral = axis->speed_pid.i;
     const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
@@ -513,12 +535,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     }
     axis->target_speed_rad_s = target_speed_rad_s;
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
-    const float candidate_a = axis->output_current_a;
-    if (motion_governed)
-    {
-        axis->output_current_a = GimbalGovernor_ControlCurrent(axis->motor_speed_rad_s, axis->speed_rad_s,
-                                                              candidate_a, config->max_current_a, period_s);
-    }
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
         ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
@@ -527,11 +543,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         axis->output_current_a = 0.0f;
         axis->speed_pid.i = previous_speed_integral;
         mechanically_limited = true;
-    }
-    // 用机械边界处理后的实际电流反算，避免下游阻断制动后仍按未执行的电流调整积分
-    if (motion_governed)
-    {
-        GimbalGovernor_TrackCurrent(axis, candidate_a, previous_speed_integral, previous_angle_integral, period_s);
     }
     if (mechanically_limited)
     {
@@ -549,13 +560,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
  * @param[in] mode_changed 本周期模式与上一周期不同时为 true
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
- * @param[in] motion_governed 为 true 时启用 yaw 残差电流包络
  * @param[in] imu_ready 共用惯性源本周期已经通过反馈边界校验
  * @return 无返回值
  */
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed, bool imu_ready)
+                               bool imu_ready)
 {
     // 参数已由 Control 入口同步，此处仅依据运行请求和明确反馈状态推进状态机
     const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
@@ -578,7 +588,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
                 break;
             }
             Gimbal_EnterRunning(axis);
-            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
+            if (!Gimbal_RunAxis(axis, config, mode, command, period_s))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
@@ -595,15 +605,16 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
             {
                 Gimbal_EnterRunning(axis);
             }
-            if (!feedback_ready || !Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
+            if (!feedback_ready || !Gimbal_RunAxis(axis, config, mode, command, period_s))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
             break;
 
-        // 故障锁存至命令回到 RELAX，避免反馈恢复后在未知位置自动重新出力
+        // 故障与保护撤驱均锁存至命令回到 RELAX，避免反馈恢复后在未知位置自动重新出力
         case GIMBAL_AXIS_FAULT:
-            Gimbal_StopAxis(axis, mode == GIMBAL_MODE_RELAX ? GIMBAL_AXIS_RELAX : GIMBAL_AXIS_FAULT);
+        case GIMBAL_AXIS_TRIPPED:
+            Gimbal_StopAxis(axis, mode == GIMBAL_MODE_RELAX ? GIMBAL_AXIS_RELAX : axis->state);
             break;
 
         default:
@@ -661,6 +672,7 @@ static void Gimbal_RejectAxisFeedback(Gimbal_Axis_t *axis, Gimbal_AxisState_t ne
             break;
         case GIMBAL_AXIS_RELAX:
         case GIMBAL_AXIS_FAULT:
+        case GIMBAL_AXIS_TRIPPED:
             break;
         default:
             Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
@@ -864,7 +876,7 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
  * @brief 清空两环历史及输出，进入指定停止状态
  *
  * @param[in,out] axis 单轴运行数据
- * @param[in] next_state RELAX、OFFLINE 或 FAULT，其他值按 FAULT 处理
+ * @param[in] next_state RELAX、OFFLINE、TRIPPED 或 FAULT，其他值按 FAULT 处理
  * @return 无返回值
  */
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
@@ -874,5 +886,6 @@ static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state)
     axis->target_angle_deg = NAN;
     axis->target_speed_rad_s = 0.0f;
     axis->output_current_a = 0.0f;
-    axis->state = next_state == GIMBAL_AXIS_RELAX || next_state == GIMBAL_AXIS_OFFLINE ? next_state : GIMBAL_AXIS_FAULT;
+    axis->state = next_state == GIMBAL_AXIS_RELAX || next_state == GIMBAL_AXIS_OFFLINE ||
+        next_state == GIMBAL_AXIS_TRIPPED ? next_state : GIMBAL_AXIS_FAULT;
 }

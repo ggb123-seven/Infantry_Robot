@@ -119,8 +119,8 @@ typedef enum
  * - 两个云台反馈邮箱的速度单位为 rpm、时间戳单位为微秒，均由 Task_motor_gimbal 消费
  * - msgq.gimbal_output：长度为 1 的云台输出邮箱，元素为 Gimbal_Output_t，单位 A，由云台任务写入、CAN 任务读取
  * - msgq.gimbal_imu：长度为 1 的同帧惯性反馈邮箱，元素为 Gimbal_ImuFeedback_t，由 INS 任务写入、云台任务读取
- * - msgq.chassis_gimbal：长度为 1 的独立底盘观测邮箱，由底盘任务写入、云台任务读取
- *   元素为 Gimbal_ChassisFeedback_t，转速单位为 rad/s，源时间单位为微秒
+ * - msgq.chassis_gimbal：长度为 1 的底盘在线状态邮箱，由底盘任务写入、云台任务读取
+ *   元素为 bool，任一底盘电机在线时为 true
  * - msgq.shoot_fric1_feedback、shoot_fric2_feedback：CAN 任务到摩擦轮任务的独立最新反馈邮箱
  *   元素为 MOTOR_RM_Feedback_t，转子速度单位 rpm，源时间单位微秒
  * - msgq.trigger_feedback：CAN 任务到拨弹任务的最新反馈邮箱，元素为 MOTOR_RM_Feedback_t

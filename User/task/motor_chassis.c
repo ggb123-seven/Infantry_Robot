@@ -28,7 +28,7 @@ static bool dr16_state_cache_valid;
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
-static bool MotorChassis_PublishGimbalFeedback(const Gimbal_ChassisFeedback_t *feedback);
+static bool MotorChassis_PublishOnline(bool online);
 
 /**
  * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布
@@ -68,9 +68,7 @@ void Task_motor_chassis(void *argument)
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
-        const bool remote_valid = Cmd_ParseChassis(
-            &dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
-        Gimbal_ChassisMotion_t motion = Cmd_ParseChassisMotion(&dr16_state_cache, remote_valid);
+        Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =
@@ -83,14 +81,10 @@ void Task_motor_chassis(void *argument)
         {
             // 发布失败时 CAN 任务空邮箱归零，本地同步复位，避免未执行电流期间积累控制历史
             Chassis_Control(&chassis, NULL, period_s);
-            motion = GIMBAL_CHASSIS_MOTION_UNKNOWN;
         }
 
-        // 发布独立轮速观测，失败时云台按源时间超时撤驱，不读取跨任务裸全局变量
-        Gimbal_ChassisFeedback_t gimbal_feedback;
-        Chassis_DumpGimbalFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL, motion,
-                                   chassis_yaw_rad_s_per_rpm, BSP_TIME_Get(), &gimbal_feedback);
-        MotorChassis_PublishGimbalFeedback(&gimbal_feedback);
+        // 向云台发布底盘在线状态，云台据此决定是否检测悬空带转，不读取跨任务裸全局变量
+        MotorChassis_PublishOnline(Chassis_HasOnlineWheel(&chassis));
 
         // 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源
         FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis,
@@ -148,13 +142,13 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 }
 
 /**
- * @brief 发布仅供云台消费的最新底盘旋转观测
+ * @brief 发布仅供云台消费的最新底盘在线状态
  *
- * @param[in] feedback 本周期完整观测，包含源时间与有效性
- * @return 邮箱覆盖写入成功时为真，否则为假
+ * @param[in] online 本周期任一底盘电机在线时为 true
+ * @return 邮箱覆盖写入成功时为真，失败时云台按邮箱为空保留上次状态
  */
-static bool MotorChassis_PublishGimbalFeedback(const Gimbal_ChassisFeedback_t *feedback)
+static bool MotorChassis_PublishOnline(bool online)
 {
     const osMessageQueueId_t queue = task_runtime.msgq.chassis_gimbal;
-    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, feedback, 0U, 0U) == osOK;
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &online, 0U, 0U) == osOK;
 }

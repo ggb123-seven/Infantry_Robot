@@ -40,15 +40,6 @@ typedef struct
 bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out);
 
 /**
- * @brief 从有效遥控快照解析底盘旋转意图，预留跟随模式但不映射拨杆
- *
- * @param[in] rc 最近遥控快照，调用方保证非空
- * @param[in] input_valid 同一周期命令解析返回的输入有效性，调用方保证已检查时效
- * @return 下位返回小陀螺，上位和中位返回无主动旋转，非法或超时返回未知
- */
-Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool input_valid);
-
-/**
  * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
  *
  * @param[in,out] ctx 云台任务独占上下文，调用方保证非空

@@ -11,7 +11,6 @@ extern "C"
 
 #include "component/pid.h"
 #include "device/motor_rm.h"
-#include "module/chassis_motion.h"
 
 /*
  * 云台单圈角度展开器状态，角度单位为度，单圈周期为 360 度：
@@ -60,6 +59,8 @@ typedef enum
  * - GIMBAL_AXIS_RUNNING：闭环运行
  * - GIMBAL_AXIS_FAULT：反馈非法、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
  * - GIMBAL_AXIS_OFFLINE：电机反馈超时，单轴零输出等待，有效反馈恢复且运行请求有效时自动起控
+ * - GIMBAL_AXIS_TRIPPED：仅 yaw 使用，疯转或悬空带转保护撤驱，零输出锁存至命令回到 RELAX
+ *   不计入锁存故障，遥控保持使能，pitch 继续闭环
  */
 typedef enum
 {
@@ -67,6 +68,7 @@ typedef enum
     GIMBAL_AXIS_RUNNING,
     GIMBAL_AXIS_FAULT,
     GIMBAL_AXIS_OFFLINE,
+    GIMBAL_AXIS_TRIPPED,
 } Gimbal_AxisState_t;
 
 /*
@@ -166,7 +168,7 @@ typedef struct
 /*
  * 单轴运行数据，调试器可直接观察：
  * - state：单轴运行状态
- * - setpoint：模块持有的原始目标与前馈，起控捕获及 governor 可覆盖，区别于下方实际限幅目标
+ * - setpoint：模块持有的原始目标与前馈，起控捕获可覆盖，区别于下方实际限幅目标
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
  * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
@@ -217,6 +219,9 @@ typedef struct
  * - yaw、pitch：两轴运行数据
  * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
  * - imu_state：惯性反馈就绪及故障状态
+ * - chassis_offline_s：底盘四个电机持续全部离线的时间，单位 s，任一在线时清零，达到确认时间后封顶
+ * - yaw_spin_s：yaw 编码器相对转速持续超过疯转阈值的时间，单位 s，yaw 未运行时清零
+ * - yaw_drag_s：底盘离线确认后 yaw 持续被带转的时间，单位 s，yaw 未运行时清零
  * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
  */
 typedef struct
@@ -229,6 +234,9 @@ typedef struct
     Gimbal_Axis_t pitch;
     Gimbal_ImuFeedback_t imu;
     Gimbal_ImuState_t imu_state;
+    float chassis_offline_s;
+    float yaw_spin_s;
+    float yaw_drag_s;
 } Gimbal_t;
 
 /*
@@ -263,40 +271,21 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
                            const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
-
 /**
- * @brief 根据命令更新两轴状态机并计算输出电流，兼容未接入独立底盘观测的调用方
+ * @brief 根据命令更新两轴状态机并计算输出电流，yaw 疯转或悬空带转时单独撤驱
  *
- * yaw 按编码器转速减上部惯性 yaw 转速加独立底盘实测转速的残差连续限流及反向制动
- * 本轮底盘实测项取 0，持续异常后制动并跟随当前 yaw，停稳后捕获新目标并平滑恢复完整 PID
- * 恢复后保留低速残差监护，运动反馈持续一致才退出监护，速度积分仍采用限步长反算
- * 保护不触发故障且 pitch 继续闭环，真实故障仍按原流程恢复
- * 真实故障与单轴失联恢复沿用原状态机，小陀螺及底盘跟随兼容尚未完成
+ * 编码器相对转速持续超过疯转阈值时 yaw 撤驱，不区分底盘状态
+ * 底盘四个电机持续全部离线时底座转速视为零，此时编码器与惯性转速持续不一致视为悬空带转并撤驱
+ * 任一底盘电机在线时底盘可能主动旋转，不检测悬空带转
+ * 撤驱只作用于 yaw，pitch 继续闭环，命令回到 RELAX 后解除并在下次起控时捕获当前姿态
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] command 只读云台命令，为 NULL 时按 RELAX 处理，起控及恢复时内部捕获姿态并清零前馈
+ * @param[in] chassis_online 本周期底盘任一电机在线时为 true，云台单独调试时传 false
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-static inline void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
-{
-    Gimbal_ControlWithChassisFeedback(gimbal, command, NULL, 0U, period_s);
-}
-
-/**
- * @brief 使用独立四轮旋转观测执行云台控制，观测不可用时仅撤销 yaw 输出
- *
- * @param[in,out] gimbal 云台实例
- * @param[in] command 只读两轴命令，可为空
- * @param[in] chassis 底盘完整观测，可为空，为空时兼容原有无补偿保护
- * @param[in] now_us 消费全部反馈后的当前时间，单位微秒
- * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
- * @return 无返回值，真实故障仍沿用原状态机处理
- */
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chassis_online, float period_s);
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

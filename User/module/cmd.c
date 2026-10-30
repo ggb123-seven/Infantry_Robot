@@ -122,33 +122,6 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 }
 
 /**
- * @brief 从同一遥控快照解析旋转意图，失联和非法状态不给予旋转许可
- *
- * @param[in] rc 最近遥控快照，调用方保证非空
- * @param[in] input_valid 同一周期命令解析返回的输入有效性，调用方保证已检查时效
- * @return 有效拨杆对应的旋转意图，异常返回未知，跟随由未来上层命令显式提供
- */
-Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool input_valid)
-{
-    if (!input_valid)
-    {
-        return GIMBAL_CHASSIS_MOTION_UNKNOWN;
-    }
-
-    // 模式仅表达命令意图，最终运动仍由独立轮速观测核对
-    switch (rc->data.sw_l)
-    {
-        case DR16_SWITCH_UP:
-        case DR16_SWITCH_MIDDLE:
-            return GIMBAL_CHASSIS_MOTION_NONE;
-        case DR16_SWITCH_DOWN:
-            return GIMBAL_CHASSIS_MOTION_SPIN;
-        default:
-            return GIMBAL_CHASSIS_MOTION_UNKNOWN;
-    }
-}
-
-/**
  * @brief 撤销遥控使能与速度历史，要求重新确认中位
  *
  * @param[out] ctx 云台命令上下文，调用方保证非空
