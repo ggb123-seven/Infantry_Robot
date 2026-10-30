@@ -94,10 +94,11 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
     switch (command->source)
     {
         case GIMBAL_TARGET_INCREMENT:
+            // 非运行状态先解析本次增量，随后由起控捕获覆盖，避免沿用故障前的非法目标
+            axis->setpoint.target_angle_deg = command->rate_rad_s * M_RAD2DEG_MULT * period_s;
             if (axis->state == GIMBAL_AXIS_RUNNING && isfinite(axis->target_angle_deg))
             {
-                axis->setpoint.target_angle_deg =
-                    axis->target_angle_deg + command->rate_rad_s * M_RAD2DEG_MULT * period_s;
+                axis->setpoint.target_angle_deg += axis->target_angle_deg;
             }
             return isfinite(axis->setpoint.target_angle_deg);
         case GIMBAL_TARGET_ABSOLUTE:
