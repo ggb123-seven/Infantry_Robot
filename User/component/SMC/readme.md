@@ -27,6 +27,7 @@ bool computed = SMC_Tick(&YawSMC, angle_now, angle_vel, target_speed, target_acc
 
 角度单位为度，角速度单位为度每秒，角加速度单位为度每平方秒，`YawSMC.u` 的单位为安培。
 `target_speed` 与 `target_acceleration` 必须来自同一时刻的受限参考轨迹，由调用方按实际周期生成。
+本分支通过 `SMC_AdvanceReference` 按实际周期生成有速度和加速度约束的参考，再由 `SMC_Tick` 计算电流。
 `computed` 为假时必须进入故障并由模块输出闸门阻断输出，禁止使用上周期电流。
 输出应交给工程现有的通信链路；接入时检查反馈与电流输出的符号，避免正反馈。
 
@@ -36,6 +37,6 @@ bool computed = SMC_Tick(&YawSMC, angle_now, angle_vel, target_speed, target_acc
 保留全部 19 个字段及顺序，`target_dot`、`target_ddot` 现保存有物理单位的本周期参考导数。
 示例参数是本工程移植的未上板试验起点，不能视为原作者参数或已整定结果。
 数学函数使用 `<math.h>` 中的 `fabsf`、`powf`，GCC 链接时需要数学库 `m`。
-CMake 和 Keil 工程均已加入 `.c` 文件，yaw 模块接入与验证见 `docs/workflows/2026-10-30_yaw_smc_implementation.md`。
+CMake 和 Keil 工程均已加入 `.c` 文件；yaw ANGLE 已接入，pitch 和 SPEED 保留 PID，验证见 `docs/workflows/2026-10-30_yaw_smc_implementation.md`。
 
 原作者：李欣睿、任轩呈、梅峻炜

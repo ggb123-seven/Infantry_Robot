@@ -8,7 +8,7 @@
  * C：滑模面系数，单位每秒；K：趋近律增益，单位每秒
  * target：参考角度，单位度；error_eps：近零连续过渡尺度，单位度，必须大于零，不再作为撤驱死区
  * q、p：终端滑模幂指数的分子、分母，满足零小于 q/p 且 q/p 不超过一
- * u_max：输出电流绝对值上限，单位安培，必须大于零；J：安培每度每平方秒的等效输出增益
+ * u_max：输出电流绝对值上限，单位安培，必须大于零；J：等效输出增益，单位安培乘平方秒每度
  * angle：当前角度，单位为度；ang_vel：当前角速度，单位为度每秒
  * epsilon：饱和趋近项增益，单位度每平方秒；u：保护前电流，单位安培
  * error、error_last：本周期及上周期的实际角减参考角，单位度
@@ -60,7 +60,7 @@ bool SMC_IsConfigValid(const SMC_t *smc);
  * @param[in] q 终端滑模幂指数的分子
  * @param[in] p 终端滑模幂指数的分母，必须不小于正分子
  * @param[in] u_max 正电流限幅，单位安培
- * @param[in] J 正等效输出增益，单位安培每度每平方秒
+ * @param[in] J 正等效输出增益，单位安培乘平方秒每度
  * @param[in] epsilon 非负趋近项增益，单位度每平方秒
  * @return 无返回值
  */
@@ -78,5 +78,20 @@ void SMC_Init(SMC_t *smc, float C, float K, float ref, float error_eps,
  * @return 计算成功为真；浮点运算异常为假，由调用方进入故障并阻断输出
  */
 bool SMC_Tick(SMC_t *smc, float angle_now, float angle_vel, float target_speed, float target_acceleration);
+
+/**
+ * @brief 按实际周期推进有速度和加速度约束的参考轨迹
+ *
+ * @param[in,out] smc 参考状态，调用方保证非空、已经捕获初始参考且参数有效
+ * @param[in] target_angle 期望参考角度，单位度
+ * @param[in] target_speed 同时刻命令前馈，单位度每秒
+ * @param[in] max_speed 正参考速度上限，单位度每秒
+ * @param[in] max_acceleration 正参考加速度上限，单位度每平方秒
+ * @param[in] reference_gain 正位置追踪增益，单位每秒
+ * @param[in] period_s 已在控制入口校验的实际周期，单位秒
+ * @return 无返回值，浮点计算有效性由随后 SMC_Tick 的计算链出口检查
+ */
+void SMC_AdvanceReference(SMC_t *smc, float target_angle, float target_speed, float max_speed,
+                          float max_acceleration, float reference_gain, float period_s);
 
 #endif

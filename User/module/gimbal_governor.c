@@ -408,32 +408,22 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
  * @param[in] chassis 独立四轮观测，可为空，为空时兼容原保护
  * @param[in] now_us 消费反馈后的单调时间，单位微秒
  * @param[in] period_s 已校验周期，单位秒
- * @return 参数和绑定合法时为真，真实输入异常时为假
+ * @param[in] enabled 本周期配置快照中的 yaw 使能值
+ * @return 运动保护计算有效时为真，浮点运算异常时为假
  */
 bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
-                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
+                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s,
+                                        bool enabled)
 {
-    if (gimbal == NULL || setpoint == NULL || governor_yaw != &gimbal->yaw)
-    {
-        return false;
-    }
     // 明确失能立即复位保护，电机失联仍交给原有轴状态机零输出
-    if (mode == GIMBAL_MODE_RELAX || !gimbal->config.yaw.enabled)
+    if (mode == GIMBAL_MODE_RELAX || !enabled)
     {
         GimbalGovernor_InitYaw(&gimbal->yaw);
         return true;
     }
-    if ((mode != GIMBAL_MODE_ANGLE && mode != GIMBAL_MODE_SPEED) ||
-        !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f ||
-        !isfinite(setpoint->target_speed_rad_s) ||
-        (mode == GIMBAL_MODE_ANGLE && !isfinite(setpoint->target_angle_deg)))
-    {
-        return false;
-    }
     // 旧反馈不得用于主动制动，等待期间清除计时与电流历史，但保留已有锁存
     if (gimbal->imu_state != GIMBAL_IMU_READY || gimbal->yaw.state == GIMBAL_AXIS_FAULT ||
-        !isfinite(gimbal->yaw.motor_speed_rad_s) || !isfinite(gimbal->yaw.speed_rad_s) ||
-        !isfinite(gimbal->yaw.mechanical_angle_deg) || !isfinite(gimbal->yaw.angle_deg))
+        gimbal->yaw.feedback_time_us == UINT64_MAX)
     {
         governor_detect_s = governor_stop_s = governor_previous_current_a = 0.0f;
         governor_match_s = governor_follow_s = 0.0f;
@@ -510,6 +500,18 @@ bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, 
     return true;
 }
 
+bool GimbalGovernor_IsTracking(void)
+{
+    return GimbalGovernor_IsLatched() ||
+           governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
+           governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE;
+}
+
+void GimbalGovernor_CommitCurrent(float current_a)
+{
+    governor_previous_current_a = current_a;
+}
+
 /**
  * @brief 制动及跟随阶段暂停纠偏，捕获新目标后平滑恢复速度权限
  *
@@ -518,10 +520,6 @@ bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, 
  */
 float GimbalGovernor_LimitSpeed(float target_speed_rad_s)
 {
-    if (!isfinite(target_speed_rad_s))
-    {
-        return NAN;
-    }
     if (governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
         governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE)
     {
@@ -579,10 +577,6 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
 {
     float current_a = GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, governor_chassis_speed_rad_s,
                                                  requested_current_a, max_current_a);
-    if (!isfinite(current_a) || !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f)
-    {
-        return NAN;
-    }
     if (governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
         governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE)
     {
@@ -629,11 +623,7 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
         case GIMBAL_GOVERNOR_RESTORING:
         case GIMBAL_GOVERNOR_GUARDED:
         {
-            if (governor_yaw == NULL)
-            {
-                return NAN;
-            }
-            // 跟随时不主动纠偏，捕获新目标后恢复完整 PID，避免仅用比例项导致低出力锁死
+            // 跟随时不主动纠偏，捕获新目标后恢复控制器电流，避免恢复阶段长期压低出力
             const float blend = governor_state == GIMBAL_GOVERNOR_HOLD ? 0.0f :
                 fminf(1.0f, governor_recovery_s / GIMBAL_GOVERNOR_RESTORE_TIME_S);
             const float hold_limit_a = fminf(GIMBAL_GOVERNOR_HOLD_CURRENT_A, max_current_a);
@@ -690,10 +680,6 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
 void GimbalGovernor_TrackCurrent(Gimbal_Axis_t *axis, float candidate_a, float previous_speed_integral,
                                  float previous_angle_integral, float period_s)
 {
-    if (axis == NULL || axis != governor_yaw)
-    {
-        return;
-    }
     // 撤销继续推向饱和方向的增量，再以有限步长跟踪最终电流
     const float delta_a = axis->output_current_a - candidate_a;
     if (delta_a != 0.0f)
@@ -714,7 +700,7 @@ void GimbalGovernor_TrackCurrent(Gimbal_Axis_t *axis, float candidate_a, float p
     {
         axis->angle_pid.i = previous_angle_integral;
     }
-    governor_previous_current_a = axis->output_current_a;
+    GimbalGovernor_CommitCurrent(axis->output_current_a);
 }
 
 /**
@@ -742,20 +728,12 @@ static float GimbalGovernor_Upper(float residual_rad_s, float max_current_a)
  * @param[in] chassis_speed_rad_s 独立实测底盘转速，单位 rad/s
  * @param[in] requested_current_a 候选电流，单位 A
  * @param[in] max_current_a 电流绝对值上限，单位 A，须为有限正值
- * @return 包络内电流，非法输入或溢出时返回非数值
+ * @return 包络内电流，调用方保证输入已在控制入口和反馈边界校验
  */
 float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s, float chassis_speed_rad_s,
                                   float requested_current_a, float max_current_a)
 {
     const float residual_rad_s = motor_speed_rad_s - imu_speed_rad_s + chassis_speed_rad_s;
-    // 拒绝非法数据，不能用旧转速或数学库的非数值吞并行为继续制动
-    if (!isfinite(motor_speed_rad_s) || !isfinite(imu_speed_rad_s) || !isfinite(chassis_speed_rad_s) ||
-        !isfinite(residual_rad_s) || !isfinite(requested_current_a) ||
-        !isfinite(max_current_a) || max_current_a <= 0.0f)
-    {
-        return NAN;
-    }
-
     // 下界由上界镜像生成，保留包络内更强的已有反向制动
     const float upper_a = GimbalGovernor_Upper(residual_rad_s, max_current_a);
     const float lower_a = -GimbalGovernor_Upper(-residual_rad_s, max_current_a);
@@ -770,18 +748,12 @@ float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s
  * @param[in] integral_limit 误差积分绝对值上限，须为有限非负值
  * @param[in] current_delta_a 实际电流减候选电流，单位 A
  * @param[in] period_s 实际周期，单位 s，范围 (0, 0.1]
- * @return 修正后的误差积分，非法输入返回非数值
+ * @return 修正后的误差积分，调用方保证参数来自本周期有效快照
  */
 float GimbalGovernor_BackCalculate(float integral, float integral_gain, float integral_limit,
                                    float current_delta_a, float period_s)
 {
-    // 零增益不参与反算，异常输入交回模块故障路径处理
-    if (!isfinite(integral) || !isfinite(integral_gain) || integral_gain < 0.0f ||
-        !isfinite(integral_limit) || integral_limit < 0.0f || !isfinite(current_delta_a) ||
-        !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f)
-    {
-        return NAN;
-    }
+    // 零积分增益时没有可反算的电流通道，不执行除法
     if (integral_gain <= GIMBAL_GOVERNOR_MIN_INTEGRAL_GAIN)
     {
         return integral;

@@ -11,6 +11,7 @@ extern "C"
 
 #include "component/angle_unwrap.h"
 #include "component/pid.h"
+#include "component/SMC/slidingmodec.h"
 #include "device/motor_rm.h"
 #include "module/chassis_motion.h"
 
@@ -33,7 +34,7 @@ typedef struct
  * 云台控制模式，由命令统一指定两轴：
  * - GIMBAL_MODE_RELAX：两轴零电流，同时解除故障锁存
  * - GIMBAL_MODE_SPEED：只运行速度环，用于单独整定速度环参数
- * - GIMBAL_MODE_ANGLE：角度与速度串级运行，命令角速度作为前馈叠加
+ * - GIMBAL_MODE_ANGLE：yaw 使用滑模直接输出电流，pitch 使用角度与速度串级控制
  */
 typedef enum
 {
@@ -163,8 +164,8 @@ typedef struct
  *   yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，姿态未就绪时与角度均为非数值
  * - base_speed_rad_s：底座大地系角速度估计，单位 rad/s，等于 speed_rad_s − motor_speed_rad_s
  *   底座水平时精确，倾斜时含投影误差，仅用于观测，任一输入失效时为非数值
- * - target_angle_deg：限幅后实际采用的目标角度，单位度
- * - target_speed_rad_s：限幅后实际送入速度环的目标，单位 rad/s
+ * - target_angle_deg：本周期实际参考角度，单位度，yaw 滑模路径包含参考轨迹约束
+ * - target_speed_rad_s：本周期实际参考速度，单位 rad/s，yaw 滑模路径不包含旧 PID 纠偏量
  * - output_current_a：本周期输出电流，单位 A，正方向与角度增大方向一致
  * - feedback_time_us：最近反馈帧时刻，单位微秒，无反馈时为 UINT64_MAX
  * - applied_zero_encoder_deg：当前连续角坐标采用的零点，用于识别零点修改
@@ -224,6 +225,16 @@ typedef struct
     float pitch_current_a;
 } Gimbal_Output_t;
 
+/*
+ * 单云台实例的滑模调参与观测，复用原有结构体，不改变字段布局
+ * gimbal_yaw_smc_config 只允许修改 C、K、error_eps、q、p、u_max、J、epsilon 参数字段
+ * Control 每周期复制参数并校验，运行计算仅使用 gimbal_yaw_smc，后者只供观测
+ * target、target_dot、target_ddot 为内部参考角度、速度和加速度，单位度、度每秒、度每平方秒
+ * u 为保护前电流，单位安培，最终输出仍观察 gimbal.yaw.output_current_a
+ */
+extern volatile SMC_t gimbal_yaw_smc_config;
+extern SMC_t gimbal_yaw_smc;
+
 /**
  * @brief 复制配置并初始化两轴控制器，初始化后两轴处于 RELAX，仅支持本工程单一云台实例
  *
@@ -253,14 +264,14 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
 /**
  * @brief 根据命令更新两轴状态机并计算输出电流，兼容未接入独立底盘观测的调用方
  *
- * yaw 按编码器转速减上部惯性 yaw 转速加独立底盘实测转速的残差连续限流及反向制动
- * 本轮底盘实测项取 0，持续异常后制动并跟随当前 yaw，停稳后捕获新目标并平滑恢复完整 PID
- * 恢复后保留低速残差监护，运动反馈持续一致才退出监护，速度积分仍采用限步长反算
+ * 本兼容入口以零作为底盘补偿项，按编码器与上部惯性 yaw 转速残差连续限流及反向制动
+ * 持续异常后制动并跟随当前 yaw，停稳后捕获新目标并平滑恢复控制器电流
+ * ANGLE 的 yaw 使用滑模，pitch 和 SPEED 保留 PID；滑模只记录实际电流，不反算闲置 PID 积分
  * 保护不触发故障且 pitch 继续闭环，真实故障仍按原流程恢复
- * 真实故障与单轴失联恢复沿用原状态机，小陀螺及底盘跟随兼容尚未完成
+ * 实际任务通过带独立四轮观测的入口补偿底盘旋转，真实故障与单轴失联恢复沿用原状态机
  *
  * @param[in,out] gimbal 云台实例
- * @param[in] command 只读云台命令，为 NULL 时按 RELAX 处理，起控及恢复时内部捕获姿态并清零前馈
+ * @param[in] command 只读云台命令，调用方保证非空，起控及恢复时内部捕获姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
@@ -273,7 +284,7 @@ static inline void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *comm
  * @brief 使用独立四轮旋转观测执行云台控制，观测不可用时仅撤销 yaw 输出
  *
  * @param[in,out] gimbal 云台实例
- * @param[in] command 只读两轴命令，可为空
+ * @param[in] command 只读两轴命令，调用方保证非空
  * @param[in] chassis 底盘完整观测，可为空，为空时兼容原有无补偿保护
  * @param[in] now_us 消费全部反馈后的当前时间，单位微秒
  * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
@@ -285,12 +296,12 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障
  *
- * @param[in] gimbal 云台实例，可为 NULL
- * @return 实例无效或存在锁存故障时为 true，电机单轴超时不算锁存故障
+ * @param[in] gimbal 云台实例，调用方保证非空
+ * @return 存在锁存故障时为 true，电机单轴超时不算锁存故障
  */
 static inline bool Gimbal_HasLatchedFault(const Gimbal_t *gimbal)
 {
-    return gimbal == NULL || gimbal->imu_state == GIMBAL_IMU_FAULT ||
+    return gimbal->imu_state == GIMBAL_IMU_FAULT ||
            gimbal->yaw.state == GIMBAL_AXIS_FAULT || gimbal->pitch.state == GIMBAL_AXIS_FAULT;
 }
 
