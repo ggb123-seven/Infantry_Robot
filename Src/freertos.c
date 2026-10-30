@@ -117,7 +117,12 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   led_blue_handle = osThreadNew(blue_led_task, NULL, &LED_BLUE_attributes);
-  (void)osThreadNew(Task_Init, NULL, &attr_init);
+  // 启动线程创建失败时进入统一错误入口，禁止启动缺少装配任务的业务系统
+  if (LED_REDHandle == NULL || LED_GREENHandle == NULL || led_blue_handle == NULL ||
+      osThreadNew(Task_Init, NULL, &attr_init) == NULL)
+  {
+    Error_Handler();
+  }
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
