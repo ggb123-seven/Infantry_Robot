@@ -74,9 +74,9 @@
 ### 参数配置与在线调参
 
 - `module/config.c` 中的参数是最终确认值，禁止修改其数值、字段、结构和组织方式，也不得以精简校验、重构或调试为理由改动
-- 模块 Init 时把 `config.c` 的配置复制到实例的 config 副本（RAM），用户通过 Ozone 在运行中实时写入该副本进行非侵入式调参
-- 禁止删除 config 副本、改为直接引用 `config.c` 中的 const 配置，或以其他方式让 Ozone 写入后的副本失效
-- Ozone 写入与控制周期不同步，因此每个控制周期在 Control 入口先把 config 副本复制为本周期快照，再对快照校验；本周期内 Control、子函数和 DumpOutput 只读取快照，不再读取 config 副本
+- 模块 Init 时把 `config.c` 的配置复制到实例的 config 副本（RAM），用户通过 EmberProbe 在运行中实时写入该副本进行非侵入式调参
+- 禁止删除 config 副本、改为直接引用 `config.c` 中的 const 配置，或以其他方式让 EmberProbe 写入后的副本失效
+- EmberProbe 写入与控制周期不同步，因此每个控制周期在 Control 入口先把 config 副本复制为本周期快照，再对快照校验；本周期内 Control、子函数和 DumpOutput 只读取快照，不再读取 config 副本
 - 快照校验失败时，本周期按 config_valid 为假进入安全输出，不使用快照中的任何参数
 - PID 等通过指针长期引用参数的对象，必须指向实例内持久存在的快照或已应用参数，禁止指向栈上的局部变量
 - 快照放在栈上还是作为实例字段，在实现时确定；新增实例字段按结构体设计协商规则先征得用户同意

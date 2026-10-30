@@ -16,6 +16,16 @@
 
 ## 底盘当前进度
 
+### 2026-10-30 校验边界与 EmberProbe 配置快照
+
+- 四个电机模块 Control 入口复制 RAM config 并集中校验，DumpOutput 仅按运行状态放行；PID 指针继续引用实例内 applied 参数
+- 云台新增 control_config 与 config_valid，反馈使用最近一次有效配置，EmberProbe 仍只修改原有 config；方向和零点修改在下次 Control 采纳
+- 已删除任务循环固定邮箱判空、下游重复参数校验与输出重复限幅；固定频率改为编译期断言，实际周期和消息读写失败检查保留
+- 修复微秒换算约 71.6 分钟回绕并扩展 32 位内核 tick 回绕，补齐启动线程创建结果检查
+- config.c、SMC、CAN2 设备 ID 与路由、.ioc 全部未修改；不新增发射或拨弹 device 包装文件
+- Debug、ARM 严格语法检查、ARCH/HW/SPEC 通过；四模块 5000 周期、命令 30000 组、INS 10000 次与基线精确一致，配置写入隔离、任务邮箱失败、时间回绕测试通过
+- 新增与删除检查、命令及证据边界见 docs/workflows/2026-10-30_validation_boundary_fix.md；未烧录、未运行真实电机或量测任务栈，下一步重新载入 ELF 核实调参与断链停机
+
 ### 2026-10-28 四轮观测与云台异常旋转联合识别
 
 - 已接入四轮解码源时间、底盘转速观测、独立云台观测邮箱和旋转意图；FOLLOW 仅预留入口
@@ -42,7 +52,7 @@
 - 32000 周期主机对比状态完全相同，数值差异仅为单位换算容差和方案允许的失联/正弦平滑交接；命令不回写、绝对来源及非法来源保护通过
 - 按用户最新要求，将反馈实现与私有头文件合回 gimbal.c，删除两个文件和工程登记；19 个函数体保持原样，内部函数恢复 static，文件为 800 行
 - 合并前后 32000 个周期精确一致，Debug、ARM 严格检查、ARCH/HW/SPEC、格式和 Keil 工程检查通过；临时测试已清理，未上板
-- 步骤 4～6 尚未实施；后续优先减少重复校验，保留用于 Ozone 在线调参的实例 config 副本，不继续拆分云台文件或按控制阶段增加函数
+- 步骤 4～6 尚未实施；后续优先减少重复校验，保留用于 EmberProbe 在线调参的实例 config 副本，不继续拆分云台文件或按控制阶段增加函数
 
 ### 2026-10-28 底盘与云台默认配置接口精简
 
@@ -73,7 +83,7 @@
 ```text
 Task_Init -> Task_can_Init（保留 CAN 设备初始化）-> 创建邮箱和任务
 Task_motor_chassis -> Chassis_Init(&chassis, &chassis_config, 500 Hz)
-DR16 -> Task_dr16 -> dr16_state 邮箱 -> MotorChassis_ApplyDR16Input -> chassis_command
+DR16 -> Task_dr16 -> dr16_state 邮箱 -> Cmd_ParseChassis -> chassis_command
 Task_can -> can_feedback 邮箱 -> Chassis_UpdateFeedback
   -> Chassis_Control -> Mixer_Apply -> 每轮状态机 -> 斜坡/速度 PID/滤波/限幅
   -> Chassis_DumpOutput -> can_command 邮箱 -> Task_can -> CAN 电流输出
@@ -81,7 +91,7 @@ FaultDetect_UpdateMotorChassis -> fault_detect_snapshot
 ```
 
 - 底盘与 CAN 任务均为 500 Hz；底盘控制使用实际节拍差，周期不在 (0, 0.1] s 内时四轮零输出
-- 底盘在自身任务内初始化；节拍不能整除控制频率或初始化失败时不退出任务，持续发布零电流及诊断
+- 底盘在自身任务内初始化；固定频率不能整除内核节拍时编译失败，模块初始化失败时任务持续发布零电流及诊断
 - Task_Init 仍集中创建并检查全部队列和任务对象，本轮仅移出底盘控制器初始化
 - 模块不读队列、不读时间，直接接收 CANDevices_Snapshot_t，导出 CANDevices_Command_t 的 current_a，sequence 由任务填写
 - 公共配置位于 User/module/config.c，实例在初始化时复制；初始化后不得整体复制 Chassis_t，四轮 PID 参数指针引用实例内公共副本
@@ -202,9 +212,9 @@ FaultDetect_UpdateMotorChassis -> fault_detect_snapshot
 ### 参数配置与在线调参
 
 - `module/config.c` 中的参数是最终确认值，禁止修改其数值、字段、结构和组织方式，也不得以精简校验、重构或调试为理由改动
-- 模块 Init 时把 `config.c` 的配置复制到实例的 config 副本（RAM），用户通过 Ozone 在运行中实时写入该副本进行非侵入式调参
-- 禁止删除 config 副本、改为直接引用 `config.c` 中的 const 配置，或以其他方式让 Ozone 写入后的副本失效
-- Ozone 写入与控制周期不同步，因此每个控制周期在 Control 入口先把 config 副本复制为本周期快照，再对快照校验；本周期内 Control、子函数和 DumpOutput 只读取快照，不再读取 config 副本
+- 模块 Init 时把 `config.c` 的配置复制到实例的 config 副本（RAM），用户通过 EmberProbe 在运行中实时写入该副本进行非侵入式调参
+- 禁止删除 config 副本、改为直接引用 `config.c` 中的 const 配置，或以其他方式让 EmberProbe 写入后的副本失效
+- EmberProbe 写入与控制周期不同步，因此每个控制周期在 Control 入口先把 config 副本复制为本周期快照，再对快照校验；本周期内 Control、子函数和 DumpOutput 只读取快照，不再读取 config 副本
 - 快照校验失败时，本周期按 config_valid 为假进入安全输出，不使用快照中的任何参数
 - PID 等通过指针长期引用参数的对象，必须指向实例内持久存在的快照或已应用参数，禁止指向栈上的局部变量
 - 快照放在栈上还是作为实例字段，在实现时确定；新增实例字段按结构体设计协商规则先征得用户同意

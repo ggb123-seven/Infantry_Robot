@@ -117,3 +117,16 @@ Debug PASS
 主机新增“绝对目标 NaN -> FAULT -> RELAX -> 合法增量起控”用例，先复现失败，再修复 Gimbal_ResolveSetpoint：每次先解析本次增量，存在有效运行角度目标时才叠加历史目标，起控和模式切换继续捕获当前姿态。不再沿用非法绝对命令写入的 setpoint。未新增判空、isfinite、范围检查或保护性 return；已有 target_angle_deg 有限性分支用于区别速度模式下合法的无角度目标，保留在原位置
 
 该恢复用例修复后通过，5000 正常周期输出、目标和状态仍与基线逐字节一致。首次修正曾遗漏速度转角度模式时 target_angle_deg 为 NaN 的合法情况，由同一回归在第 200 周期检出，恢复原有适用性条件后全量通过
+
+最终检查补充：云台 RunAxis 保留目标合成出口 isfinite，保护层保留电流/残差运算出口 isfinite，后续反算及机械限制出口检查负责最终电流与积分；这是不同计算链出口，上游未校验本次运算结果。Init 中两轴 PID 创建失败返回与快照失败返回消费下层真实结果，命令 yaw_valid/pitch_valid 分支消费解析结果，均未重新检查同一参数。原先运行中单独重复检查的配置、周期及输入有限性已删除
+
+## 最终交付核对
+
+- 全部 16 个本轮修改 C 文件使用实际 ARM 编译器 -Wall -Wextra -Werror -fsyntax-only 通过，freertos.c 仅抑制原生成弱任务的 unused-parameter
+- ARCH/HW/SPEC、Debug、git diff --check 通过，未改硬件资源锁、引脚、DMA、中断、.ioc、device 路由或 SMC
+- config.c 的 Git 对象与基线相同：5b9d463506e7d858c01a401d89f02ef2678da28e；统一 LF 后 SHA256 为 be3db1a6e638b0fed8fe472a0d4443005e8f91fda88de922c77fc5da51e24da1，工作树原 CRLF 保留
+- 项目 AGENTS.md、agent.md、conventions 及 C:/Users/seven/.codex/AGENTS.md、C:/Users/seven/AGENTS.md 已将当前调参工具名同步为 EmberProbe
+- 云台新字段 control_config 表示最近一次通过校验的配置，config_valid 表示本周期入口校验结果；其余模块复用已有字段和局部快照，未建立新的业务或 device 源文件
+- 人工核对分层仍为 task -> module -> component/device -> bsp，主入口未新增业务；计时共享扩展状态在保存并恢复 PRIMASK 的最小临界区内更新，未把调度锁当作 IRQ 锁
+- 所有验证证据已写入本文件；临时 build/validation_boundary_fix 下测试源、桩头、程序、二进制轨迹和生成脚本交付前清理，正式测试与用户 Obsidian、未命名.base 文件保留
+- 未烧录、未运行真实电机、未量测 ISR 时序、调度开销及任务栈，后续请在 EmberProbe 重新加载本轮 ELF 后执行既定架空和断链验收
