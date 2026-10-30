@@ -28,7 +28,6 @@ static bool dr16_state_cache_valid;
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
-static bool MotorChassis_PublishGimbalFeedback(const Gimbal_ChassisFeedback_t *feedback);
 
 /**
  * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布
@@ -70,9 +69,6 @@ void Task_motor_chassis(void *argument)
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
         Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
-        Gimbal_ChassisMotion_t motion =
-            Cmd_ParseChassisMotion(&dr16_state_cache, dr16_state_cache_valid, remote_time_us);
-
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =
         {
@@ -84,14 +80,7 @@ void Task_motor_chassis(void *argument)
         {
             // 发布失败时 CAN 任务空邮箱归零，本地同步复位，避免未执行电流期间积累控制历史
             Chassis_Control(&chassis, NULL, period_s);
-            motion = GIMBAL_CHASSIS_MOTION_UNKNOWN;
         }
-
-        // 发布独立轮速观测，失败时云台按源时间超时撤驱，不读取跨任务裸全局变量
-        Gimbal_ChassisFeedback_t gimbal_feedback;
-        Chassis_DumpGimbalFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL, motion,
-                                   chassis_yaw_rad_s_per_rpm, BSP_TIME_Get(), &gimbal_feedback);
-        MotorChassis_PublishGimbalFeedback(&gimbal_feedback);
 
         // 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源
         FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis,
@@ -157,16 +146,4 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
     // 最新值邮箱不保存历史电流，重置或写入失败时由 CAN 任务默认零命令兜底
     return osMessageQueueReset(task_runtime.msgq.can_command) == osOK &&
            osMessageQueuePut(task_runtime.msgq.can_command, command, 0U, 0U) == osOK;
-}
-
-/**
- * @brief 发布仅供云台消费的最新底盘旋转观测
- *
- * @param[in] feedback 本周期完整观测，包含源时间与有效性
- * @return 邮箱存在且覆盖写入成功时为真，否则为假
- */
-static bool MotorChassis_PublishGimbalFeedback(const Gimbal_ChassisFeedback_t *feedback)
-{
-    const osMessageQueueId_t queue = task_runtime.msgq.chassis_gimbal;
-    return queue != NULL && osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, feedback, 0U, 0U) == osOK;
 }

@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <string.h>
 #include "component/user_math.h"
-#include "module/gimbal_governor.h"
 
 /*
  * 参数沿用合并前值：周期上限 0.1 秒、PID 增益上限 1000；rpm 按每分钟 60 秒、每圈 2π 换算，完整一圈为 360 度
@@ -24,7 +23,7 @@
  * 参考追踪增益 5 每秒用于平滑绝对目标跳变，均为未上板试验值，不修改原默认配置
  * 滑模参数 C=5、K=10 每秒，q/p=21/27，近零过渡尺度 1 度
  * J=0.001 安培乘平方秒每度，趋近项 0.5 度每平方秒，候选电流上限 0.5 安培
- * 单云台任务独占配置快照和运行上下文，与现有 governor 的单实例约束一致
+ * 单云台任务独占配置快照和运行上下文
  */
 #define GIMBAL_SMC_MAX_SPEED_DEG_S (60.0f)
 #define GIMBAL_SMC_MAX_ACCEL_DEG_S2 (180.0f)
@@ -61,7 +60,7 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
 static void Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed);
+                               bool use_smc);
 
 int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float frequency_hz)
 {
@@ -95,7 +94,6 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     {
         return -1;
     }
-    GimbalGovernor_InitYaw(&gimbal->yaw);
     initialized = true;
     return 0;
 }
@@ -151,8 +149,7 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
     return true;
 }
 
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
 {
     // 在线调参每周期只取一次快照，任何非法配置都不得参与本周期控制
     const Gimbal_Config_t snapshot = *(const volatile Gimbal_Config_t *)&gimbal->config;
@@ -197,10 +194,8 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
         gimbal->imu_state = GIMBAL_IMU_WAITING;
         gimbal->imu.valid = false;
     }
-    // yaw 保护先跟随当前姿态再捕获新目标，校验失败仍走原故障停机路径，pitch 独立控制
-    if (yaw_valid && (mode != GIMBAL_MODE_ANGLE || smc_valid) &&
-        GimbalGovernor_PrepareYawWithChassis(gimbal, mode, &gimbal->yaw.setpoint, chassis, now_us, period_s,
-                                            control_config.yaw.enabled))
+    // yaw 滑模参数和命令有效时执行闭环，校验失败仍走原故障停机路径
+    if (yaw_valid && (mode != GIMBAL_MODE_ANGLE || smc_valid))
     {
         Gimbal_ControlAxis(&gimbal->yaw, &control_config.yaw, mode, mode_changed,
                            &gimbal->yaw.setpoint, period_s, true);
@@ -351,14 +346,14 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
  * @param[in] mode 控制模式，只能为 SPEED 或 ANGLE
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
- * @param[in] motion_governed 为 true 时按 yaw 转速残差限制电流，pitch 传 false
+ * @param[in] use_smc 为 true 时在角度模式使用 yaw 滑模控制，pitch 传 false
  * @return 计算成功返回 true，浮点计算链出口异常时返回 false
  */
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisSetpoint_t *command, float period_s, bool motion_governed)
+                           const Gimbal_AxisSetpoint_t *command, float period_s, bool use_smc_axis)
 {
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
-    const bool use_smc = motion_governed && angle_needed;
+    const bool use_smc = use_smc_axis && angle_needed;
     // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈与角度环修正量合成
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
@@ -406,17 +401,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, min_speed, max_speed);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // 制动及目标跟随时暂停姿态纠偏，捕获新目标后平滑恢复速度权限
-    if (motion_governed)
-    {
-        target_speed_rad_s = GimbalGovernor_LimitSpeed(target_speed_rad_s);
-    }
     // yaw 角度模式直接产生安培电流，其他路径继续使用原速度环
     const float previous_speed_integral = axis->speed_pid.i;
     if (use_smc)
     {
-        // 起控或保护捕获时只重置参考，真实反馈速度继续参与制动
-        if (smc_reset || GimbalGovernor_IsTracking())
+        // 起控时以当前姿态重置参考，避免沿用停止前轨迹
+        if (smc_reset)
         {
             gimbal_yaw_smc.target = axis->angle_deg;
             gimbal_yaw_smc.target_dot = gimbal_yaw_smc.target_ddot = 0.0f;
@@ -443,12 +433,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
         axis->output_current_a = AbsClip(current_a, config->max_current_a);
     }
-    const float candidate_a = axis->output_current_a;
-    if (motion_governed)
-    {
-        axis->output_current_a = GimbalGovernor_ControlCurrent(axis->motor_speed_rad_s, axis->speed_rad_s,
-                                                              candidate_a, config->max_current_a, period_s);
-    }
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
         ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
@@ -460,18 +444,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
             axis->speed_pid.i = previous_speed_integral;
         }
         mechanically_limited = true;
-    }
-    // 用机械边界处理后的实际电流反算，避免下游阻断制动后仍按未执行的电流调整积分
-    if (motion_governed)
-    {
-        if (use_smc)
-        {
-            GimbalGovernor_CommitCurrent(axis->output_current_a);
-        }
-        else
-        {
-            GimbalGovernor_TrackCurrent(axis, candidate_a, previous_speed_integral, previous_angle_integral, period_s);
-        }
     }
     if (mechanically_limited && !use_smc)
     {
@@ -488,12 +460,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
  * @param[in] mode_changed 本周期模式与上一周期不同时为 true
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
- * @param[in] motion_governed 为 true 时启用 yaw 残差电流包络
+ * @param[in] use_smc 为 true 时在角度模式使用 yaw 滑模控制
  * @return 无返回值
  */
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed)
+                               bool use_smc)
 {
     // 调用方已校验并采纳本周期配置，此处只推进轴状态机
     const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
@@ -510,7 +482,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
                 break;
             }
             Gimbal_EnterRunning(axis);
-            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
+            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, use_smc))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
@@ -531,7 +503,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
             {
                 Gimbal_EnterRunning(axis);
             }
-            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
+            if (!Gimbal_RunAxis(axis, config, mode, command, period_s, use_smc))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
@@ -571,7 +543,7 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
     axis->motor_speed_rad_s = NAN;
     axis->base_speed_rad_s = NAN;
     axis->feedback_time_us = UINT64_MAX;
-    AngleUnwrap_Reset(&axis->unwrap);
+    Gimbal_ResetAngleUnwrap(&axis->unwrap);
 }
 /**
  * @brief 拒绝机械反馈并集中处理失联等待与不可自动恢复的反馈故障
@@ -657,7 +629,7 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
             float delta_deg = frame->angle_deg[i] - gimbal->imu.angle_deg[i];
             if (i == 0U)
             {
-                delta_deg = AngleUnwrap_Wrap(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
+                delta_deg = Gimbal_WrapAngle(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
             }
             const float max_delta_deg = GIMBAL_IMU_MAX_RAD_S * M_RAD2DEG_MULT * dt_s + GIMBAL_IMU_JUMP_MARGIN_DEG;
             valid = valid && fabsf(delta_deg) <= max_delta_deg;
@@ -749,9 +721,9 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
         return;
     }
     // 反装轴先翻转角度和转速，使模块内统一以角度增大方向为正
-    const float raw_encoder_deg = AngleUnwrap_Wrap(encoder_rad * M_RAD2DEG_MULT, GIMBAL_FULL_TURN_DEG);
+    const float raw_encoder_deg = Gimbal_WrapAngle(encoder_rad * M_RAD2DEG_MULT, GIMBAL_FULL_TURN_DEG);
     const float encoder_deg = config->reversed ?
-        AngleUnwrap_Wrap(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
+        Gimbal_WrapAngle(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
     const float speed_rad_s = speed_rpm * GIMBAL_RPM_TO_RAD_S;
     axis->encoder_deg = encoder_deg;
     axis->motor_speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
@@ -760,14 +732,14 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     if (signed_angle)
     {
         const float half_turn_deg = GIMBAL_FULL_TURN_DEG * 0.5f;
-        axis->mechanical_angle_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
-                                                    GIMBAL_FULL_TURN_DEG) - half_turn_deg;
+        axis->mechanical_angle_deg = Gimbal_WrapAngle(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
+                                                     GIMBAL_FULL_TURN_DEG) - half_turn_deg;
         return;
     }
     // yaw 保留原有连续角展开，跨编码器零点时按相邻帧最短路径累计
-    const float relative_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
+    const float relative_deg = Gimbal_WrapAngle(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
     float angle_deg = NAN;
-    if (!AngleUnwrap_Update(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
+    if (!Gimbal_UpdateAngleUnwrap(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
     {
         Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
         return;

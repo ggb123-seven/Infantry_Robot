@@ -2,6 +2,7 @@
 
 | 日期 | 类型 | 主题 | 记录 |
 |---|---|---|---|
+| 2026-10-30 | refactor | 合并云台私有辅助并删除悬空 governor 保护链 | [记录](2026-10-30_gimbal_governor_removal.md) |
 | 2026-10-28 | refactor | 命令层与云台精简：输入整形及逐周期对比 | [记录](2026-10-28_cmd_gimbal_refactor.md) |
 | 2026-10-28 | bugfix | yaw 恢复误撤目标、低速阻尼偏置与遥控迟滞 | [记录](2026-10-28_yaw_residual_recovery.md) |
 | 2026-10-28 | bugfix | yaw 取消旧目标、恢复完整 PID 并持续残差监护 | [记录](2026-10-28_yaw_follow_recovery.md) |

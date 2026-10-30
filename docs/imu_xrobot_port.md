@@ -35,7 +35,7 @@
 主错误码 `-6` 的名称改为 `INS_STATUS_AHRS`。
 
 旧 `quaternion_ekf.c/.h`、仅供它使用的 `kalman_filter.c/.h` 已删除，CMake/Keil 移除相关矩阵源文件登记，
-加入 `madgwick_ahrs.c`。原来未编译的 `ahrs.c/.h` 保留为未启用组件，不参与新姿态链路。
+加入 `madgwick_ahrs.c`。旧 `ahrs.c/.h` 已移除，不参与当前姿态链路。
 
 ## 兼容约定与能力边界
 

@@ -135,14 +135,6 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
-    // 底盘观测单独分发给云台，不与底盘控制任务争抢原 CAN 反馈邮箱
-    task_runtime.init_status = TASK_INIT_CHASSIS_GIMBAL_MAILBOX_FAILED;
-    task_runtime.msgq.chassis_gimbal = osMessageQueueNew(1U, sizeof(Gimbal_ChassisFeedback_t), NULL);
-    if (task_runtime.msgq.chassis_gimbal == NULL)
-    {
-        return false;
-    }
-
     // 创建独立 INS 任务，设备初始化在任务获得调度后执行
     task_runtime.init_status = TASK_INIT_INS_THREAD_FAILED;
     task_runtime.thread.ins = osThreadNew(INS_Task, NULL, &attr_ins);
@@ -247,15 +239,6 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.thread.ins = NULL;
-    }
-    // 观测邮箱与其他业务对象同样由统一装配入口创建和失败回收
-    if (task_runtime.msgq.chassis_gimbal != NULL)
-    {
-        if (osMessageQueueDelete(task_runtime.msgq.chassis_gimbal) != osOK)
-        {
-            success = false;
-        }
-        task_runtime.msgq.chassis_gimbal = NULL;
     }
     if (task_runtime.msgq.can_command != NULL)
     {

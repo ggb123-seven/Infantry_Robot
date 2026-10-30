@@ -6,14 +6,105 @@ extern "C"
 #endif
 
 #include <stdbool.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "component/angle_unwrap.h"
 #include "component/pid.h"
 #include "component/SMC/slidingmodec.h"
 #include "device/motor_rm.h"
-#include "module/chassis_motion.h"
+
+/*
+ * yaw 单圈角度展开状态：
+ * - has_reference：已记录上一帧单圈角度时为 true
+ * - last_wrapped_angle：上一帧单圈角度，范围 [0, 360)
+ * - continuous_angle：按相邻帧最短路径累计的连续角度，单位度
+ */
+typedef struct
+{
+    bool has_reference;
+    float last_wrapped_angle;
+    float continuous_angle;
+} AngleUnwrap_t;
+
+/**
+ * @brief 将角度环绕到单圈区间
+ *
+ * @param[in] angle 有限角度
+ * @param[in] period 单圈周期，调用方保证为有限正数
+ * @return 单圈角度，范围为 [0, period)
+ */
+static inline float Gimbal_WrapAngle(float angle, float period)
+{
+    float wrapped = fmodf(angle, period);
+    if (wrapped < 0.0f)
+    {
+        wrapped += period;
+    }
+    // 浮点舍入到整圈时统一归到零点
+    return wrapped >= period ? 0.0f : wrapped;
+}
+
+/**
+ * @brief 清除 yaw 连续角参考
+ *
+ * @param[out] unwrap yaw 连续角状态，调用方保证非空
+ * @return 无返回值
+ */
+static inline void Gimbal_ResetAngleUnwrap(AngleUnwrap_t *unwrap)
+{
+    unwrap->has_reference = false;
+    unwrap->last_wrapped_angle = 0.0f;
+    unwrap->continuous_angle = 0.0f;
+}
+
+/**
+ * @brief 按相邻帧最短路径展开 yaw 单圈角度
+ *
+ * @param[in,out] unwrap yaw 连续角状态，调用方保证非空
+ * @param[in] wrapped_angle 本帧单圈角度，调用方保证范围为 [0, period)
+ * @param[in] period 单圈周期，调用方保证为有限正数
+ * @param[out] continuous_angle 展开后的连续角度，调用方保证非空
+ * @return 成功返回 true，半圈歧义或累计结果异常时返回 false
+ */
+static inline bool Gimbal_UpdateAngleUnwrap(AngleUnwrap_t *unwrap, float wrapped_angle, float period,
+                                            float *continuous_angle)
+{
+    // 首帧直接以单圈角度建立连续坐标
+    if (!unwrap->has_reference)
+    {
+        unwrap->has_reference = true;
+        unwrap->last_wrapped_angle = wrapped_angle;
+        unwrap->continuous_angle = wrapped_angle;
+        *continuous_angle = wrapped_angle;
+        return true;
+    }
+
+    // 将相邻帧差值折算到半圈以内，跨越编码器零点时取最短路径
+    const float half_period = period * 0.5f;
+    float delta = wrapped_angle - unwrap->last_wrapped_angle;
+    if (delta > half_period)
+    {
+        delta -= period;
+    }
+    else if (delta < -half_period)
+    {
+        delta += period;
+    }
+
+    // 半圈方向无法判定，累计链出口异常时同样丢弃参考
+    const float next_angle = unwrap->continuous_angle + delta;
+    if (fabsf(delta) >= half_period || !isfinite(next_angle))
+    {
+        Gimbal_ResetAngleUnwrap(unwrap);
+        return false;
+    }
+
+    unwrap->last_wrapped_angle = wrapped_angle;
+    unwrap->continuous_angle = next_angle;
+    *continuous_angle = next_angle;
+    return true;
+}
 
 /*
  * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标
@@ -155,10 +246,10 @@ typedef struct
 /*
  * 单轴运行数据，调试器可直接观察：
  * - state：单轴运行状态
- * - setpoint：模块持有的原始目标与前馈，起控捕获及 governor 可覆盖，区别于下方实际限幅目标
+ * - setpoint：模块持有的原始目标与前馈，起控和恢复时可捕获当前姿态，区别于下方实际限幅目标
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
- * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
+ * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测
  * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
  * - speed_rad_s：大地系欧拉角速度，单位 rad/s，由机体系陀螺仪按 ZYX 欧拉运动学换算
  *   yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，姿态未就绪时与角度均为非数值
@@ -230,7 +321,7 @@ typedef struct
  * gimbal_yaw_smc_config 只允许修改 C、K、error_eps、q、p、u_max、J、epsilon 参数字段
  * Control 每周期复制参数并校验，运行计算仅使用 gimbal_yaw_smc，后者只供观测
  * target、target_dot、target_ddot 为内部参考角度、速度和加速度，单位度、度每秒、度每平方秒
- * u 为保护前电流，单位安培，最终输出仍观察 gimbal.yaw.output_current_a
+ * u 为滑模候选电流，单位安培，机械边界与输出闸门处理后的实际值观察 gimbal.yaw.output_current_a
  */
 extern volatile SMC_t gimbal_yaw_smc_config;
 extern SMC_t gimbal_yaw_smc;
@@ -258,40 +349,18 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
                            const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
-
 /**
- * @brief 根据命令更新两轴状态机并计算输出电流，兼容未接入独立底盘观测的调用方
+ * @brief 根据命令更新两轴状态机并计算输出电流
  *
- * 本兼容入口以零作为底盘补偿项，按编码器与上部惯性 yaw 转速残差连续限流及反向制动
- * 持续异常后制动并跟随当前 yaw，停稳后捕获新目标并平滑恢复控制器电流
- * ANGLE 的 yaw 使用滑模，pitch 和 SPEED 保留 PID；滑模只记录实际电流，不反算闲置 PID 积分
- * 保护不触发故障且 pitch 继续闭环，真实故障仍按原流程恢复
- * 实际任务通过带独立四轮观测的入口补偿底盘旋转，真实故障与单轴失联恢复沿用原状态机
+ * ANGLE 的 yaw 使用滑模，pitch 和 SPEED 使用 PID
+ * 机械限位、反馈失联、惯性故障和最终零输出闸门仍按原状态机处理
  *
  * @param[in,out] gimbal 云台实例
  * @param[in] command 只读云台命令，调用方保证非空，起控及恢复时内部捕获姿态并清零前馈
  * @param[in] period_s 实际控制间隔，单位 s，范围 (0, 0.1]，超出时运行中的轴进入故障
  * @return 无返回值
  */
-static inline void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s)
-{
-    Gimbal_ControlWithChassisFeedback(gimbal, command, NULL, 0U, period_s);
-}
-
-/**
- * @brief 使用独立四轮旋转观测执行云台控制，观测不可用时仅撤销 yaw 输出
- *
- * @param[in,out] gimbal 云台实例
- * @param[in] command 只读两轴命令，调用方保证非空
- * @param[in] chassis 底盘完整观测，可为空，为空时兼容原有无补偿保护
- * @param[in] now_us 消费全部反馈后的当前时间，单位微秒
- * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
- * @return 无返回值，真实故障仍沿用原状态机处理
- */
-void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
-                                       const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
+void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float period_s);
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

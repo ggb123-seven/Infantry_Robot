@@ -3,7 +3,6 @@
 #include <math.h>
 #include <stddef.h>
 
-#include "component/input_shaping.h"
 #include "component/user_math.h"
 
 /*
@@ -26,6 +25,53 @@
 #define CMD_GIMBAL_SETTLE_DEG_S (0.1f)
 #define CMD_GIMBAL_MAX_PERIOD_S (0.1f)
 #define CMD_DEG_TO_RAD (0.0174532925199f)
+
+static float Cmd_NormalizeChannel(int16_t channel);
+static float Cmd_SmoothRate(float current, float requested, float period_s);
+
+/**
+ * @brief 将遥控通道限幅归一化并去除中心死区
+ *
+ * @param[in] channel 去中心后的原始计数
+ * @return 死区内为零，死区外线性映射到 [-1, 1]
+ */
+static float Cmd_NormalizeChannel(int16_t channel)
+{
+    // 先限制满量程，再将死区外的有效行程重新映射到完整输出范围
+    const float value = fmaxf(-1.0f, fminf(1.0f, (float)channel / CMD_CHANNEL_LIMIT));
+    if (fabsf(value) <= CMD_DEADZONE)
+    {
+        return 0.0f;
+    }
+    return copysignf((fabsf(value) - CMD_DEADZONE) / (1.0f - CMD_DEADZONE), value);
+}
+
+/**
+ * @brief 按云台加减速上限和一阶平滑逼近速度请求
+ *
+ * @param[in] current 上周期角速度，单位度每秒
+ * @param[in] requested 本周期请求角速度，单位度每秒
+ * @param[in] period_s 控制周期，单位秒，调用方已完成范围校验
+ * @return 平滑后的本周期角速度，单位度每秒
+ */
+static float Cmd_SmoothRate(float current, float requested, float period_s)
+{
+    // 换向先以零速为本周期边界，避免跨过零速后仍沿用减速上限
+    const float target = current * requested < 0.0f ? 0.0f : requested;
+    const float rate_limit = fabsf(target) < fabsf(current) ? CMD_GIMBAL_DECEL_DEG_S2 : CMD_GIMBAL_ACCEL_DEG_S2;
+    const float max_step = rate_limit * period_s;
+    const float difference = fabsf(target - current);
+
+    // 小误差有限时间收敛且仍受变化上限约束，避免零速请求留下长尾
+    if (difference <= CMD_GIMBAL_SETTLE_DEG_S && difference <= max_step)
+    {
+        return target;
+    }
+
+    // 实际周期决定平滑比例，较大变化继续由单周期斜坡约束
+    const float blend = 1.0f - expf(-period_s / CMD_GIMBAL_SMOOTH_TIME_S);
+    return RampTo(current, target, fminf(max_step, difference * blend));
+}
 
 /**
  * @brief 将遥控快照转换为底盘命令，异常输入输出待机
@@ -56,8 +102,8 @@ void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
     }
 
     // 两个运动档都允许平移，下位另叠加自旋，中位及非法拨杆保持零输出
-    const float lateral = InputShaping_NormalizeChannel(rc->data.ch_l_x, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
-    const float forward = InputShaping_NormalizeChannel(rc->data.ch_l_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
+    const float lateral = Cmd_NormalizeChannel(rc->data.ch_l_x);
+    const float forward = Cmd_NormalizeChannel(rc->data.ch_l_y);
     switch (rc->data.sw_l)
     {
         case DR16_SWITCH_UP:
@@ -72,35 +118,6 @@ void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
         case DR16_SWITCH_ERROR:
         default:
             break;
-    }
-}
-
-/**
- * @brief 从同一遥控快照解析旋转意图，失联和非法状态不给予旋转许可
- *
- * @param[in] rc 最近遥控快照，可为空
- * @param[in] rc_valid 缓存有效标志
- * @param[in] now_us 读取快照后的当前时间，单位微秒
- * @return 有效拨杆对应的旋转意图，异常返回未知，跟随由未来上层命令显式提供
- */
-Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool rc_valid, uint64_t now_us)
-{
-    if (rc == NULL || !rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
-        now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
-    {
-        return GIMBAL_CHASSIS_MOTION_UNKNOWN;
-    }
-
-    // 模式仅表达命令意图，最终运动仍由独立轮速观测核对
-    switch (rc->data.sw_l)
-    {
-        case DR16_SWITCH_UP:
-        case DR16_SWITCH_MIDDLE:
-            return GIMBAL_CHASSIS_MOTION_NONE;
-        case DR16_SWITCH_DOWN:
-            return GIMBAL_CHASSIS_MOTION_SPIN;
-        default:
-            return GIMBAL_CHASSIS_MOTION_UNKNOWN;
     }
 }
 
@@ -204,17 +221,13 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
 
     // 同一平滑速度同时用于目标增量和前馈，命令层不依赖云台轴的运行状态
     const float yaw_rate = CMD_GIMBAL_DIRECTION *
-        InputShaping_NormalizeChannel(rc->data.ch_r_x, CMD_CHANNEL_LIMIT, CMD_DEADZONE) *
+        Cmd_NormalizeChannel(rc->data.ch_r_x) *
         CMD_GIMBAL_RATE_RAD_S * M_RAD2DEG_MULT;
     const float pitch_rate = CMD_GIMBAL_DIRECTION *
-        InputShaping_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE) *
+        Cmd_NormalizeChannel(rc->data.ch_r_y) *
         CMD_GIMBAL_RATE_RAD_S * M_RAD2DEG_MULT;
-    ctx->yaw_rate_deg_s = InputShaping_SmoothRate(ctx->yaw_rate_deg_s, yaw_rate,
-        CMD_GIMBAL_ACCEL_DEG_S2, CMD_GIMBAL_DECEL_DEG_S2,
-        period_s, CMD_GIMBAL_SMOOTH_TIME_S, CMD_GIMBAL_SETTLE_DEG_S);
-    ctx->pitch_rate_deg_s = InputShaping_SmoothRate(ctx->pitch_rate_deg_s, pitch_rate,
-        CMD_GIMBAL_ACCEL_DEG_S2, CMD_GIMBAL_DECEL_DEG_S2,
-        period_s, CMD_GIMBAL_SMOOTH_TIME_S, CMD_GIMBAL_SETTLE_DEG_S);
+    ctx->yaw_rate_deg_s = Cmd_SmoothRate(ctx->yaw_rate_deg_s, yaw_rate, period_s);
+    ctx->pitch_rate_deg_s = Cmd_SmoothRate(ctx->pitch_rate_deg_s, pitch_rate, period_s);
     out->yaw.rate_rad_s = ctx->yaw_rate_deg_s * CMD_DEG_TO_RAD;
     out->pitch.rate_rad_s = ctx->pitch_rate_deg_s * CMD_DEG_TO_RAD;
     return true;
