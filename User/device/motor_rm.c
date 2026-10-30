@@ -13,7 +13,6 @@
 #define M3508_M2006_FB_ID_BASE (0x201)
 #define M3508_M2006_CTRL_ID_BASE (0x200)
 #define M3508_M2006_CTRL_ID_EXTAND (0x1ff)
-#define M3508_M2006_ID_SETTING_ID (0x700)
 #define M3508_MAX_ABS_LSB (16384)
 #define M2006_MAX_ABS_LSB (10000)
 #define MOTOR_TX_BUF_SIZE (8)
@@ -24,7 +23,7 @@
 #define MOTOR_RM_TX_GROUP_GM6020 (2u)
 #define MOTOR_RM_TX_GROUP_MASK(group) ((uint8_t)(1u << (group)))
 #define MOTOR_ENC_RES (8192)  /* 电机编码器分辨率 */
-#define MOTOR_CUR_RES (16384) /* 电机转矩电流分辨率 */
+#define MOTOR_CUR_RES (16384)
 #define MOTOR_RM_SUSPICIOUS_DELTA_COUNT ((MOTOR_ENC_RES * 9) / 20)
 
 /*
@@ -37,19 +36,12 @@
 #define GM6020_MAX_ABS_CURRENT_A (3.0F)
 #define GM6020_OUTPUT_SLOT_BASE (4U)
 
-static MOTOR_RM_CANManager_t *can_managers[BSP_CAN_NUM] =
-{
-    NULL,
-};
+static MOTOR_RM_CANManager_t *can_managers[BSP_CAN_NUM];
+// 云台电流缓存按总线独立保存，禁止与 M3508/M2006 的 ID5、ID6 输出槽位重叠
+static int16_t gm6020_output[BSP_CAN_NUM][2];
 /* 最近一次 RM 组帧发送的调试快照 */
-static MOTOR_RM_TxDebug_t motor_rm_tx_debug =
-{
-    0,
-};
-MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS] =
-{
-    0,
-};
+static MOTOR_RM_TxDebug_t motor_rm_tx_debug;
+MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS];
 
 /**
  * @brief 将反馈标识映射为八路输出槽位
@@ -158,7 +150,7 @@ static int8_t MOTOR_RM_FillTxFrame(const MOTOR_RM_CANManager_t *manager, uint8_t
         tx_frame->id = GM6020_CTRL_ID;
         for (uint8_t motor_index = 0U; motor_index < 2U; motor_index++)
         {
-            const int16_t current = output_msg->output[GM6020_OUTPUT_SLOT_BASE + motor_index];
+            const int16_t current = gm6020_output[manager->can][motor_index];
             tx_frame->data[motor_index * 2U] = (uint8_t)((current >> 8) & 0xFF);
             tx_frame->data[motor_index * 2U + 1U] = (uint8_t)(current & 0xFF);
         }
@@ -179,15 +171,15 @@ static void MOTOR_RM_UpdateTxDebug(const MOTOR_RM_CANManager_t *manager, const B
     motor_rm_tx_debug.source_motor_id = source_motor_id;
     motor_rm_tx_debug.tx_frame_id = tx_frame->id;
     motor_rm_tx_debug.logical_index = logical_index;
-    if (logical_index >= 0 && logical_index < MOTOR_RM_MAX_MOTORS)
-    {
-        motor_rm_tx_debug.requested_current = manager->output_msg.output[logical_index];
-    }
-    else
-    {
-        motor_rm_tx_debug.requested_current = 0;
-    }
     memcpy(motor_rm_tx_debug.grouped_output, manager->output_msg.output, sizeof(motor_rm_tx_debug.grouped_output));
+    // 调试快照按本帧协议展示槽位，兼容已有云台的索引 4、5 观察方式
+    if (tx_frame->id == GM6020_CTRL_ID)
+    {
+        memcpy(&motor_rm_tx_debug.grouped_output[GM6020_OUTPUT_SLOT_BASE], gm6020_output[manager->can],
+               sizeof(gm6020_output[manager->can]));
+    }
+    motor_rm_tx_debug.requested_current = logical_index >= 0 && logical_index < MOTOR_RM_MAX_MOTORS ?
+        motor_rm_tx_debug.grouped_output[logical_index] : 0;
     memcpy(motor_rm_tx_debug.tx_data, tx_frame->data, sizeof(motor_rm_tx_debug.tx_data));
     motor_rm_tx_debug.pending_tx_groups = manager->pending_tx_groups;
     for (int i = 0; i < MOTOR_RM_MAX_MOTORS; i++)
@@ -196,7 +188,7 @@ static void MOTOR_RM_UpdateTxDebug(const MOTOR_RM_CANManager_t *manager, const B
         g_motor_rm_slot_tx_debug[i].can = manager->can;
         g_motor_rm_slot_tx_debug[i].tx_frame_id = tx_frame->id;
         g_motor_rm_slot_tx_debug[i].logical_index = (int8_t)i;
-        g_motor_rm_slot_tx_debug[i].output_value = manager->output_msg.output[i];
+        g_motor_rm_slot_tx_debug[i].output_value = motor_rm_tx_debug.grouped_output[i];
         memcpy(g_motor_rm_slot_tx_debug[i].tx_data, tx_frame->data, sizeof(g_motor_rm_slot_tx_debug[i].tx_data));
     }
 }
@@ -611,7 +603,11 @@ int8_t MOTOR_RM_SetOutput(MOTOR_RM_Param_t *param, float value)
         return DEVICE_ERR;
     }
     int16_t output_value = (int16_t)(value * (float)MOTOR_RM_GetLSB(param->module));
-    manager->output_msg.output[logical_index] = output_value;
+    // 两类协议各自持有缓存，写入或发送任一帧组都不得改写另一类电机的命令
+    int16_t *output = param->module == MOTOR_GM6020 ?
+        &gm6020_output[param->can][logical_index - GM6020_OUTPUT_SLOT_BASE] :
+        &manager->output_msg.output[logical_index];
+    *output = output_value;
     MOTOR_RM_MarkPendingGroup(manager, MOTOR_RM_GetTxGroup(param));
     return DEVICE_OK;
 }

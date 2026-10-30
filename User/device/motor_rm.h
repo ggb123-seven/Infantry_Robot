@@ -34,12 +34,12 @@ typedef enum
 } MOTOR_RM_C610_ErrorCode_t;
 
 /*
- * 每条 CAN 总线最多提供八个 RM 电机输出槽位
+ * 每条 CAN 总线最多注册八个 RM 电机，M3508/M2006 提供八个独立输出槽位
  * M3508/M2006 的 output[0~7] 对应反馈帧 0x201~0x208
- * GM6020 电流模式使用 output[4]/[5] 对应电机 ID 5/6，并映射到控制帧 0x2FE 的前四个数据字节
+ * GM6020 电流缓存由驱动按总线独立保存，映射到控制帧 0x2FE 的前四个数据字节
  * named 字段保留 M3508/M2006 的兼容命名
  * gm6020.reserved_head 与 reserved_tail 为对齐槽位，不代表新增电机
- * gm6020.yaw_id209、pitch_id20a 分别与 output[4]、output[5] 共用同一存储
+ * gm6020 字段仅保留兼容布局，不能用它写入云台电流；云台调试快照仍使用索引 4、5
  */
 typedef union
 {

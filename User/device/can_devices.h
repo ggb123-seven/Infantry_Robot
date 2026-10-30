@@ -11,13 +11,18 @@ extern "C"
 #include "device/motor_rm.h"
 
 /*
- * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册 yaw 与 pitch 两路 GM6020
+ * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册两路 GM6020、两路 M3508 和一路 M2006
  * 云台索引 0、1 分别对应 ID5 yaw 和 ID6 pitch，反馈标准帧为 0x209、0x20A
+ * 发射索引 0、1、2 分别对应摩擦轮 ID5、ID6 与拨弹 ID7，反馈为 0x205、0x206、0x207
  */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
 #define CAN_DEVICES_GIMBAL_MOTOR_COUNT (2U)
 #define CAN_DEVICES_GIMBAL_YAW (0U)
 #define CAN_DEVICES_GIMBAL_PITCH (1U)
+#define CAN_DEVICES_SHOOT_MOTOR_COUNT (3U)
+#define CAN_DEVICES_SHOOT_FRIC1 (0U)
+#define CAN_DEVICES_SHOOT_FRIC2 (1U)
+#define CAN_DEVICES_SHOOT_TRIGGER (2U)
 
 /**
  * @brief 整车 CAN 设备集合状态
@@ -47,7 +52,7 @@ typedef struct
 /*
  * 整车 CAN 设备集合快照：
  * - initialized：CAN 总线初始化成功时为 true，允许单个电机注册失败后隔离运行
- * - init_status：总线初始化、四路 M3508 与两路 GM6020 注册的聚合结果
+ * - init_status：总线初始化、六路 M3508、两路 GM6020 与一路 M2006 注册的聚合结果
  * - feedback_status：四路 M3508 本周期反馈更新的聚合结果
  * - output_status：四路 M3508 本周期电流提交的聚合结果
  * - tx_status：四路 M3508 槽位处理完成后的 0x200 控制帧发送结果
@@ -81,7 +86,7 @@ typedef struct
 } CANDevices_Snapshot_t;
 
 /**
- * @brief 初始化 CAN 总线并注册四个底盘 M3508 和两路云台 GM6020
+ * @brief 初始化 CAN 总线并注册底盘、云台、双摩擦轮与拨弹电机
  *
  * 单个电机注册失败时保留其他电机运行能力，并在快照中记录对应注册状态
  *
@@ -126,6 +131,25 @@ int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedba
  * @return 两路缓存更新且发送成功返回 CAN_DEVICES_OK，非法输入、设备不可用或发送失败返回错误码
  */
 int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a);
+
+/**
+ * @brief 更新单路发射机构电机的新反馈
+ *
+ * @param[in] index 电机索引，0、1 为摩擦轮，2 为拨弹
+ * @param[out] feedback 新反馈，摩擦轮为转子 rpm、拨弹为输出轴 rpm，时间戳为微秒
+ * @return 取得新反馈返回 CAN_DEVICES_OK，否则返回设备错误码，输出清零
+ */
+int8_t CANDevices_UpdateShootFeedback(uint8_t index, MOTOR_RM_Feedback_t *feedback);
+
+/**
+ * @brief 合并两只摩擦轮与拨弹电流并统一发送一次 CAN2 的 0x1FF 帧
+ *
+ * @param[in] fric1_a 第一只摩擦轮的转子电流，单位 A，非有限值按零处理
+ * @param[in] fric2_a 第二只摩擦轮的转子电流，单位 A，非有限值按零处理
+ * @param[in] trigger_a 拨弹电机的转子电流，单位 A，非有限值按零处理
+ * @return 全部写入并发送成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
+ */
+int8_t CANDevices_ApplyShootCurrent(float fric1_a, float fric2_a, float trigger_a);
 
 #ifdef __cplusplus
 }
