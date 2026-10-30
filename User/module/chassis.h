@@ -113,7 +113,7 @@ typedef struct
  * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
  *
  * @param[out] chassis 待初始化的底盘实例，初始化后不得整体复制
- * @param[in] config 默认配置，允许为 NULL，空指针时初始化失败
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制采样频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
@@ -123,7 +123,7 @@ int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float fr
  * @brief 从 CAN 快照更新四轮实测转速
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] can 本周期 CAN 快照，允许为 NULL，缺失或无效反馈写入 NaN
+ * @param[in] can 本周期 CAN 快照，无新消息时传 NULL，缺失或无效反馈写入 NaN
  * @return 无返回值
  */
 void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can);
@@ -132,7 +132,7 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
  * @brief 推进底盘模式和每轮状态机并计算电流
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] command 归一化控制命令，允许为 NULL，非法命令按待机处理
+ * @param[in] command 归一化控制命令，无命令时传 NULL，非法命令按待机处理
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
@@ -141,7 +141,7 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
 /**
  * @brief 导出四路电流，保留调用方设置的命令序号
  *
- * @param[in] chassis 底盘实例，允许为 NULL，未初始化时输出全零
+ * @param[in] chassis 底盘实例，调用方保证非空，未初始化时输出全零
  * @param[out] output CAN 电流命令，仅写 current_a[0~3]
  * @return 无返回值
  */
@@ -150,7 +150,7 @@ void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output);
 /**
  * @brief 从独立四轮反馈生成云台所需的底盘旋转观测
  *
- * @param[in] chassis 已完成本周期控制的底盘实例，可为空
+ * @param[in] chassis 已完成本周期控制的底盘实例，调用方保证非空
  * @param[in] can 本周期四轮反馈快照，可为空
  * @param[in] mode 有效命令的旋转意图，未知意图不发布有效观测
  * @param[in] rad_s_per_rpm 平均输出轴轮速到车体转速的标定系数，须为有限正值

@@ -413,27 +413,16 @@ static bool GimbalGovernor_Advance(float residual_rad_s, float imu_speed_rad_s, 
 bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
                                         const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
 {
-    if (gimbal == NULL || setpoint == NULL || governor_yaw != &gimbal->yaw)
-    {
-        return false;
-    }
+    // 调用方保证实例与绑定轴一致，模式、周期和命令已在 Control 入口校验
     // 明确失能立即复位保护，电机失联仍交给原有轴状态机零输出
-    if (mode == GIMBAL_MODE_RELAX || !gimbal->config.yaw.enabled)
+    if (mode == GIMBAL_MODE_RELAX || !gimbal->control_config.yaw.enabled)
     {
         GimbalGovernor_InitYaw(&gimbal->yaw);
         return true;
     }
-    if ((mode != GIMBAL_MODE_ANGLE && mode != GIMBAL_MODE_SPEED) ||
-        !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f ||
-        !isfinite(setpoint->target_speed_rad_s) ||
-        (mode == GIMBAL_MODE_ANGLE && !isfinite(setpoint->target_angle_deg)))
-    {
-        return false;
-    }
     // 旧反馈不得用于主动制动，等待期间清除计时与电流历史，但保留已有锁存
     if (gimbal->imu_state != GIMBAL_IMU_READY || gimbal->yaw.state == GIMBAL_AXIS_FAULT ||
-        !isfinite(gimbal->yaw.motor_speed_rad_s) || !isfinite(gimbal->yaw.speed_rad_s) ||
-        !isfinite(gimbal->yaw.mechanical_angle_deg) || !isfinite(gimbal->yaw.angle_deg))
+        gimbal->yaw.feedback_time_us == UINT64_MAX)
     {
         governor_detect_s = governor_stop_s = governor_previous_current_a = 0.0f;
         governor_match_s = governor_follow_s = 0.0f;
@@ -579,7 +568,7 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
 {
     float current_a = GimbalGovernor_LimitCurrent(motor_speed_rad_s, imu_speed_rad_s, governor_chassis_speed_rad_s,
                                                  requested_current_a, max_current_a);
-    if (!isfinite(current_a) || !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f)
+    if (!isfinite(current_a))
     {
         return NAN;
     }
@@ -629,10 +618,6 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
         case GIMBAL_GOVERNOR_RESTORING:
         case GIMBAL_GOVERNOR_GUARDED:
         {
-            if (governor_yaw == NULL)
-            {
-                return NAN;
-            }
             // 跟随时不主动纠偏，捕获新目标后恢复完整 PID，避免仅用比例项导致低出力锁死
             const float blend = governor_state == GIMBAL_GOVERNOR_HOLD ? 0.0f :
                 fminf(1.0f, governor_recovery_s / GIMBAL_GOVERNOR_RESTORE_TIME_S);
@@ -690,10 +675,7 @@ float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad
 void GimbalGovernor_TrackCurrent(Gimbal_Axis_t *axis, float candidate_a, float previous_speed_integral,
                                  float previous_angle_integral, float period_s)
 {
-    if (axis == NULL || axis != governor_yaw)
-    {
-        return;
-    }
+    // 调用方保证轴已绑定，生命周期覆盖整个云台任务
     // 撤销继续推向饱和方向的增量，再以有限步长跟踪最终电流
     const float delta_a = axis->output_current_a - candidate_a;
     if (delta_a != 0.0f)
@@ -749,9 +731,7 @@ float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s
 {
     const float residual_rad_s = motor_speed_rad_s - imu_speed_rad_s + chassis_speed_rad_s;
     // 拒绝非法数据，不能用旧转速或数学库的非数值吞并行为继续制动
-    if (!isfinite(motor_speed_rad_s) || !isfinite(imu_speed_rad_s) || !isfinite(chassis_speed_rad_s) ||
-        !isfinite(residual_rad_s) || !isfinite(requested_current_a) ||
-        !isfinite(max_current_a) || max_current_a <= 0.0f)
+    if (!isfinite(residual_rad_s))
     {
         return NAN;
     }
@@ -775,13 +755,7 @@ float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s
 float GimbalGovernor_BackCalculate(float integral, float integral_gain, float integral_limit,
                                    float current_delta_a, float period_s)
 {
-    // 零增益不参与反算，异常输入交回模块故障路径处理
-    if (!isfinite(integral) || !isfinite(integral_gain) || integral_gain < 0.0f ||
-        !isfinite(integral_limit) || integral_limit < 0.0f || !isfinite(current_delta_a) ||
-        !isfinite(period_s) || period_s <= 0.0f || period_s > 0.1f)
-    {
-        return NAN;
-    }
+    // 调用方保证周期与参数已集中校验，零增益不参与反算
     if (integral_gain <= GIMBAL_GOVERNOR_MIN_INTEGRAL_GAIN)
     {
         return integral;

@@ -58,7 +58,7 @@ typedef struct
  * state 为唯一业务状态，任一路反馈离线时两轮一起撤驱
  * feedback[0~1] 为最近有效反馈，速度为转子 rpm，feedback_valid 为各轮反馈时效标志
  * feedback_time_us[0~1] 为完整微秒源时间，UINT64_MAX 表示尚无反馈，超时上限为 100 ms
- * target_speed_rpm[0~1] 为限幅后的转子目标 rpm，current_a[0~1] 为最终转子电流 A
+ * target_speed_rpm[0~1] 为限幅后的转子目标 rpm，current_a[0~1] 为候选转子电流 A，非运行时由 DumpOutput 输出零
  * speed_pid[0~1] 保存两个独立速度控制器的积分、微分与滤波历史
  */
 typedef struct
@@ -81,7 +81,7 @@ typedef struct
  * @brief 复制摩擦轮配置并初始化两个速度控制器
  *
  * @param[out] shoot 双摩擦轮实例，初始化后不得整体复制
- * @param[in] config 默认配置，空指针时初始化失败
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保留两轮零输出
  */
@@ -110,7 +110,7 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
 void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_s);
 
 /**
- * @brief 导出初始化或本周期控制已经确定的两轮电流
+ * @brief 按双摩擦轮运行状态导出本周期电流或零
  *
  * @param[in] shoot 已调用 Init 或 Control 的双摩擦轮实例，须非空
  * @param[out] output 两轮电流，单位 A，须非空

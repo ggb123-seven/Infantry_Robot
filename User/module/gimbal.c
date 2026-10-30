@@ -7,13 +7,11 @@
 
 /*
  * 参数沿用合并前值：周期上限 0.1 秒、PID 增益上限 1000；rpm 按每分钟 60 秒、每圈 2π 换算，完整一圈为 360 度
- * 电机转速按有符号 16 位协议校验；惯性角速度上限 40 rad/s，俯仰奇异点与相邻姿态跳变量各保留 1 度余量
+ * 电机编码器单圈范围在反馈入口校验；惯性角速度上限 40 rad/s，俯仰奇异点与相邻姿态跳变量各保留 1 度余量
  */
 #define GIMBAL_MAX_PERIOD_S (0.1f)
 #define GIMBAL_MAX_GAIN (1000.0f)
 #define GIMBAL_RPM_TO_RAD_S (0.10471975512f)
-#define GIMBAL_RAW_SPEED_MIN_RPM (-32768.0f)
-#define GIMBAL_RAW_SPEED_MAX_RPM (32767.0f)
 #define GIMBAL_IMU_MAX_RAD_S (40.0f)
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
@@ -30,44 +28,40 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis);
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisState_t next_state);
 static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
 static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
+static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_hz);
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz);
-static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
+static void Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config);
 static void Gimbal_EnterRunning(Gimbal_Axis_t *axis);
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                            const Gimbal_AxisSetpoint_t *command, float period_s, bool motion_governed);
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed);
+                               bool motion_governed, bool imu_ready);
 
 int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float frequency_hz)
 {
-    if (gimbal == NULL || config == NULL)
-    {
-        return -1;
-    }
-
     // 先复制配置并清除全部运行数据，任一失败路径都保持两轴零输出
     const Gimbal_Config_t saved_config = *config;
     memset(gimbal, 0, sizeof(*gimbal));
     gimbal->config = saved_config;
     gimbal->mode = GIMBAL_MODE_RELAX;
+    gimbal->yaw.state = gimbal->pitch.state = GIMBAL_AXIS_FAULT;
     Gimbal_ClearFeedback(&gimbal->yaw);
     Gimbal_ClearFeedback(&gimbal->pitch);
     gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
     gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
     gimbal->yaw.base_speed_rad_s = gimbal->pitch.base_speed_rad_s = NAN;
-    if (!isfinite(frequency_hz) || frequency_hz < 10.0f || frequency_hz > 2000.0f ||
-        !isfinite(config->feedback_timeout_s) || config->feedback_timeout_s <= 0.0f ||
-        config->feedback_timeout_s > 1.0f || !isfinite(config->imu_timeout_s) ||
-        config->imu_timeout_s <= 0.0f || config->imu_timeout_s > 0.1f)
+    gimbal->config_valid = Gimbal_IsConfigValid(&saved_config, frequency_hz);
+    if (!gimbal->config_valid)
     {
         return -1;
     }
 
-    // 两轴各自校验配置并初始化串级 PID
-    if (Gimbal_InitAxis(&gimbal->yaw, &gimbal->config.yaw, frequency_hz) != 0 ||
-        Gimbal_InitAxis(&gimbal->pitch, &gimbal->config.pitch, frequency_hz) != 0)
+    // 两轴共享已校验快照，PID 参数继续指向各轴已有持久副本
+    gimbal->control_config = saved_config;
+    if (Gimbal_InitAxis(&gimbal->yaw, &saved_config.yaw, frequency_hz) != 0 ||
+        Gimbal_InitAxis(&gimbal->pitch, &saved_config.pitch, frequency_hz) != 0)
     {
         return -1;
     }
@@ -87,8 +81,12 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand_t *command,
                                    Gimbal_Mode_t mode, float period_s)
 {
-    // 速度模式直接采用角速度，角度模式再按来源解析姿态目标
+    // 外部命令只在此入口检查，非法速度不能被起控时的姿态捕获掩盖
     axis->setpoint.target_speed_rad_s = command->rate_rad_s;
+    if (!isfinite(command->rate_rad_s))
+    {
+        return false;
+    }
     if (mode != GIMBAL_MODE_ANGLE)
     {
         return true;
@@ -101,10 +99,10 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
                 axis->setpoint.target_angle_deg =
                     axis->target_angle_deg + command->rate_rad_s * M_RAD2DEG_MULT * period_s;
             }
-            return true;
+            return isfinite(axis->setpoint.target_angle_deg);
         case GIMBAL_TARGET_ABSOLUTE:
             axis->setpoint.target_angle_deg = command->angle_deg;
-            return true;
+            return isfinite(axis->setpoint.target_angle_deg);
         default:
             axis->setpoint.target_angle_deg = axis->setpoint.target_speed_rad_s = NAN;
             return false;
@@ -114,12 +112,20 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
 void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t *command,
                                        const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s)
 {
-    if (gimbal == NULL)
+    // 在线调参只在 Control 入口复制并校验，失败时不采纳快照中的任何字段
+    const Gimbal_Config_t snapshot = *(const volatile Gimbal_Config_t *)&gimbal->config;
+    gimbal->config_valid = Gimbal_IsConfigValid(&snapshot, 1.0f / gimbal->yaw.speed_pid.dt_min);
+    if (!gimbal->config_valid || !isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S)
     {
+        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
+        Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
         return;
     }
+    gimbal->control_config = snapshot;
+    Gimbal_ApplyAxisConfig(&gimbal->yaw, &snapshot.yaw);
+    Gimbal_ApplyAxisConfig(&gimbal->pitch, &snapshot.pitch);
 
-    // 空命令按 RELAX 处理，保证调用方异常时两轴零输出
+    // 无命令表示主动待机，输出由两轴状态统一阻断
     Gimbal_Command_t relax_command =
     {
         .mode = GIMBAL_MODE_RELAX,
@@ -127,6 +133,12 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
     const Gimbal_Command_t *active_command = command != NULL ? command : &relax_command;
     const Gimbal_Mode_t mode = active_command->mode;
     const bool mode_changed = mode != gimbal->mode;
+    if ((unsigned)mode > GIMBAL_MODE_ANGLE)
+    {
+        Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
+        Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
+        return;
+    }
 
     // 公开命令先解析为轴内设定值，姿态捕获及保护的覆盖优先于增量
     const bool yaw_valid = Gimbal_ResolveSetpoint(&gimbal->yaw, &active_command->yaw, mode, period_s);
@@ -144,14 +156,14 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
     {
         if (yaw_valid &&
             (gimbal->yaw.state == GIMBAL_AXIS_RELAX || gimbal->yaw.state == GIMBAL_AXIS_OFFLINE || mode_changed) &&
-            isfinite(gimbal->yaw.angle_deg))
+            gimbal->yaw.feedback_time_us != UINT64_MAX)
         {
             gimbal->yaw.setpoint.target_angle_deg = gimbal->yaw.angle_deg;
             gimbal->yaw.setpoint.target_speed_rad_s = 0.0f;
         }
         if (pitch_valid &&
             (gimbal->pitch.state == GIMBAL_AXIS_RELAX || gimbal->pitch.state == GIMBAL_AXIS_OFFLINE || mode_changed) &&
-            isfinite(gimbal->pitch.angle_deg))
+            gimbal->pitch.feedback_time_us != UINT64_MAX)
         {
             gimbal->pitch.setpoint.target_angle_deg = gimbal->pitch.angle_deg;
             gimbal->pitch.setpoint.target_speed_rad_s = 0.0f;
@@ -159,40 +171,36 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
     }
 
     // yaw 保护先跟随当前姿态再捕获新目标，校验失败仍走原故障停机路径，pitch 独立控制
-    if (GimbalGovernor_PrepareYawWithChassis(gimbal, mode, &gimbal->yaw.setpoint, chassis, now_us, period_s))
+    const bool imu_ready = gimbal->imu_state == GIMBAL_IMU_READY;
+    if (yaw_valid && GimbalGovernor_PrepareYawWithChassis(gimbal, mode, &gimbal->yaw.setpoint,
+                                                        chassis, now_us, period_s))
     {
-        Gimbal_ControlAxis(&gimbal->yaw, &gimbal->config.yaw, mode, mode_changed,
-                           &gimbal->yaw.setpoint, period_s, true);
+        Gimbal_ControlAxis(&gimbal->yaw, &snapshot.yaw, mode, mode_changed,
+                           &gimbal->yaw.setpoint, period_s, true, imu_ready);
     }
     else
     {
         Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_FAULT);
     }
-    Gimbal_ControlAxis(&gimbal->pitch, &gimbal->config.pitch, mode, mode_changed, &gimbal->pitch.setpoint,
-                       period_s, false);
+    if (pitch_valid)
+    {
+        Gimbal_ControlAxis(&gimbal->pitch, &snapshot.pitch, mode, mode_changed, &gimbal->pitch.setpoint,
+                           period_s, false, imu_ready);
+    }
+    else
+    {
+        Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
+    }
     gimbal->mode = mode;
 }
 
 void Gimbal_DumpOutput(const Gimbal_t *gimbal, Gimbal_Output_t *output)
 {
-    if (output == NULL)
-    {
-        return;
-    }
-    *output = (Gimbal_Output_t)
-    {
-        0,
-    };
-    if (gimbal == NULL)
-    {
-        return;
-    }
-
-    // 模块内电流以角度增大方向为正，反装轴在输出时换回电机方向
-    const float yaw_current_a = gimbal->yaw.output_current_a;
-    const float pitch_current_a = gimbal->pitch.output_current_a;
-    output->yaw_current_a = gimbal->config.yaw.reversed ? -yaw_current_a : yaw_current_a;
-    output->pitch_current_a = gimbal->config.pitch.reversed ? -pitch_current_a : pitch_current_a;
+    // 唯一输出闸门按轴状态放行，只使用本周期已采纳方向，不读取 EmberProbe 可写配置
+    const float yaw_current_a = gimbal->yaw.state == GIMBAL_AXIS_RUNNING ? gimbal->yaw.output_current_a : 0.0f;
+    const float pitch_current_a = gimbal->pitch.state == GIMBAL_AXIS_RUNNING ? gimbal->pitch.output_current_a : 0.0f;
+    output->yaw_current_a = gimbal->yaw.applied_reversed ? -yaw_current_a : yaw_current_a;
+    output->pitch_current_a = gimbal->pitch.applied_reversed ? -pitch_current_a : pitch_current_a;
 }
 
 /**
@@ -229,6 +237,26 @@ static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config)
 }
 
 /**
+ * @brief 集中校验完整云台配置，供初始化与每周期 Control 入口调用
+ *
+ * @param[in] config 待校验快照，调用方保证非空
+ * @param[in] frequency_hz 控制采样频率，单位 Hz
+ * @return 两轴参数及可表示的反馈超时均合法时返回 true
+ */
+static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_hz)
+{
+    return isfinite(frequency_hz) && frequency_hz >= 10.0f && frequency_hz <= 2000.0f &&
+        isfinite(config->feedback_timeout_s) && config->feedback_timeout_s >= 1.0e-6f &&
+        config->feedback_timeout_s <= 1.0f && isfinite(config->imu_timeout_s) &&
+        config->imu_timeout_s >= 1.0e-6f && config->imu_timeout_s <= 0.1f &&
+        Gimbal_IsAxisConfigValid(&config->yaw) && Gimbal_IsAxisConfigValid(&config->pitch) &&
+        config->yaw.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
+        config->yaw.speed_pid.d_cutoff_freq < frequency_hz * 0.5f &&
+        config->pitch.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
+        config->pitch.speed_pid.d_cutoff_freq < frequency_hz * 0.5f;
+}
+
+/**
  * @brief 判断配置中的 PID 参数是否与实际采用的副本不同
  *
  * @param[in] config 配置中的 PID 参数
@@ -238,24 +266,20 @@ static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config)
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied)
 {
     return config->k != applied->k || config->p != applied->p || config->i != applied->i ||
-           config->d != applied->d || config->i_limit != applied->i_limit || config->out_limit != applied->out_limit;
+           config->d != applied->d || config->i_limit != applied->i_limit || config->out_limit != applied->out_limit ||
+           config->d_cutoff_freq != applied->d_cutoff_freq;
 }
 
 /**
- * @brief 校验单轴配置并初始化串级 PID
+ * @brief 使用已校验的单轴配置初始化串级 PID
  *
  * @param[out] axis 单轴运行数据
  * @param[in] config 单轴配置
  * @param[in] frequency_hz 控制频率，单位 Hz
- * @return 成功返回 0，配置非法或 PID 初始化失败返回 -1
+ * @return 成功返回 0，PID 初始化失败返回 -1
  */
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, float frequency_hz)
 {
-    if (!Gimbal_IsAxisConfigValid(config))
-    {
-        return -1;
-    }
-
     // PID 指向实例内的参数副本，调试器修改配置后由每周期比较决定何时同步
     axis->applied_zero_encoder_deg = config->zero_encoder_deg;
     axis->applied_reversed = config->reversed;
@@ -277,15 +301,10 @@ static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *co
  *
  * @param[in,out] axis 单轴运行数据
  * @param[in] config 单轴配置
- * @return 配置合法时返回 true，非法时不采纳任何修改并返回 false
+ * @return 无返回值，调用方保证配置已经通过本周期集中校验
  */
-static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config)
+static void Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config)
 {
-    if (!Gimbal_IsAxisConfigValid(config))
-    {
-        return false;
-    }
-
     // 零点或方向变化后机械坐标失效，运行中锁存故障，下一帧重新建立机械角
     if (config->zero_encoder_deg != axis->applied_zero_encoder_deg || config->reversed != axis->applied_reversed)
     {
@@ -301,15 +320,27 @@ static bool Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_
     // 参数副本与配置不同时同步并清空积分，比例和微分项不受历史影响
     if (Gimbal_IsPidChanged(&config->angle_pid, &axis->applied_angle_pid))
     {
+        if (config->angle_pid.d_cutoff_freq != axis->applied_angle_pid.d_cutoff_freq)
+        {
+            LowPassFilter2p_Init(&axis->angle_pid.dfilter, 1.0f / axis->angle_pid.dt_min,
+                                 config->angle_pid.d_cutoff_freq);
+        }
         axis->applied_angle_pid = config->angle_pid;
         PID_ResetIntegral(&axis->angle_pid);
     }
     if (Gimbal_IsPidChanged(&config->speed_pid, &axis->applied_speed_pid))
     {
+        if (config->speed_pid.d_cutoff_freq != axis->applied_speed_pid.d_cutoff_freq ||
+            config->speed_pid.k != axis->applied_speed_pid.k)
+        {
+            LowPassFilter2p_Init(&axis->speed_pid.dfilter, 1.0f / axis->speed_pid.dt_min,
+                                 config->speed_pid.d_cutoff_freq);
+            const float scaled_speed = config->speed_pid.k * axis->speed_rad_s;
+            axis->speed_pid.last.k_fb = LowPassFilter2p_Reset(&axis->speed_pid.dfilter, scaled_speed);
+        }
         axis->applied_speed_pid = config->speed_pid;
         PID_ResetIntegral(&axis->speed_pid);
     }
-    return true;
 }
 
 /**
@@ -343,15 +374,8 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                            const Gimbal_AxisSetpoint_t *command, float period_s, bool motion_governed)
 {
-    // 反馈、命令和周期任一无效时停止计算，由调用方进入故障
+    // 调用方已保证反馈就绪、命令合法及周期有效，本层只执行控制计算
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
-    if (!isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S ||
-        !isfinite(axis->speed_rad_s) || !isfinite(axis->mechanical_angle_deg) ||
-        !isfinite(axis->motor_speed_rad_s) || !isfinite(command->target_speed_rad_s) ||
-        (angle_needed && (!isfinite(axis->angle_deg) || !isfinite(command->target_angle_deg))))
-    {
-        return false;
-    }
     // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈与角度环修正量合成
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
@@ -404,7 +428,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     // 速度环输出电流，非有限结果视为计算异常
     const float previous_speed_integral = axis->speed_pid.i;
     const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
-    if (!isfinite(target_speed_rad_s) || !isfinite(current_a))
+    if (!isfinite(target_speed_rad_s))
     {
         return false;
     }
@@ -447,33 +471,28 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
  * @param[in] motion_governed 为 true 时启用 yaw 残差电流包络
+ * @param[in] imu_ready 共用惯性源本周期已经通过反馈边界校验
  * @return 无返回值
  */
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool motion_governed)
+                               bool motion_governed, bool imu_ready)
 {
-    // 先采纳配置修改，再根据模式和反馈判断本周期能否闭环
-    const bool config_valid = Gimbal_ApplyAxisConfig(axis, config);
+    // 参数已由 Control 入口同步，此处仅依据运行请求和明确反馈状态推进状态机
     const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
-    const bool feedback_ready = isfinite(axis->speed_rad_s) && isfinite(axis->angle_deg) &&
-                                isfinite(axis->mechanical_angle_deg) && isfinite(axis->motor_speed_rad_s);
+    const bool feedback_ready = imu_ready && axis->feedback_time_us != UINT64_MAX;
 
     switch (axis->state)
     {
         // 待机与失联恢复共用起控路径，失联期间仍校验共用反馈和控制输入
         case GIMBAL_AXIS_RELAX:
         case GIMBAL_AXIS_OFFLINE:
-            if (axis->state == GIMBAL_AXIS_OFFLINE && run_requested &&
-                (!config_valid || !isfinite(axis->angle_deg) || !isfinite(axis->speed_rad_s) ||
-                !isfinite(period_s) || period_s <= 0.0f || period_s > GIMBAL_MAX_PERIOD_S ||
-                !isfinite(command->target_speed_rad_s) ||
-                (mode == GIMBAL_MODE_ANGLE && !isfinite(command->target_angle_deg))))
+            if (axis->state == GIMBAL_AXIS_OFFLINE && run_requested && !imu_ready)
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
                 break;
             }
-            if (!run_requested || !config_valid || !feedback_ready)
+            if (!run_requested || !feedback_ready)
             {
                 Gimbal_StopAxis(axis, run_requested && axis->state == GIMBAL_AXIS_OFFLINE ?
                     GIMBAL_AXIS_OFFLINE : GIMBAL_AXIS_RELAX);
@@ -497,7 +516,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
             {
                 Gimbal_EnterRunning(axis);
             }
-            if (!config_valid || !Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
+            if (!feedback_ready || !Gimbal_RunAxis(axis, config, mode, command, period_s, motion_governed))
             {
                 Gimbal_StopAxis(axis, GIMBAL_AXIS_FAULT);
             }
@@ -517,17 +536,10 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
 void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_motor,
                            const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us)
 {
-    if (gimbal == NULL)
-    {
-        return;
-    }
-
-    // 超时配置非法时无法判断时效，两轴反馈全部视为失联
-    const float timeout_s = gimbal->config.feedback_timeout_s;
-    const bool timeout_valid = isfinite(timeout_s) && timeout_s > 0.0f && timeout_s <= 1.0f;
-    const uint64_t timeout_us = timeout_valid ? (uint64_t)(timeout_s * 1.0e6f) : 0U;
-    Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->config.yaw, yaw_motor, now_us, timeout_us, false);
-    Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->config.pitch, pitch_motor, now_us, timeout_us, true);
+    // 反馈阶段使用最近一次通过集中校验的配置，新的在线调参留给随后 Control 采纳
+    const uint64_t timeout_us = (uint64_t)(gimbal->control_config.feedback_timeout_s * 1.0e6f);
+    Gimbal_UpdateAxisFeedback(&gimbal->yaw, &gimbal->control_config.yaw, yaw_motor, now_us, timeout_us, false);
+    Gimbal_UpdateAxisFeedback(&gimbal->pitch, &gimbal->control_config.pitch, pitch_motor, now_us, timeout_us, true);
 
     // 惯性快照独立校验时效和连续性，控制量只由该快照更新
     Gimbal_UpdateImu(gimbal, imu, now_us);
@@ -594,7 +606,6 @@ static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
     switch (gimbal->imu_state)
     {
         case GIMBAL_IMU_WAITING:
-            gimbal->imu_state = GIMBAL_IMU_WAITING;
             break;
 
         case GIMBAL_IMU_READY:
@@ -615,12 +626,7 @@ static void Gimbal_InvalidateImu(Gimbal_t *gimbal)
  */
 static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, uint64_t now_us)
 {
-    const float timeout_s = gimbal->config.imu_timeout_s;
-    if (!isfinite(timeout_s) || timeout_s <= 0.0f || timeout_s > 0.1f)
-    {
-        Gimbal_InvalidateImu(gimbal);
-        return;
-    }
+    const float timeout_s = gimbal->control_config.imu_timeout_s;
     const uint64_t timeout_us = (uint64_t)(timeout_s * 1.0e6f);
     const Gimbal_ImuFeedback_t *frame = imu != NULL ? imu : &gimbal->imu;
     bool valid = frame->valid && frame->sample_time_us <= now_us &&
@@ -703,7 +709,7 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
  * @param[in] config 单轴配置
  * @param[in] motor 新反馈帧，本周期没有新帧时为 NULL
  * @param[in] now_us 当前单调时刻，单位微秒
- * @param[in] timeout_us 反馈最大间隔，单位微秒，为 0 时视为配置故障
+ * @param[in] timeout_us 已校验的反馈最大间隔，单位微秒
  * @param[in] signed_angle 为 true 时使用零点两侧的有符号单圈角，否则展开连续角
  * @return 无返回值
  */
@@ -711,12 +717,6 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
                                       const MOTOR_RM_Feedback_t *motor, uint64_t now_us, uint64_t timeout_us,
                                       bool signed_angle)
 {
-    if (timeout_us == 0U)
-    {
-        Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
-        return;
-    }
-
     // 没有新帧时只检查旧帧时效，超时后清除反馈
     if (motor == NULL)
     {
@@ -734,10 +734,9 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     const uint64_t frame_time_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
     const float encoder_rad = motor->rotor_single_angle;
     const float speed_rpm = motor->rotor_speed;
+    // 设备 angle_valid 只保证连续角跟踪，不检查原始编码器是否超过 8191，故在此拒绝越界帧
     const bool frame_valid = motor->angle_valid && frame_time_us != UINT64_MAX && age_us <= timeout_us &&
-                             isfinite(encoder_rad) && encoder_rad >= 0.0f && encoder_rad < M_2PI &&
-                             isfinite(speed_rpm) && speed_rpm >= GIMBAL_RAW_SPEED_MIN_RPM &&
-                             speed_rpm <= GIMBAL_RAW_SPEED_MAX_RPM;
+                             encoder_rad >= 0.0f && encoder_rad < M_2PI;
     // 两种角度都拒绝旧帧和超时间隔，pitch 不依赖连续角展开器也保留时序校验
     const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
                             frame_time_us - axis->feedback_time_us <= timeout_us;

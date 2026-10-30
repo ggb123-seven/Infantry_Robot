@@ -55,7 +55,7 @@ typedef struct
  * state 为唯一业务状态，feedback 为最近有效设备反馈，转速为输出轴 rpm
  * feedback_valid 表示最近有效反馈尚未超时，feedback_time_us 为恢复后的完整微秒源时间
  * feedback_time_us 为 UINT64_MAX 时表示尚无反馈；反馈超时上限为 100 ms
- * target_speed_rpm 为限幅后的输出轴目标 rpm，current_a 为最终转子电流 A
+ * target_speed_rpm 为限幅后的输出轴目标 rpm，current_a 为候选转子电流 A，非运行时由 DumpOutput 输出零
  * speed_pid 保存速度控制器历史，不由任务或其他模块直接执行
  */
 typedef struct
@@ -78,7 +78,7 @@ typedef struct
  * @brief 复制拨弹配置并初始化速度控制器
  *
  * @param[out] trigger 拨弹实例，初始化后不得整体复制
- * @param[in] config 默认配置，空指针时初始化失败
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保留零输出
  */
@@ -105,7 +105,7 @@ void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedb
 void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float period_s);
 
 /**
- * @brief 导出初始化或本周期控制已经确定的拨弹电流
+ * @brief 按拨弹运行状态导出本周期电流或零
  *
  * @param[in] trigger 已调用 Init 或 Control 的拨弹实例，须非空
  * @param[out] output 拨弹电流输出，单位 A，须非空

@@ -198,7 +198,9 @@ typedef struct
 
 /*
  * 云台实例：
- * - config：初始化时复制的配置副本，调试器可在运行中修改
+ * - config：初始化时复制的配置副本，EmberProbe 可在运行中修改
+ * - control_config：最近一次集中校验通过的快照，反馈处理读取该副本，不读取可写配置
+ * - config_valid：本周期 Control 的快照校验结果，非法时两轴进入故障并由输出闸门归零
  * - mode：上一周期采用的控制模式
  * - yaw、pitch：两轴运行数据
  * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
@@ -208,6 +210,8 @@ typedef struct
 typedef struct
 {
     Gimbal_Config_t config;
+    Gimbal_Config_t control_config;
+    bool config_valid;
     Gimbal_Mode_t mode;
     Gimbal_Axis_t yaw;
     Gimbal_Axis_t pitch;
@@ -285,12 +289,12 @@ void Gimbal_ControlWithChassisFeedback(Gimbal_t *gimbal, const Gimbal_Command_t 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障
  *
- * @param[in] gimbal 云台实例，可为 NULL
- * @return 实例无效或存在锁存故障时为 true，电机单轴超时不算锁存故障
+ * @param[in] gimbal 云台实例，调用方保证非空
+ * @return 存在锁存故障时为 true，电机单轴超时不算锁存故障
  */
 static inline bool Gimbal_HasLatchedFault(const Gimbal_t *gimbal)
 {
-    return gimbal == NULL || gimbal->imu_state == GIMBAL_IMU_FAULT ||
+    return gimbal->imu_state == GIMBAL_IMU_FAULT ||
            gimbal->yaw.state == GIMBAL_AXIS_FAULT || gimbal->pitch.state == GIMBAL_AXIS_FAULT;
 }
 

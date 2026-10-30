@@ -34,27 +34,22 @@ static bool Trigger_ConfigValid(const Trigger_Config_t *config, float frequency_
  * @brief 复制拨弹配置并初始化速度控制器
  *
  * @param[out] trigger 拨弹实例，初始化后不得整体复制
- * @param[in] config 默认配置，空指针时初始化失败
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保留零输出
  */
 int8_t Trigger_Init(Trigger_t *trigger, const Trigger_Config_t *config, float frequency_hz)
 {
-    if (trigger == NULL)
-    {
-        return -1;
-    }
-
     // 清空旧实例，所有失败路径均从未初始化、无反馈和零电流开始
     memset(trigger, 0, sizeof(*trigger));
     trigger->feedback_time_us = UINT64_MAX;
     trigger->state = TRIGGER_FAULT;
-    if (config == NULL || !Trigger_ConfigValid(config, frequency_hz))
+    if (!Trigger_ConfigValid(config, frequency_hz))
     {
         return -1;
     }
 
-    // 控制器引用实例内参数副本，后续调参通过比较副本重新初始化
+    // 控制器引用实例内持久参数副本，后续调参只在 Control 同步
     trigger->config = *config;
     trigger->frequency_hz = frequency_hz;
     trigger->applied_speed_pid = config->speed_pid;
@@ -78,18 +73,12 @@ int8_t Trigger_Init(Trigger_t *trigger, const Trigger_Config_t *config, float fr
  */
 void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedback, uint64_t now_us)
 {
-    if (trigger == NULL)
-    {
-        return;
-    }
-
     // 只在取得新帧时恢复完整源时间，禁止对历史缓存持续做低位时间模减
     if (feedback != NULL)
     {
         const uint32_t age_us = (uint32_t)now_us - feedback->last_update_time;
         const uint64_t source_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
         trigger->feedback_valid = age_us <= TRIGGER_TIMEOUT_US && source_us != UINT64_MAX &&
-            isfinite(feedback->rotor_speed) &&
             (trigger->feedback_time_us == UINT64_MAX || source_us > trigger->feedback_time_us);
         if (trigger->feedback_valid)
         {
@@ -116,15 +105,9 @@ void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedb
  */
 void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float period_s)
 {
-    if (trigger == NULL)
-    {
-        return;
-    }
-
-    // 先建立零输出，再校验本周期输入，避免异常路径复用上一周期电流
-    trigger->current_a = 0.0f;
-    trigger->target_speed_rpm = 0.0f;
-    trigger->config_valid = Trigger_ConfigValid(&trigger->config, trigger->frequency_hz);
+    // EmberProbe 可在计算期间修改 config，本周期只校验并使用入口快照
+    const Trigger_Config_t snapshot = *(const volatile Trigger_Config_t *)&trigger->config;
+    trigger->config_valid = Trigger_ConfigValid(&snapshot, trigger->frequency_hz);
     const bool enabled = command != NULL && command->enabled;
     const bool valid = trigger->initialized && trigger->config_valid && isfinite(period_s) &&
         period_s > 0.0f && period_s <= TRIGGER_MAX_PERIOD_S &&
@@ -157,6 +140,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
     // 停止、失联与故障入口清除控制历史，零电流保持到状态机允许运行
     if (trigger->state != TRIGGER_RUNNING)
     {
+        trigger->target_speed_rpm = 0.0f;
         if (trigger->initialized)
         {
             PID_Reset(&trigger->speed_pid);
@@ -165,29 +149,26 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
     }
 
     // 调参和重新起控时清除历史，并按实测转速预置微分，避免恢复瞬间的微分冲击
-    const bool pid_changed = memcmp(&trigger->applied_speed_pid, &trigger->config.speed_pid,
+    const bool pid_changed = memcmp(&trigger->applied_speed_pid, &snapshot.speed_pid,
                                     sizeof(trigger->applied_speed_pid)) != 0;
     if (pid_changed || previous_state != TRIGGER_RUNNING)
     {
-        trigger->applied_speed_pid = trigger->config.speed_pid;
-        if (PID_Init(&trigger->speed_pid, KPID_MODE_CALC_D, trigger->frequency_hz, &trigger->applied_speed_pid) != 0)
-        {
-            trigger->state = TRIGGER_FAULT;
-            return;
-        }
+        trigger->applied_speed_pid = snapshot.speed_pid;
+        LowPassFilter2p_Init(&trigger->speed_pid.dfilter, trigger->frequency_hz, snapshot.speed_pid.d_cutoff_freq);
+        PID_Reset(&trigger->speed_pid);
         trigger->speed_pid.last.k_fb = LowPassFilter2p_Reset(&trigger->speed_pid.dfilter,
             trigger->applied_speed_pid.k * trigger->feedback.rotor_speed);
     }
 
     // 目标与最终电流分别限幅，输出单位始终为转子侧安培
-    trigger->target_speed_rpm = AbsClip(command->target_speed_rpm, trigger->config.max_speed_rpm);
+    trigger->target_speed_rpm = AbsClip(command->target_speed_rpm, snapshot.max_speed_rpm);
     const float current_a = PID_Calc(&trigger->speed_pid, trigger->target_speed_rpm,
                                      trigger->feedback.rotor_speed, 0.0f, period_s);
-    trigger->current_a = AbsClip(current_a, trigger->config.max_current_a);
+    trigger->current_a = AbsClip(current_a, snapshot.max_current_a);
 }
 
 /**
- * @brief 导出初始化或本周期控制已经确定的拨弹电流
+ * @brief 按拨弹运行状态导出本周期电流或零
  *
  * @param[in] trigger 已调用 Init 或 Control 的拨弹实例，须非空
  * @param[out] output 拨弹电流输出，单位 A，须非空
@@ -195,5 +176,5 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
  */
 void Trigger_DumpOutput(const Trigger_t *trigger, Trigger_Output_t *output)
 {
-    output->current_a = trigger->current_a;
+    output->current_a = trigger->state == TRIGGER_RUNNING ? trigger->current_a : 0.0f;
 }

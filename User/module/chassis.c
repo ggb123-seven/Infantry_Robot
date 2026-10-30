@@ -19,32 +19,23 @@ _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘�
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
 static void Chassis_ResetWheel(Chassis_Wheel_t *wheel);
 static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm);
-static void Chassis_ApplyPidConfig(Chassis_t *chassis);
+static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config);
 static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run, float period_s);
 static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s);
 
 /**
  * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
  *
- * @param[out] chassis 待初始化的底盘实例，初始化后不得整体复制
- * @param[in] config 默认配置，允许为 NULL，空指针时初始化失败
+ * @param[out] chassis 待初始化的底盘实例，调用方保证非空，初始化后不得整体复制
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制采样频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
 int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float frequency_hz)
 {
-    if (chassis == NULL)
-    {
-        return -1;
-    }
-
     // 清空旧状态并标记缺失反馈，保证所有初始化失败路径输出零电流
     memset(chassis, 0, sizeof(*chassis));
     Chassis_UpdateFeedback(chassis, NULL);
-    if (config == NULL)
-    {
-        return -1;
-    }
     chassis->config = *config;
     chassis->config_valid = Chassis_IsConfigValid(config, frequency_hz);
     if (!chassis->config_valid)
@@ -85,22 +76,17 @@ int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float fr
  * @brief 从 CAN 快照更新四轮实测转速
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] can 本周期 CAN 快照，允许为 NULL，缺失或无效反馈写入 NaN
+ * @param[in] can 本周期 CAN 快照，无新消息时传 NULL，缺失或无效反馈写入 NaN
  * @return 无返回值
  */
 void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can)
 {
-    if (chassis == NULL)
-    {
-        return;
-    }
-
-    // 仅接纳本周期更新成功且在线的有限反馈，不沿用历史转速
+    // 设备整数协议换算保证数值有限，此处只接纳本周期更新成功且在线的反馈
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
         chassis->wheel[i].measured_speed_rpm =
-            can != NULL && can->feedback_update_status[i] == CAN_DEVICES_OK && can->motor_online[i] &&
-            isfinite(can->actual_speed_rpm[i]) ? can->actual_speed_rpm[i] : NAN;
+            can != NULL && can->feedback_update_status[i] == CAN_DEVICES_OK && can->motor_online[i] ?
+            can->actual_speed_rpm[i] : NAN;
     }
 }
 
@@ -108,23 +94,25 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
  * @brief 推进底盘模式和每轮状态机并计算电流
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] command 归一化控制命令，允许为 NULL，非法命令按待机处理
+ * @param[in] command 归一化控制命令，无命令时传 NULL，非法命令按待机处理
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
 void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float period_s)
 {
-    if (chassis == NULL)
+    // 初始化失败的实例没有可复位控制器，输出由既有待机状态统一阻断
+    if (!chassis->initialized)
     {
         return;
     }
 
-    // 依据初始化的采样周期校验在线配置，未初始化的实例始终处于安全输出
-    const float frequency_hz = chassis->initialized ? 1.0F / chassis->wheel[0].speed_pid.dt_min : 0.0F;
-    chassis->config_valid = Chassis_IsConfigValid(&chassis->config, frequency_hz);
-    if (chassis->initialized && chassis->config_valid)
+    // EmberProbe 可在任意时刻写入 config，本周期只校验并使用这一份快照
+    const Chassis_Config_t snapshot = *(const volatile Chassis_Config_t *)&chassis->config;
+    const float frequency_hz = 1.0F / chassis->wheel[0].speed_pid.dt_min;
+    chassis->config_valid = Chassis_IsConfigValid(&snapshot, frequency_hz);
+    if (chassis->config_valid)
     {
-        Chassis_ApplyPidConfig(chassis);
+        Chassis_ApplyPidConfig(chassis, &snapshot);
     }
 
     // 默认整组待机，只有合法独立命令和有效周期才能请求运动学计算
@@ -133,11 +121,11 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
     {
         0,
     };
-    if (chassis->initialized && chassis->config_valid && command != NULL &&
+    if (chassis->config_valid && command != NULL &&
         command->mode == CHASSIS_MODE_INDEPENDENT && isfinite(period_s) &&
         period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S)
     {
-        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, chassis->config.max_wheel_speed_rpm);
+        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
         if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
             Mixer_Apply(&chassis->mixer, &command->move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
         {
@@ -151,11 +139,10 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         Chassis_Wheel_t *wheel = &chassis->wheel[i];
         if (chassis->mode != next_mode)
         {
-            Chassis_ResetWheel(wheel);
             wheel->state = CHASSIS_WHEEL_RELAX;
         }
         wheel->requested_speed_rpm = next_mode == CHASSIS_MODE_INDEPENDENT ? requested_speed[i] : 0.0F;
-        Chassis_ControlWheel(wheel, &chassis->config, next_mode == CHASSIS_MODE_INDEPENDENT, period_s);
+        Chassis_ControlWheel(wheel, &snapshot, next_mode == CHASSIS_MODE_INDEPENDENT, period_s);
     }
     chassis->mode = next_mode;
 }
@@ -163,57 +150,41 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
 /**
  * @brief 导出四路电流，保留调用方设置的命令序号
  *
- * @param[in] chassis 底盘实例，允许为 NULL，未初始化时输出全零
- * @param[out] output CAN 电流命令，仅写 current_a[0~3]
+ * @param[in] chassis 底盘实例，调用方保证非空，未初始化时输出全零
+ * @param[out] output CAN 电流命令，调用方保证非空，仅写 current_a[0~3]
  * @return 无返回值
  */
 void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output)
 {
-    if (output == NULL)
-    {
-        return;
-    }
-
-    // 最后一道输出检查保证未初始化、非运行及非法电流不会进入通信任务
+    // 数值与限幅已在计算出口处理，最终只按运行状态决定是否向通信任务输出
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
-        output->current_a[i] = 0.0F;
-        if (chassis != NULL && chassis->initialized && chassis->config_valid &&
-            chassis->mode == CHASSIS_MODE_INDEPENDENT && chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING &&
-            isfinite(chassis->wheel[i].output_current_a) && isfinite(chassis->config.max_current_a) &&
-            chassis->config.max_current_a > 0.0F)
-        {
-            output->current_a[i] = AbsClip(chassis->wheel[i].output_current_a, chassis->config.max_current_a);
-        }
+        output->current_a[i] = chassis->mode == CHASSIS_MODE_INDEPENDENT &&
+            chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING ? chassis->wheel[i].output_current_a : 0.0F;
     }
 }
 
 /**
  * @brief 从四轮源反馈生成旋转观测，不使用云台同源数据校正轮速
  *
- * @param[in] chassis 已完成本周期控制的底盘实例，可为空
+ * @param[in] chassis 已完成本周期控制的底盘实例，调用方保证非空
  * @param[in] can 本周期独立反馈快照，可为空
  * @param[in] mode 有效命令的旋转意图，未知值输出无效观测
  * @param[in] rad_s_per_rpm 平均轮速到车体转速的有限正标定系数
  * @param[in] now_us 读取反馈后的当前时间，单位微秒
- * @param[out] feedback 输出完整观测，失败时有效标志为假，可为空
+ * @param[out] feedback 输出完整观测，调用方保证非空，失败时有效标志为假
  * @return 无返回值
  */
 void Chassis_DumpGimbalFeedback(const Chassis_t *chassis, const CANDevices_Snapshot_t *can,
                                 Gimbal_ChassisMotion_t mode, float rad_s_per_rpm, uint64_t now_us,
                                 Gimbal_ChassisFeedback_t *feedback)
 {
-    if (feedback == NULL)
-    {
-        return;
-    }
-
     // 每周期先撤销有效性，未标定、来源缺失和不支持的布局不得沿用旧观测
     *feedback = (Gimbal_ChassisFeedback_t)
     {
         .mode = mode,
     };
-    if (chassis == NULL || can == NULL || !chassis->initialized || !chassis->config_valid ||
+    if (can == NULL || !chassis->initialized || !chassis->config_valid ||
         !can->initialized || chassis->mixer.mode != MIXER_OMNICROSS ||
         (unsigned)mode >= GIMBAL_CHASSIS_MOTION_UNKNOWN ||
         !isfinite(rad_s_per_rpm) || rad_s_per_rpm <= 0.0f)
@@ -231,8 +202,7 @@ void Chassis_DumpGimbalFeedback(const Chassis_t *chassis, const CANDevices_Snaps
         const uint32_t age_us = (uint32_t)now_us - can->feedback_time_us[i];
         const Chassis_Wheel_t *wheel = &chassis->wheel[i];
         if (!can->motor_online[i] || can->feedback_update_status[i] != DEVICE_OK ||
-            age_us > CHASSIS_MOTION_MAX_AGE_US || now_us < age_us ||
-            !isfinite(can->actual_speed_rpm[i]) || !isfinite(wheel->target_speed_rpm))
+            age_us > CHASSIS_MOTION_MAX_AGE_US || now_us < age_us)
         {
             return;
         }
@@ -285,18 +255,9 @@ static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequenc
  */
 static void Chassis_ResetWheel(Chassis_Wheel_t *wheel)
 {
-    if (wheel->speed_pid.param != NULL)
-    {
-        PID_Reset(&wheel->speed_pid);
-    }
-    if (wheel->speed_filter.b0 > 0.0F)
-    {
-        LowPassFilter2p_Reset(&wheel->speed_filter, 0.0F);
-    }
-    if (wheel->current_filter.b0 > 0.0F)
-    {
-        LowPassFilter2p_Reset(&wheel->current_filter, 0.0F);
-    }
+    PID_Reset(&wheel->speed_pid);
+    LowPassFilter2p_Reset(&wheel->speed_filter, 0.0F);
+    LowPassFilter2p_Reset(&wheel->current_filter, 0.0F);
     wheel->filtered_speed_rpm = 0.0F;
     wheel->target_speed_rpm = 0.0F;
     wheel->output_current_a = 0.0F;
@@ -327,11 +288,12 @@ static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm)
  * @brief 同步公共 PID 参数并清空四轮旧积分
  *
  * @param[in,out] chassis 配置合法且初始化成功的底盘实例
+ * @param[in] config 本周期已校验的配置快照
  * @return 无返回值
  */
-static void Chassis_ApplyPidConfig(Chassis_t *chassis)
+static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config)
 {
-    const KPID_Params_t *next = &chassis->config.wheel_speed_pid;
+    const KPID_Params_t *next = &config->wheel_speed_pid;
     const KPID_Params_t *old = &chassis->applied_wheel_speed_pid;
     if (next->k == old->k && next->p == old->p && next->i == old->i && next->d == old->d &&
         next->i_limit == old->i_limit && next->out_limit == old->out_limit &&
@@ -416,7 +378,7 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
  */
 static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s)
 {
-    float target = AbsClip(wheel->requested_speed_rpm, config->max_wheel_speed_rpm);
+    float target = wheel->requested_speed_rpm;
 
     // 目标反转先清除旧方向积分，再等待实测转速接近零后放行反向目标
     if ((wheel->target_speed_rpm > 0.0F && target < 0.0F) ||

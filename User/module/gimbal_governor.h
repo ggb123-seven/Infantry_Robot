@@ -15,7 +15,7 @@ extern "C"
  * @param[in] chassis_speed_rad_s 独立轮速估计的底盘转速，单位 rad/s，须同向且有限，无观测时传零
  * @param[in] requested_current_a 候选电流，单位 A，须有限
  * @param[in] max_current_a 电流绝对值上限，单位 A，须为有限正值
- * @return 包络内的电流，单位 A，输入或残差非法时返回非数值供调用方故障停机
+ * @return 包络内的电流，单位 A，残差计算异常时返回非数值供调用方故障停机
  */
 float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s, float chassis_speed_rad_s,
                                   float requested_current_a, float max_current_a);
@@ -28,7 +28,7 @@ float GimbalGovernor_LimitCurrent(float motor_speed_rad_s, float imu_speed_rad_s
  * @param[in] integral_limit 误差积分绝对值上限，须为有限非负值
  * @param[in] current_delta_a 实际电流减候选电流，单位 A，须有限
  * @param[in] period_s 控制周期，单位 s，须在 (0, 0.1] 内
- * @return 经反算及积分限幅后的误差积分，非法输入返回非数值
+ * @return 经反算及积分限幅后的误差积分，调用方保证输入已通过控制入口校验
  */
 float GimbalGovernor_BackCalculate(float integral, float integral_gain, float integral_limit,
                                    float current_delta_a, float period_s);
@@ -51,7 +51,7 @@ bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, 
  * @param[in] mode 当前控制模式
  * @param[in,out] setpoint 模块持有的 yaw 设定值，保护时覆盖目标及前馈，不影响 pitch
  * @param[in] period_s 实际周期，单位 s，运行时范围为 (0, 0.1]
- * @return 参数、绑定或运行周期非法时返回 false，由调用方按原故障路径停机
+ * @return 姿态保护计算异常时返回 false，调用方保证实例已绑定、命令与周期已校验
  */
 static inline bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mode,
                                             Gimbal_AxisSetpoint_t *setpoint, float period_s)
@@ -68,7 +68,7 @@ static inline bool GimbalGovernor_PrepareYaw(Gimbal_t *gimbal, Gimbal_Mode_t mod
  * @param[in] chassis 独立底盘观测，可为空，为空时使用原有无补偿保护
  * @param[in] now_us 消费反馈后的当前时间，单位微秒
  * @param[in] period_s 实际控制周期，单位秒，范围为 (0, 0.1]
- * @return 输入与绑定合法时为真，底盘观测缺失只限制 yaw，真实参数异常仍返回假
+ * @return 姿态保护计算正常时为真，底盘观测缺失只限制 yaw，调用方保证绑定、命令与周期有效
  */
 bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, Gimbal_AxisSetpoint_t *setpoint,
                                         const Gimbal_ChassisFeedback_t *chassis, uint64_t now_us, float period_s);
@@ -89,7 +89,7 @@ float GimbalGovernor_LimitSpeed(float target_speed_rad_s);
  * @param[in] requested_current_a 速度环限流后的候选电流，单位 A，须有限
  * @param[in] max_current_a 配置电流上限，单位 A，须为有限正值
  * @param[in] period_s 已校验的控制周期，单位 s，范围 (0, 0.1]
- * @return 允许的电流，单位 A，非法数据返回非数值以触发原故障处理
+ * @return 允许的电流，单位 A，计算异常返回非数值以触发原故障处理
  */
 float GimbalGovernor_ControlCurrent(float motor_speed_rad_s, float imu_speed_rad_s, float requested_current_a,
                                     float max_current_a, float period_s);

@@ -34,17 +34,12 @@ static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz)
  * @brief 复制摩擦轮配置并初始化两个速度控制器
  *
  * @param[out] shoot 双摩擦轮实例，初始化后不得整体复制
- * @param[in] config 默认配置，空指针时初始化失败
+ * @param[in] config 默认配置，调用方保证非空
  * @param[in] frequency_hz 控制频率，单位 Hz，须为有限正值
  * @return 成功返回 0，失败返回 -1 并保留两轮零输出
  */
 int8_t Shoot_Init(Shoot_t *shoot, const Shoot_Config_t *config, float frequency_hz)
 {
-    if (shoot == NULL)
-    {
-        return -1;
-    }
-
     // 初始化失败保留故障状态与零电流，两轮源时间分别从无反馈开始
     memset(shoot, 0, sizeof(*shoot));
     shoot->state = SHOOT_FAULT;
@@ -52,7 +47,7 @@ int8_t Shoot_Init(Shoot_t *shoot, const Shoot_Config_t *config, float frequency_
     {
         shoot->feedback_time_us[index] = UINT64_MAX;
     }
-    if (config == NULL || !Shoot_ConfigValid(config, frequency_hz))
+    if (!Shoot_ConfigValid(config, frequency_hz))
     {
         return -1;
     }
@@ -86,10 +81,6 @@ int8_t Shoot_Init(Shoot_t *shoot, const Shoot_Config_t *config, float frequency_
 void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
                           const MOTOR_RM_Feedback_t *fric2, uint64_t now_us)
 {
-    if (shoot == NULL)
-    {
-        return;
-    }
     const MOTOR_RM_Feedback_t *feedback[SHOOT_MOTOR_COUNT] =
     {
         fric1, fric2,
@@ -104,7 +95,6 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
             const uint32_t age_us = (uint32_t)now_us - motor->last_update_time;
             const uint64_t source_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
             shoot->feedback_valid[index] = age_us <= SHOOT_TIMEOUT_US && source_us != UINT64_MAX &&
-                isfinite(motor->rotor_speed) &&
                 (shoot->feedback_time_us[index] == UINT64_MAX || source_us > shoot->feedback_time_us[index]);
             if (shoot->feedback_valid[index])
             {
@@ -132,15 +122,9 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
  */
 void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_s)
 {
-    if (shoot == NULL)
-    {
-        return;
-    }
-
-    // 本周期先建立两轮零输出，再校验配置、周期与命令
-    memset(shoot->current_a, 0, sizeof(shoot->current_a));
-    memset(shoot->target_speed_rpm, 0, sizeof(shoot->target_speed_rpm));
-    shoot->config_valid = Shoot_ConfigValid(&shoot->config, shoot->frequency_hz);
+    // 两轮共享同一份入口快照，避免本周期混用 EmberProbe 写入前后的配置
+    const Shoot_Config_t snapshot = *(const volatile Shoot_Config_t *)&shoot->config;
+    shoot->config_valid = Shoot_ConfigValid(&snapshot, shoot->frequency_hz);
     const bool enabled = command != NULL && command->enabled;
     const bool valid = shoot->initialized && shoot->config_valid && isfinite(period_s) &&
         period_s > 0.0f && period_s <= SHOOT_MAX_PERIOD_S &&
@@ -173,6 +157,7 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
     // 停机与异常入口清除两轮控制历史，避免下一次恢复沿用旧积分
     if (shoot->state != SHOOT_RUNNING)
     {
+        memset(shoot->target_speed_rpm, 0, sizeof(shoot->target_speed_rpm));
         if (shoot->initialized)
         {
             for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
@@ -184,43 +169,30 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
     }
 
     // 同一周期同时采纳公共参数变更，恢复起控时分别按各轮实测转速预置微分
-    const bool pid_changed = memcmp(&shoot->applied_speed_pid, &shoot->config.speed_pid,
+    const bool pid_changed = memcmp(&shoot->applied_speed_pid, &snapshot.speed_pid,
                                     sizeof(shoot->applied_speed_pid)) != 0;
-    shoot->applied_speed_pid = shoot->config.speed_pid;
+    shoot->applied_speed_pid = snapshot.speed_pid;
     for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
     {
         KPID_t *pid = &shoot->speed_pid[index];
         if (pid_changed || previous_state != SHOOT_RUNNING)
         {
-            if (PID_Init(pid, KPID_MODE_CALC_D, shoot->frequency_hz, &shoot->applied_speed_pid) != 0)
-            {
-                shoot->state = SHOOT_FAULT;
-                break;
-            }
+            LowPassFilter2p_Init(&pid->dfilter, shoot->frequency_hz, snapshot.speed_pid.d_cutoff_freq);
+            PID_Reset(pid);
             pid->last.k_fb = LowPassFilter2p_Reset(&pid->dfilter,
                 shoot->applied_speed_pid.k * shoot->feedback[index].rotor_speed);
         }
 
         // 两路目标独立限幅，最终输出均为转子侧安培
-        shoot->target_speed_rpm[index] = AbsClip(command->target_speed_rpm[index], shoot->config.max_speed_rpm);
+        shoot->target_speed_rpm[index] = AbsClip(command->target_speed_rpm[index], snapshot.max_speed_rpm);
         const float current_a = PID_Calc(pid, shoot->target_speed_rpm[index],
                                          shoot->feedback[index].rotor_speed, 0.0f, period_s);
-        shoot->current_a[index] = AbsClip(current_a, shoot->config.max_current_a);
-    }
-
-    // 任一控制器失败时撤销另一轮本周期已算出的电流
-    if (shoot->state != SHOOT_RUNNING)
-    {
-        memset(shoot->current_a, 0, sizeof(shoot->current_a));
-        for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
-        {
-            PID_Reset(&shoot->speed_pid[index]);
-        }
+        shoot->current_a[index] = AbsClip(current_a, snapshot.max_current_a);
     }
 }
 
 /**
- * @brief 导出初始化或本周期控制已经确定的两轮电流
+ * @brief 按双摩擦轮运行状态导出本周期电流或零
  *
  * @param[in] shoot 已调用 Init 或 Control 的双摩擦轮实例，须非空
  * @param[out] output 两轮电流，单位 A，须非空
@@ -230,6 +202,6 @@ void Shoot_DumpOutput(const Shoot_t *shoot, Shoot_Output_t *output)
 {
     for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
     {
-        output->current_a[index] = shoot->current_a[index];
+        output->current_a[index] = shoot->state == SHOOT_RUNNING ? shoot->current_a[index] : 0.0f;
     }
 }
