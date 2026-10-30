@@ -12,7 +12,7 @@
 #   ARCH-2: main.c 自定义顶层函数调用 ≤ 6（生成的初始化与调度调用不计数）
 #   ARCH-3: ISR / 回调函数体 ≤ 20 行
 #   ARCH-4: 应用层 extern 变量数 = 0（extern 函数声明排除）
-#   ARCH-5: 单 .c 文件 ≤ 800 行
+#   ARCH-5: 单 .c 文件 ≤ 800 行，用户确认的 gimbal.c 上限为 900 行
 #   ARCH-6: 单 .h 公共 API（函数声明）≤ 20
 #   ARCH-7: mega-header（项目级 catch-all .h，含 ≥ 10 个 #include）
 #   ARCH-8: 硬件资源表 hw_lock 块冲突检测（pin/dma/irq 重复、owner 不存在等）
@@ -232,8 +232,13 @@ check_c_file_length() {
         if is_vendor_path "$cf"; then continue; fi
         lc=$(wc -l < "$cf" 2>/dev/null | tr -d '[:space:]')
         [ -z "$lc" ] && continue
-        if [ "$lc" -gt "$C_FILE_MAX_LINES" ]; then
-            printf "[ARCH-5] %s:%d - .c 文件 %d 行 > %d\n" "$cf" "$lc" "$lc" "$C_FILE_MAX_LINES"
+        limit=$C_FILE_MAX_LINES
+        # 用户确认云台反馈、控制与私有角度工具集中保留，仅该文件允许 900 行
+        case "$cf" in
+            ./User/module/gimbal.c|User/module/gimbal.c) limit=900 ;;
+        esac
+        if [ "$lc" -gt "$limit" ]; then
+            printf "[ARCH-5] %s:%d - .c 文件 %d 行 > %d\n" "$cf" "$lc" "$lc" "$limit"
         fi
     done
 }

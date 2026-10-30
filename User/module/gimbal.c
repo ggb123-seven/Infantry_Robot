@@ -39,6 +39,84 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *c
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
                                bool motion_governed, bool imu_ready);
 
+/**
+ * @brief 将有限角度环绕到单圈区间
+ *
+ * @param[in] angle 有限角度
+ * @param[in] period 单圈周期，须为有限正数，例如 360 或 2π
+ * @return 单圈角度，范围 [0, period)
+ */
+static float Gimbal_WrapAngle(float angle, float period)
+{
+    float wrapped = fmodf(angle, period);
+    if (wrapped < 0.0f)
+    {
+        wrapped += period;
+    }
+    // 负的极小角度加整圈后可能舍入为整圈，统一归到零点
+    return wrapped >= period ? 0.0f : wrapped;
+}
+
+/**
+ * @brief 丢弃上一帧参考，下一次更新重新以单圈角度建立连续坐标
+ *
+ * @param[out] unwrap 展开器状态，调用方保证非空
+ * @return 无返回值
+ */
+static void Gimbal_ResetAngleUnwrap(AngleUnwrap_t *unwrap)
+{
+    unwrap->has_reference = false;
+    unwrap->last_wrapped_angle = 0.0f;
+    unwrap->continuous_angle = 0.0f;
+}
+
+/**
+ * @brief 按相邻两帧最短路径展开单圈角度
+ *
+ * @param[in,out] unwrap 展开器状态，调用方保证非空
+ * @param[in] wrapped_angle 本帧单圈角度，调用方保证已经过反馈入口校验及单圈环绕
+ * @param[in] period 单圈周期，调用方保证为有限正数
+ * @param[out] continuous_angle 展开后的连续角度，调用方保证非空
+ * @return 成功返回 true；半圈歧义或结果溢出时返回 false 并清除参考
+ */
+static bool Gimbal_UpdateAngleUnwrap(AngleUnwrap_t *unwrap, float wrapped_angle, float period, float *continuous_angle)
+{
+    // 首帧直接以单圈角度建立连续坐标
+    if (!unwrap->has_reference)
+    {
+        unwrap->has_reference = true;
+        unwrap->last_wrapped_angle = wrapped_angle;
+        unwrap->continuous_angle = wrapped_angle;
+        *continuous_angle = wrapped_angle;
+        return true;
+    }
+
+    // 将相邻帧差值折算到半圈以内，跨越编码器零点时取最短路径
+    const float half_period = period * 0.5f;
+    float delta = wrapped_angle - unwrap->last_wrapped_angle;
+    if (delta > half_period)
+    {
+        delta -= period;
+    }
+    else if (delta < -half_period)
+    {
+        delta += period;
+    }
+
+    // 恰为半圈时无法判断转动方向，丢弃参考避免累计错误圈数
+    const float next_angle = unwrap->continuous_angle + delta;
+    if (fabsf(delta) >= half_period || !isfinite(next_angle))
+    {
+        Gimbal_ResetAngleUnwrap(unwrap);
+        return false;
+    }
+
+    unwrap->last_wrapped_angle = wrapped_angle;
+    unwrap->continuous_angle = next_angle;
+    *continuous_angle = next_angle;
+    return true;
+}
+
 int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float frequency_hz)
 {
     // 先复制配置并清除全部运行数据，任一失败路径都保持两轴零输出
@@ -562,7 +640,7 @@ static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis)
     axis->motor_speed_rad_s = NAN;
     axis->base_speed_rad_s = NAN;
     axis->feedback_time_us = UINT64_MAX;
-    AngleUnwrap_Reset(&axis->unwrap);
+    Gimbal_ResetAngleUnwrap(&axis->unwrap);
 }
 
 /**
@@ -655,7 +733,7 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, const Gimbal_ImuFeedback_t *imu, 
             float delta_deg = frame->angle_deg[i] - gimbal->imu.angle_deg[i];
             if (i == 0U)
             {
-                delta_deg = AngleUnwrap_Wrap(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
+                delta_deg = Gimbal_WrapAngle(delta_deg + 180.0f, GIMBAL_FULL_TURN_DEG) - 180.0f;
             }
             const float max_delta_deg = GIMBAL_IMU_MAX_RAD_S * M_RAD2DEG_MULT * dt_s + GIMBAL_IMU_JUMP_MARGIN_DEG;
             valid = valid && fabsf(delta_deg) <= max_delta_deg;
@@ -754,9 +832,9 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     }
 
     // 反装轴先翻转角度和转速，使模块内统一以角度增大方向为正
-    const float raw_encoder_deg = AngleUnwrap_Wrap(encoder_rad * M_RAD2DEG_MULT, GIMBAL_FULL_TURN_DEG);
+    const float raw_encoder_deg = Gimbal_WrapAngle(encoder_rad * M_RAD2DEG_MULT, GIMBAL_FULL_TURN_DEG);
     const float encoder_deg = config->reversed ?
-        AngleUnwrap_Wrap(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
+        Gimbal_WrapAngle(GIMBAL_FULL_TURN_DEG - raw_encoder_deg, GIMBAL_FULL_TURN_DEG) : raw_encoder_deg;
     const float speed_rad_s = speed_rpm * GIMBAL_RPM_TO_RAD_S;
     axis->encoder_deg = encoder_deg;
     axis->motor_speed_rad_s = config->reversed ? -speed_rad_s : speed_rad_s;
@@ -766,15 +844,15 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     if (signed_angle)
     {
         const float half_turn_deg = GIMBAL_FULL_TURN_DEG * 0.5f;
-        axis->mechanical_angle_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
-                                                    GIMBAL_FULL_TURN_DEG) - half_turn_deg;
+        axis->mechanical_angle_deg = Gimbal_WrapAngle(encoder_deg - axis->applied_zero_encoder_deg + half_turn_deg,
+                                                     GIMBAL_FULL_TURN_DEG) - half_turn_deg;
         return;
     }
 
     // yaw 保留原有连续角展开，跨编码器零点时按相邻帧最短路径累计
-    const float relative_deg = AngleUnwrap_Wrap(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
+    const float relative_deg = Gimbal_WrapAngle(encoder_deg - axis->applied_zero_encoder_deg, GIMBAL_FULL_TURN_DEG);
     float angle_deg = NAN;
-    if (!AngleUnwrap_Update(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
+    if (!Gimbal_UpdateAngleUnwrap(&axis->unwrap, relative_deg, GIMBAL_FULL_TURN_DEG, &angle_deg))
     {
         Gimbal_RejectAxisFeedback(axis, GIMBAL_AXIS_FAULT);
         return;

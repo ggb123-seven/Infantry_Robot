@@ -45,6 +45,8 @@ $MAIN_C_GENERATED_CALL_RE = '^(HAL_Init|SystemClock_Config|PeriphCommonClock_Con
 $MAIN_C_MAX_CUSTOM_CALLS = 6
 $ISR_BODY_MAX = 20
 $C_FILE_MAX_LINES = 800
+# 用户确认云台反馈、控制与私有角度工具集中保留，仅该文件允许 900 行
+$C_FILE_LINE_LIMITS = @{ 'User/module/gimbal.c' = 900 }
 $H_API_MAX = 20
 $MEGA_HEADER_INCLUDE_THRESHOLD = 10
 
@@ -243,8 +245,10 @@ function Invoke-Check5 {
         $disp = "./$rel"
         $lc = 0
         foreach ($l in (Read-Lines $f.FullName)) { $lc++ }
-        if ($lc -gt $C_FILE_MAX_LINES) {
-            $script:violations.Add("[ARCH-5] ${disp}:${lc} - .c 文件 ${lc} 行 > ${C_FILE_MAX_LINES}")
+        $limit = $C_FILE_MAX_LINES
+        if ($C_FILE_LINE_LIMITS.ContainsKey($rel)) { $limit = $C_FILE_LINE_LIMITS[$rel] }
+        if ($lc -gt $limit) {
+            $script:violations.Add("[ARCH-5] ${disp}:${lc} - .c 文件 ${lc} 行 > ${limit}")
         }
     }
 }

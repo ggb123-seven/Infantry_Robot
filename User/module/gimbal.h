@@ -9,10 +9,22 @@ extern "C"
 #include <stddef.h>
 #include <stdint.h>
 
-#include "component/angle_unwrap.h"
 #include "component/pid.h"
 #include "device/motor_rm.h"
 #include "module/chassis_motion.h"
+
+/*
+ * 云台单圈角度展开器状态，角度单位为度，单圈周期为 360 度：
+ * - has_reference：已记录上一帧单圈角度时为 true
+ * - last_wrapped_angle：上一帧单圈角度，范围 [0, 360)
+ * - continuous_angle：展开后的连续角度，首帧等于单圈角度，之后按相邻帧最短路径累加
+ */
+typedef struct
+{
+    bool has_reference;
+    float last_wrapped_angle;
+    float continuous_angle;
+} AngleUnwrap_t;
 
 /*
  * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标

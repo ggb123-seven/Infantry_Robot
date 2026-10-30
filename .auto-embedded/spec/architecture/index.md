@@ -34,7 +34,7 @@
 | ARCH-2 | main.c 自定义顶层调用 ≤ 6；`HAL_Init`、时钟配置、`MX_*_Init` 和 RTOS 内核/调度器调用不计数 |
 | ARCH-3 | ISR/回调函数体 ≤ 20 行 |
 | ARCH-4 | 应用层 extern 变量 = 0 |
-| ARCH-5/6 | 单 .c ≤ 800 行；单 .h 公共 API ≤ 20 |
+| ARCH-5/6 | 单 .c ≤ 800 行；用户确认 `User/module/gimbal.c` 单独放宽为 ≤ 900 行；单 .h 公共 API ≤ 20 |
 | ARCH-7/7B | mega-header 检测 / app 层引用 mega-header |
 | ARCH-8 | hw-lock.yaml pin/dma/irq/timer 冲突检测 |
 
