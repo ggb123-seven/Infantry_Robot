@@ -16,15 +16,15 @@
 
 ## 底盘当前进度
 
-### 2026-10-30 yaw 保护改为底盘在线判据并删除 governor
+### 2026-10-30 yaw 保护改为底盘在线判据并删除独立高速撤驱
 
 - 删除 gimbal_governor、chassis_motion.h、四轮转速观测与旋转意图解析，云台与底盘之间只传递 bool 在线状态
-- 疯转：yaw 编码器相对转速超过 15 rad/s 持续 0.05 s 撤驱，不区分底盘状态
+- 按用户确认删除独立高速撤驱：底盘电机在线时的异常高速按小陀螺处理，不再因 yaw 相对转速超过 15 rad/s 持续 0.05 s 撤驱
 - 悬空带转：四个底盘电机全部离线持续 1 s 后，编码器与惯性转速差超过 1 rad/s 且上部低于 0.3 rad/s 持续 0.15 s 撤驱
 - 撤驱进入 GIMBAL_AXIS_TRIPPED，只作用于 yaw，pitch 继续闭环，不计入锁存故障；右拨杆回中解除，再上拨时捕获当前姿态
-- 新增 Gimbal_t 字段 chassis_offline_s、yaw_spin_s、yaw_drag_s，config.c 未修改，chassis_yaw_rad_s_per_rpm 暂无引用
-- Debug 构建、6 个修改 C 文件 ARM 严格语法检查、ARCH/HW/SPEC 通过；主机回归 19 项通过，覆盖阈值边界、撤驱锁存、拨杆解除、pitch 保持和单独云台调试
-- 未烧录；需上板验证小陀螺不误撤、整机抬起时高速保护、单独云台悬空带转及阈值是否合适
+- Gimbal_t 保留 chassis_offline_s、yaw_drag_s，删除 yaw_spin_s 及其阈值和计时逻辑；config.c 未修改，chassis_yaw_rad_s_per_rpm 暂无引用
+- 本轮 Debug 构建 11/11、gimbal.c ARM 严格语法检查、ARCH/HW/SPEC 通过；生产模块主机回归 21 项通过，覆盖在线正反高速不撤驱、离线确认和悬空撤驱、短时异常复位、pitch 保持、拨杆解除及传感器失效零输出
+- 本轮验证记录见 docs/validation/yaw_online_no_spin_20261030.json；临时回归源码及可执行文件已清理，未烧录，需上板验证小陀螺不误撤及单独云台悬空带转阈值
 
 ### 2026-10-30 校验边界与 EmberProbe 配置快照
 

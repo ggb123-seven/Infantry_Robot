@@ -18,14 +18,10 @@
 
 /*
  * yaw 撤驱保护阈值，均为待实物确认的起点：
- * - SPIN_RAD_S、SPIN_TIME_S：编码器相对转速超过 15 rad/s 持续 0.05 s 判为疯转
- *   遥控命令上限 6 rad/s、当前小陀螺约 1 rad/s、GM6020 空载约 33 rad/s，阈值位于两者之间
  * - DRAG_RAD_S、DRAG_IMU_STILL_RAD_S、DRAG_TIME_S：底盘离线时编码器与惯性转速差超过 1 rad/s
  *   且上部惯性转速低于 0.3 rad/s，持续 0.15 s 判为悬空带转，沿用原低速检测阈值
  * - CHASSIS_OFFLINE_TIME_S：四个底盘电机全部离线持续 1 s 才启用悬空带转检测，覆盖小陀螺掉线后的惯性滑转
  */
-#define GIMBAL_YAW_SPIN_RAD_S (15.0f)
-#define GIMBAL_YAW_SPIN_TIME_S (0.05f)
 #define GIMBAL_YAW_DRAG_RAD_S (1.0f)
 #define GIMBAL_YAW_DRAG_IMU_STILL_RAD_S (0.3f)
 #define GIMBAL_YAW_DRAG_TIME_S (0.15f)
@@ -281,20 +277,18 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, bool chas
         Gimbal_StopAxis(&gimbal->pitch, GIMBAL_AXIS_FAULT);
     }
 
-    // 任一底盘电机在线即可能主动旋转，四个全部离线持续确认后底座转速才视为零
+    // 底盘电机在线时的异常高速按小陀螺处理，四个全部离线持续确认后才启用悬空带转检测
     gimbal->chassis_offline_s = chassis_online ? 0.0f :
         fminf(GIMBAL_CHASSIS_OFFLINE_TIME_S, gimbal->chassis_offline_s + period_s);
 
-    // yaw 闭环后检查疯转与悬空带转，运行状态保证两种转速有限，撤驱在本周期输出闸门前生效
+    // yaw 闭环后仅检查悬空带转，运行状态保证两种转速有限，撤驱在本周期输出闸门前生效
     const Gimbal_Axis_t *yaw = &gimbal->yaw;
     const bool running = yaw->state == GIMBAL_AXIS_RUNNING;
-    const bool spinning = running && fabsf(yaw->motor_speed_rad_s) > GIMBAL_YAW_SPIN_RAD_S;
     const bool dragged = running && gimbal->chassis_offline_s >= GIMBAL_CHASSIS_OFFLINE_TIME_S &&
         fabsf(yaw->motor_speed_rad_s - yaw->speed_rad_s) > GIMBAL_YAW_DRAG_RAD_S &&
         fabsf(yaw->speed_rad_s) < GIMBAL_YAW_DRAG_IMU_STILL_RAD_S;
-    gimbal->yaw_spin_s = spinning ? gimbal->yaw_spin_s + period_s : 0.0f;
     gimbal->yaw_drag_s = dragged ? gimbal->yaw_drag_s + period_s : 0.0f;
-    if (gimbal->yaw_spin_s >= GIMBAL_YAW_SPIN_TIME_S || gimbal->yaw_drag_s >= GIMBAL_YAW_DRAG_TIME_S)
+    if (gimbal->yaw_drag_s >= GIMBAL_YAW_DRAG_TIME_S)
     {
         Gimbal_StopAxis(&gimbal->yaw, GIMBAL_AXIS_TRIPPED);
     }

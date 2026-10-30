@@ -59,7 +59,7 @@ typedef enum
  * - GIMBAL_AXIS_RUNNING：闭环运行
  * - GIMBAL_AXIS_FAULT：反馈非法、连续角歧义、零点改变或控制输入异常，零输出锁存至命令回到 RELAX
  * - GIMBAL_AXIS_OFFLINE：电机反馈超时，单轴零输出等待，有效反馈恢复且运行请求有效时自动起控
- * - GIMBAL_AXIS_TRIPPED：仅 yaw 使用，疯转或悬空带转保护撤驱，零输出锁存至命令回到 RELAX
+ * - GIMBAL_AXIS_TRIPPED：仅 yaw 使用，悬空带转保护撤驱，零输出锁存至命令回到 RELAX
  *   不计入锁存故障，遥控保持使能，pitch 继续闭环
  */
 typedef enum
@@ -220,7 +220,6 @@ typedef struct
  * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
  * - imu_state：惯性反馈就绪及故障状态
  * - chassis_offline_s：底盘四个电机持续全部离线的时间，单位 s，任一在线时清零，达到确认时间后封顶
- * - yaw_spin_s：yaw 编码器相对转速持续超过疯转阈值的时间，单位 s，yaw 未运行时清零
  * - yaw_drag_s：底盘离线确认后 yaw 持续被带转的时间，单位 s，yaw 未运行时清零
  * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
  */
@@ -235,7 +234,6 @@ typedef struct
     Gimbal_ImuFeedback_t imu;
     Gimbal_ImuState_t imu_state;
     float chassis_offline_s;
-    float yaw_spin_s;
     float yaw_drag_s;
 } Gimbal_t;
 
@@ -272,11 +270,10 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
                            const MOTOR_RM_Feedback_t *pitch_motor, const Gimbal_ImuFeedback_t *imu, uint64_t now_us);
 
 /**
- * @brief 根据命令更新两轴状态机并计算输出电流，yaw 疯转或悬空带转时单独撤驱
+ * @brief 根据命令更新两轴状态机并计算输出电流，yaw 悬空带转时单独撤驱
  *
- * 编码器相对转速持续超过疯转阈值时 yaw 撤驱，不区分底盘状态
  * 底盘四个电机持续全部离线时底座转速视为零，此时编码器与惯性转速持续不一致视为悬空带转并撤驱
- * 任一底盘电机在线时底盘可能主动旋转，不检测悬空带转
+ * 任一底盘电机在线时，异常高速按小陀螺处理，不检测悬空带转，也不按相对转速单独撤驱
  * 撤驱只作用于 yaw，pitch 继续闭环，命令回到 RELAX 后解除并在下次起控时捕获当前姿态
  *
  * @param[in,out] gimbal 云台实例

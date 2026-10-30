@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-30",
+  "change": "删除 yaw 独立高速撤驱，底盘电机在线时异常高速按小陀螺处理",
+  "source_files": [
+    "User/module/gimbal.c",
+    "User/module/gimbal.h"
+  ],
+  "checks": [
+    {
+      "command": "python .auto-embedded/scripts/check.py",
+      "result": "ARCH/HW/SPEC 全部通过"
+    },
+    {
+      "command": "cmake --build build/Debug --parallel",
+      "result": "11/11 通过，无警告",
+      "ram_bytes": 46944,
+      "flash_bytes": 123680
+    },
+    {
+      "command": "沿用 build/Debug/compile_commands.json 的 gimbal.c ARM 编译参数并改用 -fsyntax-only -Wextra -Werror",
+      "result": "通过，无诊断"
+    },
+    {
+      "command": "GCC 主机编译临时回归程序并链接生产 gimbal.c、config.c、pid.c、filter.c、user_math.c 后运行",
+      "result": "编译无警告，21 项检查通过",
+      "cases": [
+        "在线编码器相对速度 14.9、15、15.1、33、-15.1、-33 rad/s 连续 400 ms 保持 RUNNING",
+        "全部离线 900 ms 内 33 rad/s 不独立撤驱",
+        "离线确认后的持续悬空带转进入 TRIPPED 且 yaw 零输出",
+        "yaw 撤驱后 pitch 保持 RUNNING",
+        "悬空撤驱不计入锁存设备故障",
+        "恢复在线不自动解除 TRIPPED",
+        "RELAX 解除，重新使能捕获当前姿态",
+        "离线编码器与 IMU 同为 33 rad/s 不撤驱",
+        "残差低于阈值不撤驱",
+        "IMU 不满足静止条件不撤驱",
+        "短于 150 ms 的带转不撤驱，正常样本清零计时",
+        "恢复在线清零离线确认和带转计时",
+        "反馈超时与无效 IMU 仍阻断输出"
+      ]
+    },
+    {
+      "command": "UTF-8 读取与 Allman/120 列/行尾空白扫描，git diff --check，User 内搜索已删除符号",
+      "result": "通过，无残留高速撤驱阈值、计时字段及判断"
+    }
+  ],
+  "manual_review": {
+    "architecture": "控制判据保留在 module，task 调度及总线消息路径未改",
+    "hardware": "check.py 已核对 hw-lock，未改芯片、引脚、外设或 .ioc",
+    "concurrency": "未改 ISR 共享状态、volatile 配置快照及临界区",
+    "output": "DumpOutput 按轴状态统一放行，悬空仍仅撤驱 yaw",
+    "validation_inventory": {
+      "added_null_checks": [],
+      "added_isfinite_checks": [],
+      "added_range_checks": [],
+      "added_protective_returns": [],
+      "removed_checks": [
+        "编码器相对转速绝对值超过 15 rad/s 持续 0.05 s 的独立撤驱判据"
+      ],
+      "remaining_checks": "沿用反馈入口、Control 配置及周期校验，未新增下游重复校验"
+    }
+  },
+  "config_c_changed": false,
+  "temporary_harness_cleaned": true,
+  "hardware_tested": false,
+  "flashed": false
+}
