@@ -8,6 +8,11 @@
 #define SHOOT_TIMEOUT_US (100000U)
 #define SHOOT_MAX_PERIOD_S (0.1f)
 
+// 参考第 3.9 节作业的前馈系数 30000，按减速比 3591/187、rad/s 转 rpm、16384 对应 20 A 换算
+// 系数单位为 A/rpm，非负且有限；EmberProbe 可在线调整，每周期仅在控制入口读取一次
+volatile float shoot_speed_feedforward_gain_a_per_rpm = 30000.0f * 20.0f / 16384.0f *
+    M_2PI / 60.0f / (3591.0f / 187.0f);
+
 static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz);
 
 /**
@@ -124,7 +129,9 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
 {
     // 两轮共享同一份入口快照，避免本周期混用 EmberProbe 写入前后的配置
     const Shoot_Config_t snapshot = *(const volatile Shoot_Config_t *)&shoot->config;
-    shoot->config_valid = Shoot_ConfigValid(&snapshot, shoot->frequency_hz);
+    const float feedforward_gain = shoot_speed_feedforward_gain_a_per_rpm;
+    shoot->config_valid = Shoot_ConfigValid(&snapshot, shoot->frequency_hz) &&
+        isfinite(feedforward_gain) && feedforward_gain >= 0.0f;
     const bool enabled = command != NULL && command->enabled;
     const bool valid = shoot->initialized && shoot->config_valid && isfinite(period_s) &&
         period_s > 0.0f && period_s <= SHOOT_MAX_PERIOD_S &&
@@ -183,10 +190,18 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
                 shoot->applied_speed_pid.k * shoot->feedback[index].rotor_speed);
         }
 
-        // 两路目标独立限幅，最终输出均为转子侧安培
+        // 限幅后的目标保留上一周期历史，参考公式直接对目标作一阶差分，不除以控制周期
+        const float previous_target_rpm = shoot->target_speed_rpm[index];
         shoot->target_speed_rpm[index] = AbsClip(command->target_speed_rpm[index], snapshot.max_speed_rpm);
+        const float feedforward_a = (shoot->target_speed_rpm[index] - previous_target_rpm) * feedforward_gain;
         const float current_a = PID_Calc(pid, shoot->target_speed_rpm[index],
-                                         shoot->feedback[index].rotor_speed, 0.0f, period_s);
+            shoot->feedback[index].rotor_speed, 0.0f, period_s) + feedforward_a;
+
+        // 前馈叠加后的计算出口检查溢出，任一路异常由统一输出闸门撤驱两轮
+        if (!isfinite(current_a))
+        {
+            shoot->state = SHOOT_FAULT;
+        }
         shoot->current_a[index] = AbsClip(current_a, snapshot.max_current_a);
     }
 }

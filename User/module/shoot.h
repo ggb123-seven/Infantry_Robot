@@ -11,6 +11,9 @@ extern "C"
 // 两路摩擦轮按索引 0、1 对应 CAN2 上 M3508 的 ID5、ID6
 #define SHOOT_MOTOR_COUNT (2U)
 
+// 双轮共用的一阶目标差分前馈系数，单位 A/rpm，有限且非负，写入 0 关闭前馈
+extern volatile float shoot_speed_feedforward_gain_a_per_rpm;
+
 // 双轮状态：待机、速度闭环、任一路反馈离线、故障锁存；故障恢复须先失能
 typedef enum
 {
@@ -58,7 +61,8 @@ typedef struct
  * state 为唯一业务状态，任一路反馈离线时两轮一起撤驱
  * feedback[0~1] 为最近有效反馈，速度为转子 rpm，feedback_valid 为各轮反馈时效标志
  * feedback_time_us[0~1] 为完整微秒源时间，UINT64_MAX 表示尚无反馈，超时上限为 100 ms
- * target_speed_rpm[0~1] 为限幅后的转子目标 rpm，current_a[0~1] 为候选转子电流 A，非运行时由 DumpOutput 输出零
+ * target_speed_rpm[0~1] 为限幅后的转子目标 rpm，覆盖前作为差分历史，非运行时清零
+ * current_a[0~1] 为叠加前馈后的候选转子电流 A，非运行时由 DumpOutput 输出零
  * speed_pid[0~1] 保存两个独立速度控制器的积分、微分与滤波历史
  */
 typedef struct
