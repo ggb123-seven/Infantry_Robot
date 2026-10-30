@@ -86,7 +86,7 @@ bool SMC_Tick(SMC_t *smc, float angle_now, float angle_vel, float target_speed, 
  * @param[in] target_angle 期望参考角度，单位度
  * @param[in] target_speed 同时刻命令前馈，单位度每秒
  * @param[in] max_speed 正参考速度上限，单位度每秒
- * @param[in] max_acceleration 正参考加速度上限，单位度每平方秒
+ * @param[in] max_acceleration 正常推进的参考加速度上限，单位度每平方秒，在线降速上限优先
  * @param[in] reference_gain 正位置追踪增益，单位每秒
  * @param[in] period_s 已在控制入口校验的实际周期，单位秒
  * @return 无返回值，浮点计算有效性由随后 SMC_Tick 的计算链出口检查

@@ -78,9 +78,9 @@ bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, 
                                         bool enabled);
 
 /**
- * @brief 查询本周期是否由保护接管目标，供滑模重置参考历史
+ * @brief 查询本周期是否持续跟随当前姿态，供滑模重置参考历史
  *
- * @return 制动、捕获或等待观测期间为真，正常及完整恢复时为假
+ * @return 制动、跟随、可疑或等待观测期间为真，渐进恢复及正常闭环期间为假
  */
 bool GimbalGovernor_IsTracking(void);
 

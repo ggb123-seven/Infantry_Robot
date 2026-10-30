@@ -1,11 +1,13 @@
 # yaw SMC 移植实施记录
 
+> 后续复审发现并修复了恢复目标重置、在线降速上限和命令换算溢出，详见 [复审修复记录](2026-10-30_yaw_smc_review_fix.md)，当前验证以该记录补充
+
 ## 基线与授权
 
 - 实施分支：feature/gimbal-smc，起点 59c69d0，与 main 独立，不合并分支
 - 用户确认修改 SMC、gimbal、gimbal_governor 及相关接口，优先复用 SMC_t 和原云台变量名
 - 不修改 config.c，不修改设备协议、INS、CubeMX 或硬件资源
-- 现有两轴 PID 配置仍从 config.c 复制到 gimbal.config，保留 Ozone 调参入口
+- 现有两轴 PID 配置仍从 config.c 复制到 gimbal.config，保留 EmberProbe 调参入口
 
 ## 调整后的方案
 
@@ -27,7 +29,7 @@
 - 固定参考速度不超过 60 度每秒且服从原轴速度限制，参考加速度不超过 180 度每平方秒
 - 保留固定单位边界层 sat(s)，不为可调 phi 扩展结构体
 - SMC 参数在 Control 入口校验并实时同步，不恢复旧目标，不沿用旧目标导数
-- Ozone 多字段写入不具备事务原子性，快照只保证同一周期不重复读取；联动调整宜在 RELAX 完成
+- EmberProbe 多字段写入不具备事务原子性，快照只保证同一周期不重复读取；联动调整宜在 RELAX 完成
 
 ## 实施清单
 
@@ -91,8 +93,8 @@
 | --- | --- | --- |
 | Init 配置、SMC 参数和 10～2000 Hz 频率，失败返回 -1 | 初始化传入非法参数，初始化边界 | 未检查；轴初始化不重复校验 |
 | Init 两轴 PID 初始化返回值 | 下层初始化失败，初始化结果边界 | 未检查；沿用结果传播 |
-| Control 完整配置与反馈超时范围 | Ozone 写入非法 RAM 配置，在线调参边界 | Init 检查不能代表运行期；本周期只检查一次 |
-| Control SMC 的 C、K、error_eps、q/p、u_max、J、epsilon | Ozone 写入非有限值、零分母、非法增益或上限，在线调参边界 | 本周期未检查；算法内部信任快照 |
+| Control 完整配置与反馈超时范围 | EmberProbe 写入非法 RAM 配置，在线调参边界 | Init 检查不能代表运行期；本周期只检查一次 |
+| Control SMC 的 C、K、error_eps、q/p、u_max、J、epsilon | EmberProbe 写入非有限值、零分母、非法增益或上限，在线调参边界 | 本周期未检查；算法内部信任快照 |
 | Control 初始化状态、period_s 和模式枚举，失败转故障并返回 | 初始化失败后任务继续调度、调度周期异常或非法命令，运行与时间边界 | 上游不保证有效；下游重复检查已删除 |
 | ResolveSetpoint 命令速度、绝对角度和来源枚举，失败返回 false | 非法命令不得被起控姿态捕获掩盖，命令输入边界 | Control 在此统一解析，下游不重复检查 |
 | SMC_Tick 限幅前 current_a 有限性，失败返回 false | 极端有限参数造成浮点溢出，SMC 计算链出口 | 输入合法不能排除运算溢出 |
@@ -104,7 +106,7 @@
 
 分层依赖保持 module -> component/device，未增加 RTOS/HAL 对象或 ISR 共享状态；初始化结果由既有任务处理，故障输出统一由 DumpOutput 阻断
 
-## Ozone 调参与后续上板
+## EmberProbe 调参与后续上板
 
 载入本分支生成的 `build/Debug/Infantry_Robot.elf`，通过 `gimbal_yaw_smc_config` 的 C、K、error_eps、q、p、u_max、J、epsilon 调参，其他字段不作为写入入口。观察 `gimbal_yaw_smc` 的 target、target_dot、target_ddot、error、s、u，以及原 `gimbal.yaw` 的 state、angle_deg、speed_rad_s 和 output_current_a
 

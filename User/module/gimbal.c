@@ -123,18 +123,21 @@ static bool Gimbal_ResolveSetpoint(Gimbal_Axis_t *axis, const Gimbal_AxisCommand
         switch (command->source)
         {
             case GIMBAL_TARGET_INCREMENT:
-                axis->setpoint.target_angle_deg = axis->target_angle_deg +
-                                                  command->rate_rad_s * M_RAD2DEG_MULT * period_s;
+                axis->setpoint.target_angle_deg =
+                    (axis->state == GIMBAL_AXIS_RUNNING && !mode_changed ? axis->target_angle_deg : 0.0f) +
+                    command->rate_rad_s * M_RAD2DEG_MULT * period_s;
                 break;
             case GIMBAL_TARGET_ABSOLUTE:
-                if (!isfinite(command->angle_deg))
-                {
-                    return false;
-                }
                 axis->setpoint.target_angle_deg = command->angle_deg;
                 break;
             default:
                 return false;
+        }
+        // 未运行或切换模式时不沿用旧目标，先校验增量换算再由下方捕获当前姿态
+        // 解析出口统一拒绝非法绝对角及增量换算溢出，起控捕获不能覆盖计算异常
+        if (!isfinite(axis->setpoint.target_angle_deg))
+        {
+            return false;
         }
         // 首次进入角度模式及失联恢复均捕获当前姿态，不追赶旧目标
         if (imu_ready && axis->feedback_time_us != UINT64_MAX &&

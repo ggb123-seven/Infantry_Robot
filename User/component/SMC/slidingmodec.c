@@ -100,7 +100,9 @@ void SMC_AdvanceReference(SMC_t *smc, float target_angle, float target_speed, fl
     const float speed_goal = fminf(max_speed, fmaxf(-max_speed, requested));
     const float previous_speed = smc->target_dot;
     const float step = max_acceleration * period_s;
-    const float reference_speed = fminf(previous_speed + step, fmaxf(previous_speed - step, speed_goal));
+    const float slewed_speed = fminf(previous_speed + step, fmaxf(previous_speed - step, speed_goal));
+    // 在线收紧速度上限时立即服从新边界，实际加速度保留该次变化供控制器前馈
+    const float reference_speed = fminf(max_speed, fmaxf(-max_speed, slewed_speed));
 
     // 梯形积分使本周期位置、速度和加速度来自同一受限轨迹
     smc->target += 0.5f * (previous_speed + reference_speed) * period_s;

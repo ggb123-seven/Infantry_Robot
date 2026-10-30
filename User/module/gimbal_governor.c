@@ -502,7 +502,10 @@ bool GimbalGovernor_PrepareYawWithChassis(Gimbal_t *gimbal, Gimbal_Mode_t mode, 
 
 bool GimbalGovernor_IsTracking(void)
 {
-    return GimbalGovernor_IsLatched() ||
+    // 渐进恢复已持有捕获目标，滑模必须追踪该目标，不能继续逐周期跟随当前姿态
+    return governor_state == GIMBAL_GOVERNOR_BRAKING ||
+           governor_state == GIMBAL_GOVERNOR_HOLD ||
+           governor_state == GIMBAL_GOVERNOR_SUSPECT ||
            governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_WAITING ||
            governor_observation_state == GIMBAL_GOVERNOR_OBSERVATION_UNAVAILABLE;
 }

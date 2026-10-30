@@ -1,0 +1,20 @@
+{
+  "baseline": "d5e3aa6",
+  "branch": "feature/gimbal-smc",
+  "integration_cycles": 611,
+  "trajectory_cycles": 20000,
+  "pid_exact_comparison_cycles": 12000,
+  "recovery_captured_target_preserved": true,
+  "speed_limit_reduction_immediate": true,
+  "overflow_command_fault_zero_output": true,
+  "positive_negative_cases": true,
+  "full_governor_recovery_passed": true,
+  "debug_build_passed": true,
+  "arm_strict_syntax_passed": true,
+  "arch_hw_spec_passed": true,
+  "config_c_unchanged": true,
+  "smc_layout_preserved": true,
+  "hardware_tested": false,
+  "temporary_programs_removed": true,
+  "details": "docs/workflows/2026-10-30_yaw_smc_review_fix.md"
+}
