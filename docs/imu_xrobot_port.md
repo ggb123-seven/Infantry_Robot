@@ -35,7 +35,19 @@
 主错误码 `-6` 的名称改为 `INS_STATUS_AHRS`。
 
 旧 `quaternion_ekf.c/.h`、仅供它使用的 `kalman_filter.c/.h` 已删除，CMake/Keil 移除相关矩阵源文件登记，
-加入 `madgwick_ahrs.c`。原来未编译的 `ahrs.c/.h` 保留为未启用组件，不参与新姿态链路。
+加入 `madgwick_ahrs.c`，作为 INS 唯一使用的姿态解算组件。原来未编译的 `ahrs.c/.h` 及其禁用配置登记已移除。
+
+### 未启用 AHRS 清理验证（2026-10-30）
+
+- 按用户要求删除 `User/component/ahrs.c`、`ahrs.h` 和 `component_config.yaml` 的旧组件登记
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug` 配置及构建通过
+- `python .auto-embedded/scripts/check.py` 的 ARCH/HW/SPEC 全部通过
+- 对 Git 登记的现存源码及工程配置扫描，旧文件名、旧公共 API 和 `ahrs` 配置项均无残留引用；Keil 工程 XML 解析通过
+- `git diff --check` 对本次修改文件检查通过；删除后没有新增 C/C++ 语句，花括号、行宽、注释及分支检查无新增项
+- 删除前后 ELF SHA256 均为 `F0AFF3EBC87DA46827798E8DEB2E0EC9D901783468384A87939ED222BD54A626`
+- 人工复核确认只移除未编译组件，分层依赖、main.c、ISR 共享状态、临界区、RTOS/HAL 返回值处理和安全输出路径均无变化
+- 防御性检查自查：新增判空、isfinite、范围检查、保护性 return 均为零；随旧组件整体删除的历史检查不属于当前 INS 调用链
+- 未执行 Keil 编译、烧录或上板实测；验证脚本通过标准输入执行，未创建临时测试源码或程序
 
 ## 兼容约定与能力边界
 
