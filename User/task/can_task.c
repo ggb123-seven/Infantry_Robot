@@ -13,8 +13,6 @@ CANDevices_Snapshot_t can_devices_snapshot;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
-static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
-static bool CANTask_PublishShootFeedback(uint8_t index, osMessageQueueId_t queue);
 // 独立保留云台发送结果，避免覆盖底盘快照的发送状态
 static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
 // 发射机构独立记录发送结果，不覆盖底盘和云台的诊断
@@ -63,23 +61,15 @@ void Task_can(void *argument)
                                                            gimbal_output.pitch_current_a);
 
         // 分别消费两个业务模块的新输出，缺少任一路消息时只清零对应业务电流
-        Shoot_Output_t shoot_output =
-        {
-            0,
-        };
-        Trigger_Output_t trigger_output =
-        {
-            0,
-        };
-        if (task_runtime.msgq.shoot_output == NULL ||
-            osMessageQueueGet(task_runtime.msgq.shoot_output, &shoot_output, NULL, 0U) != osOK)
+        Shoot_Output_t shoot_output;
+        Trigger_Output_t trigger_output;
+        if (osMessageQueueGet(task_runtime.msgq.shoot_output, &shoot_output, NULL, 0U) != osOK)
         {
             shoot_output.current_a[0] = 0.0f;
             shoot_output.current_a[1] = 0.0f;
         }
         // 拨弹邮箱与摩擦轮邮箱各有唯一消费者，任何读取失败均不沿用旧电流
-        if (task_runtime.msgq.trigger_output == NULL ||
-            osMessageQueueGet(task_runtime.msgq.trigger_output, &trigger_output, NULL, 0U) != osOK)
+        if (osMessageQueueGet(task_runtime.msgq.trigger_output, &trigger_output, NULL, 0U) != osOK)
         {
             trigger_output.current_a = 0.0f;
         }
@@ -142,70 +132,28 @@ static bool CANTask_PublishSnapshot(void)
         success = false;
     }
 
-    // 两轴分别发布最新有效反馈，任一轴丢帧不会覆盖另一轴邮箱
-    if (!CANTask_PublishGimbalFeedback(CAN_DEVICES_GIMBAL_YAW, task_runtime.msgq.gimbal_yaw_feedback))
+    // 队列按设备索引排列：云台 yaw、pitch，随后为摩擦轮 ID5、ID6 和拨弹 ID7
+    const osMessageQueueId_t queues[CAN_DEVICES_GIMBAL_MOTOR_COUNT + CAN_DEVICES_SHOOT_MOTOR_COUNT] =
     {
-        success = false;
-    }
-    if (!CANTask_PublishGimbalFeedback(CAN_DEVICES_GIMBAL_PITCH, task_runtime.msgq.gimbal_pitch_feedback))
+        task_runtime.msgq.gimbal_yaw_feedback,
+        task_runtime.msgq.gimbal_pitch_feedback,
+        task_runtime.msgq.shoot_fric1_feedback,
+        task_runtime.msgq.shoot_fric2_feedback,
+        task_runtime.msgq.trigger_feedback,
+    };
+    for (uint8_t index = 0U; index < sizeof(queues) / sizeof(queues[0]); index++)
     {
-        success = false;
-    }
+        MOTOR_RM_Feedback_t feedback;
+        const int8_t status = index < CAN_DEVICES_GIMBAL_MOTOR_COUNT ?
+            CANDevices_UpdateGimbalFeedback(index, &feedback) :
+            CANDevices_UpdateShootFeedback(index - CAN_DEVICES_GIMBAL_MOTOR_COUNT, &feedback);
 
-    // 发射机构三路独立分发，拨弹与摩擦轮任务不会争抢同一反馈消息
-    if (!CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_FRIC1, task_runtime.msgq.shoot_fric1_feedback))
-    {
-        success = false;
-    }
-    if (!CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_FRIC2, task_runtime.msgq.shoot_fric2_feedback))
-    {
-        success = false;
-    }
-    if (!CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_TRIGGER, task_runtime.msgq.trigger_feedback))
-    {
-        success = false;
+        // 各路仅发布新帧，单路无新帧或邮箱失败仍继续分发其他路
+        if (status != CAN_DEVICES_OK || osMessageQueueReset(queues[index]) != osOK ||
+            osMessageQueuePut(queues[index], &feedback, 0U, 0U) != osOK)
+        {
+            success = false;
+        }
     }
     return success;
-}
-
-/**
- * @brief 将单轴新反馈发布到对应的最新值邮箱
- *
- * @param[in] axis 云台轴索引，yaw 为 0，pitch 为 1
- * @param[in] queue 对应轴的容量为 1 的 MOTOR_RM_Feedback_t 邮箱
- * @return 新反馈发布成功时返回 true，没有新反馈或邮箱操作失败时返回 false
- */
-static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue)
-{
-    MOTOR_RM_Feedback_t feedback;
-
-    // 只接纳新帧，消费者根据反馈中的微秒时间戳识别离线与过期数据
-    if (queue == NULL || CANDevices_UpdateGimbalFeedback(axis, &feedback) != CAN_DEVICES_OK)
-    {
-        return false;
-    }
-
-    // 邮箱保留最新一帧，清空及写入的结果均交给调用方检查
-    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
-}
-
-/**
- * @brief 发布单路摩擦轮或拨弹电机的新反馈
- *
- * @param[in] index 发射机构电机索引，0、1 为摩擦轮，2 为拨弹
- * @param[in] queue 该电机独占的容量为 1 的 MOTOR_RM_Feedback_t 邮箱
- * @return 新帧发布成功返回 true，无新帧或邮箱操作失败返回 false
- */
-static bool CANTask_PublishShootFeedback(uint8_t index, osMessageQueueId_t queue)
-{
-    MOTOR_RM_Feedback_t feedback;
-
-    // 只发布本周期取得的新帧，过期判定由消费模块使用源时间完成
-    if (queue == NULL || CANDevices_UpdateShootFeedback(index, &feedback) != CAN_DEVICES_OK)
-    {
-        return false;
-    }
-
-    // 邮箱只保存最新反馈，写入失败时不刷新消费者的本地源时间
-    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
 }

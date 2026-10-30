@@ -183,28 +183,17 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
     trigger->target_speed_rpm = AbsClip(command->target_speed_rpm, trigger->config.max_speed_rpm);
     const float current_a = PID_Calc(&trigger->speed_pid, trigger->target_speed_rpm,
                                      trigger->feedback.rotor_speed, 0.0f, period_s);
-    if (!isfinite(current_a))
-    {
-        trigger->state = TRIGGER_FAULT;
-        PID_Reset(&trigger->speed_pid);
-        return;
-    }
     trigger->current_a = AbsClip(current_a, trigger->config.max_current_a);
 }
 
 /**
- * @brief 导出拨弹电流，未初始化或非运行状态时输出零
+ * @brief 导出初始化或本周期控制已经确定的拨弹电流
  *
- * @param[in] trigger 拨弹实例，允许为空
- * @param[out] output 拨弹电流输出，单位 A，允许为空
+ * @param[in] trigger 已调用 Init 或 Control 的拨弹实例，须非空
+ * @param[out] output 拨弹电流输出，单位 A，须非空
  * @return 无返回值
  */
 void Trigger_DumpOutput(const Trigger_t *trigger, Trigger_Output_t *output)
 {
-    if (output == NULL)
-    {
-        return;
-    }
-    output->current_a = trigger != NULL && trigger->initialized && trigger->state == TRIGGER_RUNNING &&
-        isfinite(trigger->current_a) ? trigger->current_a : 0.0f;
+    output->current_a = trigger->current_a;
 }

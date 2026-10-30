@@ -110,10 +110,10 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
 void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_s);
 
 /**
- * @brief 导出两轮电流，未初始化或非运行状态时两轮输出零
+ * @brief 导出初始化或本周期控制已经确定的两轮电流
  *
- * @param[in] shoot 双摩擦轮实例，允许为空
- * @param[out] output 两轮电流，单位 A，允许为空
+ * @param[in] shoot 已调用 Init 或 Control 的双摩擦轮实例，须非空
+ * @param[out] output 两轮电流，单位 A，须非空
  * @return 无返回值
  */
 void Shoot_DumpOutput(const Shoot_t *shoot, Shoot_Output_t *output);

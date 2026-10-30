@@ -205,11 +205,6 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
         shoot->target_speed_rpm[index] = AbsClip(command->target_speed_rpm[index], shoot->config.max_speed_rpm);
         const float current_a = PID_Calc(pid, shoot->target_speed_rpm[index],
                                          shoot->feedback[index].rotor_speed, 0.0f, period_s);
-        if (!isfinite(current_a))
-        {
-            shoot->state = SHOOT_FAULT;
-            break;
-        }
         shoot->current_a[index] = AbsClip(current_a, shoot->config.max_current_a);
     }
 
@@ -225,21 +220,16 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
 }
 
 /**
- * @brief 导出两轮电流，未初始化或非运行状态时两轮输出零
+ * @brief 导出初始化或本周期控制已经确定的两轮电流
  *
- * @param[in] shoot 双摩擦轮实例，允许为空
- * @param[out] output 两轮电流，单位 A，允许为空
+ * @param[in] shoot 已调用 Init 或 Control 的双摩擦轮实例，须非空
+ * @param[out] output 两轮电流，单位 A，须非空
  * @return 无返回值
  */
 void Shoot_DumpOutput(const Shoot_t *shoot, Shoot_Output_t *output)
 {
-    if (output == NULL)
-    {
-        return;
-    }
     for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
     {
-        output->current_a[index] = shoot != NULL && shoot->initialized && shoot->state == SHOOT_RUNNING &&
-            isfinite(shoot->current_a[index]) ? shoot->current_a[index] : 0.0f;
+        output->current_a[index] = shoot->current_a[index];
     }
 }

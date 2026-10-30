@@ -105,10 +105,10 @@ void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedb
 void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float period_s);
 
 /**
- * @brief 导出拨弹电流，未初始化或非运行状态时输出零
+ * @brief 导出初始化或本周期控制已经确定的拨弹电流
  *
- * @param[in] trigger 拨弹实例，允许为空
- * @param[out] output 拨弹电流输出，单位 A，允许为空
+ * @param[in] trigger 已调用 Init 或 Control 的拨弹实例，须非空
+ * @param[out] output 拨弹电流输出，单位 A，须非空
  * @return 无返回值
  */
 void Trigger_DumpOutput(const Trigger_t *trigger, Trigger_Output_t *output);

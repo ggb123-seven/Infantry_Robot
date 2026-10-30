@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-30",
+  "baseline_commit": "26e639d",
+  "scope": "Shoot/Trigger duplicate checks and CAN feedback publication simplification",
+  "behavior_comparison": {
+    "command": "python build/shoot_simplify/run.py",
+    "result": "PASS",
+    "baseline_digest": "11007344974575932651",
+    "modified_digest": "11007344974575932651",
+    "module_cycles_per_version": 100000,
+    "task_cycles_per_version": 48,
+    "can_routing_cases_per_version": 16,
+    "can_merge_cases_per_version": 8,
+    "coverage": [
+      "online PID changes and signed targets",
+      "100000/100001 us timeout boundary",
+      "32-bit timer wrap",
+      "missing commands",
+      "failed Get/Reset/Put",
+      "333 Hz invalid kernel frequency",
+      "recovery after stop",
+      "initialization failure",
+      "finite overflow through actual PID implementation",
+      "five independent feedback routes and per-route failures",
+      "missing either output mailbox value defaults corresponding currents to zero"
+    ]
+  },
+  "checks": {
+    "Debug_build": "PASS",
+    "ARM_Wall_Wextra_Werror_fsyntax_only": "PASS (5 modified C files)",
+    "ARCH_HW_SPEC": "PASS",
+    "format": "PASS",
+    "git_diff_check": "PASS",
+    "manual_review": "PASS: layering, immutable queue lifetime, default zero output and PID finite-return invariant"
+  },
+  "contract_change": "DumpOutput requires non-null instance/output after Init or Control; all production callers comply",
+  "retained_guards": [
+    "input and live configuration validation",
+    "feedback timeout",
+    "default zero output",
+    "initialization failure",
+    "current limits",
+    "fault latch and disable recovery",
+    "RTOS return-value handling"
+  ],
+  "source_lines_before": 819,
+  "source_lines_after": 739,
+  "functions_before": 18,
+  "functions_after": 16,
+  "files": {
+    "User/module/trigger.c": {
+      "lines_before": 210,
+      "lines_after": 199,
+      "sha256": "48ae793c55c6e84691552071bdc849355b367be4c6af3f0733b2a8bb0d3869b1"
+    },
+    "User/module/trigger.h": {
+      "lines_before": 118,
+      "lines_after": 118,
+      "sha256": "8fd219131bd62aa225c986f3d58ff4143f2f9f01ca59d40cd6b14a180d3cc46e"
+    },
+    "User/module/shoot.c": {
+      "lines_before": 245,
+      "lines_after": 235,
+      "sha256": "d49d5964608d2693a3647296d2fe4e242dccc21350dbccc0842c7e46865d5120"
+    },
+    "User/module/shoot.h": {
+      "lines_before": 123,
+      "lines_after": 123,
+      "sha256": "0a31e3397212ec36cc344e10c57c42088ddcebd5ada8d0f11ee372919a71c125"
+    },
+    "User/task/motor_trigger.c": {
+      "lines_before": 75,
+      "lines_after": 72,
+      "sha256": "170dc877a6386a08df726c97c1b287a335af7a0436f55d3fa97dc44764fe524d"
+    },
+    "User/task/motor_shoot.c": {
+      "lines_before": 78,
+      "lines_after": 74,
+      "sha256": "64210aec63aa8143dc376b7762be5b97845a29f6c93c3baf48a8ff978539d506"
+    },
+    "User/task/can_task.c": {
+      "lines_before": 211,
+      "lines_after": 159,
+      "sha256": "352b81ce2789d0ecedeb8c356fc4bd6b51aff4612d7e3af6e3faa62bc01c795b"
+    }
+  },
+  "temporary_tests": "Removed after validation; not permanent regression assets",
+  "limits": [
+    "Software verification only; no flashing or hardware run",
+    "Init object creation/recovery unchanged; prior 23 failure-position test not repeated"
+  ]
+}
