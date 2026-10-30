@@ -46,12 +46,8 @@ void Task_can(void *argument)
         }
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
         // 只使用本周期取得的云台输出，邮箱为空或读取失败时立即回到零输出
-        Gimbal_Output_t gimbal_output =
-        {
-            0,
-        };
-        if (task_runtime.msgq.gimbal_output == NULL ||
-            osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
+        Gimbal_Output_t gimbal_output;
+        if (osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
         {
             gimbal_output.yaw_current_a = 0.0f;
             gimbal_output.pitch_current_a = 0.0f;
@@ -108,10 +104,6 @@ static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command)
     {
         0,
     };
-    if (task_runtime.msgq.can_command == NULL)
-    {
-        return false;
-    }
     return osMessageQueueGet(task_runtime.msgq.can_command, command, NULL, 0U) == osOK;
 }
 
@@ -125,8 +117,7 @@ static bool CANTask_PublishSnapshot(void)
     bool success = true;
 
     // 底盘邮箱只保留最新设备状态，重置和写入失败均记录为发布失败
-    if (task_runtime.msgq.can_feedback == NULL ||
-        osMessageQueueReset(task_runtime.msgq.can_feedback) != osOK ||
+    if (osMessageQueueReset(task_runtime.msgq.can_feedback) != osOK ||
         osMessageQueuePut(task_runtime.msgq.can_feedback, &can_devices_snapshot, 0U, 0U) != osOK)
     {
         success = false;

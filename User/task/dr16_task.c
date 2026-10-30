@@ -176,7 +176,7 @@ static bool DR16_TaskPublishState(void)
     bool success = true;
     for (size_t i = 0U; i < sizeof(queues) / sizeof(queues[0]); ++i)
     {
-        if (queues[i] == NULL || osMessageQueueReset(queues[i]) != osOK ||
+        if (osMessageQueueReset(queues[i]) != osOK ||
             osMessageQueuePut(queues[i], &dr16_state, 0U, 0U) != osOK)
         {
             success = false;
@@ -292,15 +292,12 @@ static void DR16_TaskUpdateFault(void)
  */
 static uint32_t DR16_TaskGetWaitTicks(void)
 {
-    const uint32_t tick_frequency = osKernelGetTickFreq();
-    if (tick_frequency == 0U)
-    {
-        return 1U;
-    }
-
-    const uint64_t scaled_ticks = (uint64_t)tick_frequency * DR16_TASK_WAIT_INTERVAL_MS + 999ULL;
-    const uint64_t wait_ticks = scaled_ticks / 1000ULL;
-    return wait_ticks > UINT32_MAX ? UINT32_MAX : (uint32_t)wait_ticks;
+    // 本工程的内核频率和等待毫秒数都是编译期常量
+    const uint64_t wait_ticks = ((uint64_t)configTICK_RATE_HZ * DR16_TASK_WAIT_INTERVAL_MS + 999ULL) / 1000ULL;
+    _Static_assert(configTICK_RATE_HZ > 0U && DR16_TASK_WAIT_INTERVAL_MS > 0U, "遥控等待周期必须为正");
+    _Static_assert(((uint64_t)configTICK_RATE_HZ * DR16_TASK_WAIT_INTERVAL_MS + 999ULL) / 1000ULL <= UINT32_MAX,
+                   "遥控等待节拍数必须能由 32 位表示");
+    return (uint32_t)wait_ticks;
 }
 
 /**

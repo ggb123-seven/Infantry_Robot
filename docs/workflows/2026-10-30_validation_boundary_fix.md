@@ -78,3 +78,36 @@ Debug PASS
 ```
 
 模块源码与头文件 Allman、120 列、行尾空白扫描通过；生成 freertos.c 的既有非用户代码排版未改。未上板；快照只保证复制后本周期使用一致，不提供调试器多字段写入事务的原子性
+
+## 步骤 4：任务与命令链精简
+
+- user_task.h 集中对 CAN、底盘、云台、摩擦轮、拨弹和 INS 的固定频率使用 _Static_assert，删除四个电机任务及 INS 的运行时整除校验、1 tick 或零频率兜底；实际调度间隔与模块周期边界仍保留
+- 删除各任务对 Task_Init 已创建并验证的固定邮箱句柄判空；保留每次 Get、Reset、Put 返回值处理。DR16 ISR 数据指针及接收状态检查保持原样
+- 删除只校验节拍并转调初始化的 MotorGimbal_Init；DR16 等待 tick 的固定范围改为编译期约束
+- Cmd_ParseChassis 返回输入有效结果，Cmd_ParseChassisMotion 直接消费底盘或云台解析返回的有效结果，不再重复在线状态和 100 ms 帧龄检查；命令上下文、输出及固定遥控缓存指针采用调用方保证非空契约
+- INS 删除内部数组及实例/输出判空、PID_Calc 返回值直接 isfinite；保留真实传感器错误、姿态与温控计算出口、PWM 失败处理
+
+新增检查自查：本步骤没有新增运行时判空、isfinite、参数范围检查或保护性 return。Cmd_ParseChassis 的 false 返回替代原无返回值退出，是已有外部输入边界的结果传递；Cmd_ParseChassisMotion 的 input_valid 分支只消费校验结果，不重做检查。固定频率和等待 tick 的范围属于编译期配置约束，无上游编译期断言；Task_Init 对象创建检查保留，未移到循环
+
+删除清单：固定邮箱 NULL、命令 ctx/out/rc NULL、INS 实例和内部数组 NULL、CAN 云台输出重复清零初始化、四电机与 INS 固定节拍运行时兜底、DR16 固定等待周期运行时上下限兜底、旋转意图解析重复帧龄/在线校验、INS 温控 PID 输出直接 isfinite。实际消息缺失、读写失败、外部数据时效和实际周期检查不属于冗余
+
+验证：
+
+```text
+python build/validation_boundary_fix/commands.py
+30000 组：底盘/云台命令值、状态、旋转意图与 ac3a7c8 逐字节一致 PASS
+覆盖 99999/100000/100001 us、未来帧、离线、低 32 位时间回绕、非法周期与拨杆
+python build/validation_boundary_fix/tasks.py
+真实 CAN/摩擦轮/拨弹任务循环：九路电流路由、空邮箱零输出、缺命令失能、Reset/Put 失败复位 PASS
+内核频率 500/999/1001 的编译期拒绝 PASS（本工程 INS 需要 1000 Hz）
+python build/validation_boundary_fix/ins.py
+10000 次实际 INS 更新：姿态字段与 PWM 占空比与基线逐字节一致 PASS
+非法周期、BMI088 读取失败、PWM 失败关闭加热并撤销有效姿态 PASS
+python build/validation_boundary_fix/run.py strict    九个修改 C 文件 PASS
+python build/validation_boundary_fix/audit.py         全部修改 User 源码排版 PASS
+python .auto-embedded/scripts/check.py                ARCH/HW/SPEC PASS
+python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug
+Debug PASS
+```
+
+临时测试曾出现 CMSIS 桩头定义冲突与计数变量和 puts 重名，修正测试替身后通过；严格 ARM 检查发现批量文本替换误把 imu_queue 前缀残留为函数名，已立即修正并全量重新检查。未修改 RTOS 创建流程、优先级、外设配置和 CAN 路由；上述任务证据为主机 RTOS 替身，不证明实际调度或 ISR 并发时序

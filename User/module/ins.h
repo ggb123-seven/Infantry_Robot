@@ -106,7 +106,7 @@ typedef struct
 /**
  * @brief 初始化 BMI088、姿态滤波器和加热温控
  *
- * @param[in,out] ins INS 模块实例，不能为空
+ * @param[in,out] ins INS 模块实例，调用方保证非空
  * @return 初始化成功返回 INS_STATUS_OK，设备、滤波器、PID 或加热器初始化失败时进入故障状态
  */
 INS_Status_t INS_Init(INS_t *ins);
@@ -124,7 +124,7 @@ INS_Status_t INS_Update(INS_t *ins, float dt_s);
  * @brief 获取最近一次有效的 INS 对外状态
  *
  * @param[in] ins 已初始化的 INS 模块实例
- * @param[out] state 状态输出地址，不能为空
+ * @param[out] state 状态输出地址，调用方保证非空
  * @return 状态有效时返回 INS_STATUS_OK，尚无有效更新时返回 INS_STATUS_NOT_READY，故障时返回最近故障状态
  */
 INS_Status_t INS_GetState(const INS_t *ins, INS_State_t *state);

@@ -40,12 +40,11 @@ void Task_motor_chassis(void *argument)
 {
     (void)argument;
 
-    // 节拍必须精确表达控制频率，非法时仍保留任务以持续发布零电流和诊断
+    // 固定节拍约束在编译期检查，此处直接按配置建立控制周期
     const uint32_t tick_frequency = osKernelGetTickFreq();
-    const bool timing_valid = tick_frequency >= MOTOR_CHASSIS_FREQ && tick_frequency % MOTOR_CHASSIS_FREQ == 0U;
-    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_CHASSIS_FREQ : 1U;
+    const uint32_t delay_tick = tick_frequency / MOTOR_CHASSIS_FREQ;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
-    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F);
+    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, (float)MOTOR_CHASSIS_FREQ);
     if (init_status != 0)
     {
         FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
@@ -58,7 +57,7 @@ void Task_motor_chassis(void *argument)
     {
         // 获取本周期节拍，计算实际控制间隔
         const uint32_t now_tick = osKernelGetTickCount();
-        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0F;
+        const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
 
         // 消费最新 CAN 快照，没有新快照时由模块将四轮反馈标记为无效
@@ -69,9 +68,9 @@ void Task_motor_chassis(void *argument)
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
-        Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
-        Gimbal_ChassisMotion_t motion =
-            Cmd_ParseChassisMotion(&dr16_state_cache, dr16_state_cache_valid, remote_time_us);
+        const bool remote_valid = Cmd_ParseChassis(
+            &dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
+        Gimbal_ChassisMotion_t motion = Cmd_ParseChassisMotion(&dr16_state_cache, remote_valid);
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =
@@ -114,11 +113,6 @@ void Task_motor_chassis(void *argument)
  */
 static bool MotorChassis_ReadLatestDR16(void)
 {
-    if (task_runtime.msgq.dr16_state == NULL)
-    {
-        return false;
-    }
-
     DR16_State_t received_state;
     if (osMessageQueueGet(task_runtime.msgq.dr16_state, &received_state, NULL, 0U) != osOK)
     {
@@ -137,8 +131,7 @@ static bool MotorChassis_ReadLatestDR16(void)
  */
 static bool MotorChassis_ReadLatestFeedback(void)
 {
-    return task_runtime.msgq.can_feedback != NULL &&
-           osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) == osOK;
+    return osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) == osOK;
 }
 
 /**
@@ -149,11 +142,6 @@ static bool MotorChassis_ReadLatestFeedback(void)
  */
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 {
-    if (task_runtime.msgq.can_command == NULL)
-    {
-        return false;
-    }
-
     // 最新值邮箱不保存历史电流，重置或写入失败时由 CAN 任务默认零命令兜底
     return osMessageQueueReset(task_runtime.msgq.can_command) == osOK &&
            osMessageQueuePut(task_runtime.msgq.can_command, command, 0U, 0U) == osOK;
@@ -163,10 +151,10 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
  * @brief 发布仅供云台消费的最新底盘旋转观测
  *
  * @param[in] feedback 本周期完整观测，包含源时间与有效性
- * @return 邮箱存在且覆盖写入成功时为真，否则为假
+ * @return 邮箱覆盖写入成功时为真，否则为假
  */
 static bool MotorChassis_PublishGimbalFeedback(const Gimbal_ChassisFeedback_t *feedback)
 {
     const osMessageQueueId_t queue = task_runtime.msgq.chassis_gimbal;
-    return queue != NULL && osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, feedback, 0U, 0U) == osOK;
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, feedback, 0U, 0U) == osOK;
 }

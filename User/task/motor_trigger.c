@@ -21,13 +21,12 @@ void Task_motor_trigger(void *argument)
 {
     (void)argument;
 
-    // 节拍不能精确表达控制频率时保留任务并持续发布零电流
+    // 固定节拍约束在编译期检查，此处直接按配置建立控制周期
     const uint32_t tick_frequency = osKernelGetTickFreq();
-    const bool timing_valid = tick_frequency >= MOTOR_TRIGGER_FREQ && tick_frequency % MOTOR_TRIGGER_FREQ == 0U;
-    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_TRIGGER_FREQ : 1U;
+    const uint32_t delay_tick = tick_frequency / MOTOR_TRIGGER_FREQ;
     osDelay(MOTOR_TRIGGER_INIT_DELAY);
     // 模块保存初始化结果，失败时由控制入口持续保持零输出
-    Trigger_Init(&trigger, &trigger_config, timing_valid ? (float)MOTOR_TRIGGER_FREQ : 0.0f);
+    Trigger_Init(&trigger, &trigger_config, (float)MOTOR_TRIGGER_FREQ);
 
     // 首周期使用名义间隔，之后使用实际无符号节拍差以支持计时回绕
     uint32_t tick = osKernelGetTickCount();
@@ -47,7 +46,7 @@ void Task_motor_trigger(void *argument)
 
         // 模块承担状态机与闭环，任务只计算实际周期并导出本周期电流
         const uint32_t now_tick = osKernelGetTickCount();
-        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0f;
+        const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
         Trigger_Output_t output;
         Trigger_Control(&trigger, &trigger_command, period_s);

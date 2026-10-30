@@ -50,7 +50,6 @@ static Cmd_Gimbal_t remote_command;
 static Gimbal_ChassisMotion_t remote_motion = GIMBAL_CHASSIS_MOTION_UNKNOWN;
 static Gimbal_ChassisFeedback_t chassis_feedback_cache;
 
-static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 static void MotorGimbal_UpdateSineTest(float period_s);
@@ -69,19 +68,18 @@ void Task_motor_gimbal(void *argument)
     (void)argument;
 
     const uint32_t tick_frequency = osKernelGetTickFreq();
-    const bool timing_valid = tick_frequency >= MOTOR_GIMBAL_FREQ && tick_frequency % MOTOR_GIMBAL_FREQ == 0U;
-    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_GIMBAL_FREQ : 1U;
+    const uint32_t delay_tick = tick_frequency / MOTOR_GIMBAL_FREQ;
 
     // 等待统一装配完成后初始化云台模块，失败时只发布零电流
     osDelay(MOTOR_GIMBAL_INIT_DELAY);
-    const bool initialized = MotorGimbal_Init();
+    const bool initialized = Gimbal_Init(&gimbal, &gimbal_config, (float)MOTOR_GIMBAL_FREQ) == 0;
     uint32_t tick = osKernelGetTickCount();
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
         // 按实际调度间隔计算控制周期，错过节拍时由模块拒绝过长周期
         const uint32_t now_tick = osKernelGetTickCount();
-        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0f;
+        const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
         Gimbal_Output_t output =
         {
@@ -93,22 +91,21 @@ void Task_motor_gimbal(void *argument)
             // 消费完整惯性快照，无新消息时由模块保留源时间并检查帧龄
             Gimbal_ImuFeedback_t imu;
             const osMessageQueueId_t imu_queue = task_runtime.msgq.gimbal_imu;
-            const bool imu_received = imu_queue != NULL && osMessageQueueGet(imu_queue, &imu, NULL, 0U) == osOK;
+            const bool imu_received = osMessageQueueGet(imu_queue, &imu, NULL, 0U) == osOK;
 
             // 消费两轴最新反馈帧，邮箱为空时传 NULL 由模块检查旧帧时效
             MOTOR_RM_Feedback_t yaw_feedback;
             MOTOR_RM_Feedback_t pitch_feedback;
             const bool yaw_received = MotorGimbal_ReadFeedback(task_runtime.msgq.gimbal_yaw_feedback, &yaw_feedback);
-            const bool pitch_received =
-                MotorGimbal_ReadFeedback(task_runtime.msgq.gimbal_pitch_feedback, &pitch_feedback);
+            const bool pitch_received = MotorGimbal_ReadFeedback(
+                task_runtime.msgq.gimbal_pitch_feedback, &pitch_feedback);
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
             // 底盘观测独占邮箱，空邮箱可保留旧源时间，读取错误立即撤销缓存有效性
             Gimbal_ChassisFeedback_t received_chassis;
             const osMessageQueueId_t chassis_queue = task_runtime.msgq.chassis_gimbal;
-            const osStatus_t chassis_status = chassis_queue != NULL ?
-                osMessageQueueGet(chassis_queue, &received_chassis, NULL, 0U) : osErrorParameter;
+            const osStatus_t chassis_status = osMessageQueueGet(chassis_queue, &received_chassis, NULL, 0U);
             if (chassis_status == osOK)
             {
                 chassis_feedback_cache = received_chassis;
@@ -157,22 +154,6 @@ void Task_motor_gimbal(void *argument)
 }
 
 /**
- * @brief 校验节拍频率并以整机配置初始化云台模块
- *
- * @return 节拍可精确表达控制周期且模块初始化成功时返回 true
- */
-static bool MotorGimbal_Init(void)
-{
-    // 内核节拍须为控制频率整数倍，避免零周期或频率截断
-    const uint32_t tick_frequency = osKernelGetTickFreq();
-    if (tick_frequency < MOTOR_GIMBAL_FREQ || tick_frequency % MOTOR_GIMBAL_FREQ != 0U)
-    {
-        return false;
-    }
-    return Gimbal_Init(&gimbal, &gimbal_config, (float)MOTOR_GIMBAL_FREQ) == 0;
-}
-
-/**
  * @brief 消费独立遥控邮箱并将右拨杆和右摇杆转换为云台角度命令
  *
  * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
@@ -180,32 +161,24 @@ static bool MotorGimbal_Init(void)
  */
 static void MotorGimbal_ApplyDR16Input(float period_s)
 {
-    // 邮箱只更新缓存，不改写源时间，读取错误和空句柄立即撤销缓存
-    const osMessageQueueId_t queue = task_runtime.msgq.dr16_gimbal_state;
-    if (queue == NULL)
+    // 邮箱只更新缓存，不改写源时间，读取错误立即撤销缓存
+    DR16_State_t received;
+    const osStatus_t status = osMessageQueueGet(task_runtime.msgq.dr16_gimbal_state, &received, NULL, 0U);
+    if (status == osOK)
+    {
+        remote_cache = received;
+        remote_cache_valid = true;
+    }
+    else if (status != osErrorResource)
     {
         remote_cache_valid = false;
-    }
-    else
-    {
-        DR16_State_t received;
-        const osStatus_t status = osMessageQueueGet(queue, &received, NULL, 0U);
-        if (status == osOK)
-        {
-            remote_cache = received;
-            remote_cache_valid = true;
-        }
-        else if (status != osErrorResource)
-        {
-            remote_cache_valid = false;
-        }
     }
 
     // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
     const uint64_t now_us = BSP_TIME_Get();
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
-    remote_motion = Cmd_ParseChassisMotion(&remote_cache, remote_cache_valid, now_us);
+    remote_motion = Cmd_ParseChassisMotion(&remote_cache, remote_cache_valid);
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
@@ -270,11 +243,11 @@ static void MotorGimbal_UpdateSineTest(float period_s)
  *
  * @param[in] queue 元素为 MOTOR_RM_Feedback_t 的反馈邮箱
  * @param[out] feedback 新反馈帧
- * @return 取得新帧时返回 true，邮箱为空、句柄无效或读取失败时返回 false
+ * @return 取得新帧时返回 true，邮箱为空或读取失败时返回 false
  */
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback)
 {
-    return queue != NULL && osMessageQueueGet(queue, feedback, NULL, 0U) == osOK;
+    return osMessageQueueGet(queue, feedback, NULL, 0U) == osOK;
 }
 
 /**
@@ -286,5 +259,5 @@ static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback
 static bool MotorGimbal_PublishOutput(const Gimbal_Output_t *output)
 {
     osMessageQueueId_t queue = task_runtime.msgq.gimbal_output;
-    return queue != NULL && osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, output, 0U, 0U) == osOK;
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, output, 0U, 0U) == osOK;
 }

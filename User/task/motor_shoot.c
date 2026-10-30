@@ -23,11 +23,10 @@ void Task_motor_shoot(void *argument)
 
     // 节拍不能精确表达控制频率时保留任务并持续发布两轮零电流
     const uint32_t tick_frequency = osKernelGetTickFreq();
-    const bool timing_valid = tick_frequency >= MOTOR_SHOOT_FREQ && tick_frequency % MOTOR_SHOOT_FREQ == 0U;
-    const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_SHOOT_FREQ : 1U;
+    const uint32_t delay_tick = tick_frequency / MOTOR_SHOOT_FREQ;
     osDelay(MOTOR_SHOOT_INIT_DELAY);
     // 模块保存初始化结果，失败时由控制入口持续保持零输出
-    Shoot_Init(&shoot, &shoot_config, timing_valid ? (float)MOTOR_SHOOT_FREQ : 0.0f);
+    Shoot_Init(&shoot, &shoot_config, (float)MOTOR_SHOOT_FREQ);
 
     // 首周期使用名义间隔，后续使用实际无符号节拍差
     uint32_t tick = osKernelGetTickCount();
@@ -49,7 +48,7 @@ void Task_motor_shoot(void *argument)
 
         // 状态机和两轮闭环均由模块执行，任务只计算实测周期和导出电流
         const uint32_t now_tick = osKernelGetTickCount();
-        const float period_s = timing_valid ? (float)(now_tick - previous_tick) / (float)tick_frequency : 0.0f;
+        const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
         Shoot_Output_t output;
         Shoot_Control(&shoot, &shoot_command, period_s);

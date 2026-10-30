@@ -44,13 +44,6 @@ void INS_Task(void *argument)
 
     const uint32_t tick_frequency = osKernelGetTickFreq();
     const uint32_t delay_tick = tick_frequency / INS_TASK_FREQ;
-    if (delay_tick == 0U || tick_frequency % INS_TASK_FREQ != 0U)
-    {
-        INS_Update(&INS, 0.0F);
-        INS_Task_Publish(BSP_TIME_Get(), false);
-        task_runtime.thread.ins = NULL;
-        osThreadExit();
-    }
 
     // 建立绝对周期和微秒时间基准，用实测周期驱动姿态滤波
     uint32_t tick = osKernelGetTickCount();
@@ -126,6 +119,5 @@ static bool INS_Task_Publish(uint64_t sample_time_us, bool valid)
 
     // 最新值邮箱允许覆盖未消费样本，队列本身保证整帧复制
     osMessageQueueId_t queue = task_runtime.msgq.gimbal_imu;
-    return queue != NULL && osMessageQueueReset(queue) == osOK &&
-           osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
+    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
 }

@@ -6,6 +6,7 @@ extern "C"
 #endif
 
 #include <cmsis_os2.h>
+#include "FreeRTOS.h"
 
 #include "device/can_devices.h"
 
@@ -49,6 +50,20 @@ extern "C"
  */
 #define INS_TASK_FREQ (1000U)
 #define INS_TASK_INIT_DELAY (0U)
+
+// 固定频率必须由内核节拍精确表达，配置错误在编译期报告
+_Static_assert(CAN_TASK_FREQ > 0U && configTICK_RATE_HZ % CAN_TASK_FREQ == 0U,
+               "CAN_TASK_FREQ 必须非零且整除内核节拍频率");
+_Static_assert(MOTOR_CHASSIS_FREQ > 0U && configTICK_RATE_HZ % MOTOR_CHASSIS_FREQ == 0U,
+               "MOTOR_CHASSIS_FREQ 必须非零且整除内核节拍频率");
+_Static_assert(MOTOR_GIMBAL_FREQ > 0U && configTICK_RATE_HZ % MOTOR_GIMBAL_FREQ == 0U,
+               "MOTOR_GIMBAL_FREQ 必须非零且整除内核节拍频率");
+_Static_assert(MOTOR_SHOOT_FREQ > 0U && configTICK_RATE_HZ % MOTOR_SHOOT_FREQ == 0U,
+               "MOTOR_SHOOT_FREQ 必须非零且整除内核节拍频率");
+_Static_assert(MOTOR_TRIGGER_FREQ > 0U && configTICK_RATE_HZ % MOTOR_TRIGGER_FREQ == 0U,
+               "MOTOR_TRIGGER_FREQ 必须非零且整除内核节拍频率");
+_Static_assert(INS_TASK_FREQ > 0U && configTICK_RATE_HZ % INS_TASK_FREQ == 0U,
+               "INS_TASK_FREQ 必须非零且整除内核节拍频率");
 
 /**
  * @brief 业务对象初始化结果

@@ -73,11 +73,6 @@ static INS_Status_t INS_UpdateTemperatureControl(INS_t *ins, float temperature_c
  */
 static bool INS_ValuesAreFinite(const float *values, uint8_t length)
 {
-    if (values == NULL)
-    {
-        return false;
-    }
-
     for (uint8_t index = 0U; index < length; index++)
     {
         if (!isfinite(values[index]))
@@ -346,10 +341,6 @@ static INS_Status_t INS_UpdateTemperatureControl(INS_t *ins, float temperature_c
         // 以实际累计周期计算温度控制输出并限制为加热方向
         const float output = PID_Calc(&ins->temperature_controller, INS_TEMPERATURE_SETPOINT_C, temperature_c,
                                       0.0F, ins->temperature_elapsed_s);
-        if (!isfinite(output))
-        {
-            return INS_STATUS_NUMERIC;
-        }
         const float limited_output = fmaxf(0.0F, fminf(INS_TEMPERATURE_PID_OUTPUT_LIMIT, output));
         const uint16_t duty_permille = (uint16_t)(limited_output + 0.5F);
         ins->heat_status = BSP_IMU_HeatSetDuty(duty_permille);
@@ -367,16 +358,11 @@ static INS_Status_t INS_UpdateTemperatureControl(INS_t *ins, float temperature_c
 /**
  * @brief 初始化 BMI088、姿态滤波器和加热温控
  *
- * @param[in,out] ins INS 模块实例，不能为空
+ * @param[in,out] ins INS 模块实例，调用方保证非空
  * @return 初始化成功返回 INS_STATUS_OK，设备、滤波器、PID 或加热器初始化失败时进入故障状态
  */
 INS_Status_t INS_Init(INS_t *ins)
 {
-    if (ins == NULL)
-    {
-        return INS_STATUS_NULL;
-    }
-
     // 清空实例并先关闭加热输出，避免重初始化时沿用旧占空比
     memset(ins, 0, sizeof(*ins));
     ins->module_state = INS_MODULE_STATE_INITIALIZING;
@@ -438,11 +424,6 @@ INS_Status_t INS_Init(INS_t *ins)
  */
 INS_Status_t INS_Update(INS_t *ins, float dt_s)
 {
-    if (ins == NULL)
-    {
-        return INS_STATUS_NULL;
-    }
-
     // 集中检查模块运行状态，故障后必须通过重新初始化恢复
     switch (ins->module_state)
     {
@@ -520,16 +501,11 @@ INS_Status_t INS_Update(INS_t *ins, float dt_s)
  * @brief 获取最近一次有效的 INS 对外状态
  *
  * @param[in] ins 已初始化的 INS 模块实例
- * @param[out] state 状态输出地址，不能为空
+ * @param[out] state 状态输出地址，调用方保证非空
  * @return 状态有效时返回 INS_STATUS_OK，尚无有效更新时返回 INS_STATUS_NOT_READY，故障时返回最近故障状态
  */
 INS_Status_t INS_GetState(const INS_t *ins, INS_State_t *state)
 {
-    if (ins == NULL || state == NULL)
-    {
-        return INS_STATUS_NULL;
-    }
-
     // 无论成功与否都返回当前可诊断快照，调用方必须同时检查状态码和 valid 标志
     *state = ins->state;
     switch (ins->module_state)

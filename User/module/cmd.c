@@ -30,29 +30,24 @@
 /**
  * @brief 将遥控快照转换为底盘命令，异常输入输出待机
  *
- * @param[in] rc 最近遥控快照，可为 NULL
+ * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
  * @param[in] now_us 读取快照后的当前时间，单位微秒
- * @param[out] out 底盘命令，可为 NULL
- * @return 无返回值
+ * @param[out] out 底盘命令，调用方保证非空
+ * @return 遥控快照在线且时效有效时返回 true，否则返回 false
  */
-void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out)
+bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out)
 {
-    if (out == NULL)
-    {
-        return;
-    }
-
     // 默认撤销运动请求，旧帧、离线和时间回退均不得沿用上一周期输出
     *out = (Chassis_Command_t)
     {
         .mode = CHASSIS_MODE_RELAX,
         .wheel_speed_scale_rpm = CMD_CHASSIS_SCALE_RPM,
     };
-    if (rc == NULL || !rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
+    if (!rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
         now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
     {
-        return;
+        return false;
     }
 
     // 两个运动档都允许平移，下位另叠加自旋，中位及非法拨杆保持零输出
@@ -73,20 +68,19 @@ void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
         default:
             break;
     }
+    return true;
 }
 
 /**
  * @brief 从同一遥控快照解析旋转意图，失联和非法状态不给予旋转许可
  *
- * @param[in] rc 最近遥控快照，可为空
- * @param[in] rc_valid 缓存有效标志
- * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[in] rc 最近遥控快照，调用方保证非空
+ * @param[in] input_valid 同一周期命令解析返回的输入有效性，调用方保证已检查时效
  * @return 有效拨杆对应的旋转意图，异常返回未知，跟随由未来上层命令显式提供
  */
-Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool rc_valid, uint64_t now_us)
+Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool input_valid)
 {
-    if (rc == NULL || !rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
-        now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
+    if (!input_valid)
     {
         return GIMBAL_CHASSIS_MOTION_UNKNOWN;
     }
@@ -107,44 +101,38 @@ Gimbal_ChassisMotion_t Cmd_ParseChassisMotion(const DR16_State_t *rc, bool rc_va
 /**
  * @brief 撤销遥控使能与速度历史，要求重新确认中位
  *
- * @param[out] ctx 云台命令上下文，可为 NULL
+ * @param[out] ctx 云台命令上下文，调用方保证非空
  * @return 无返回值
  */
 void Cmd_ResetGimbal(Cmd_Gimbal_t *ctx)
 {
-    if (ctx != NULL)
+    *ctx = (Cmd_Gimbal_t)
     {
-        *ctx = (Cmd_Gimbal_t)
-        {
-            .state = CMD_GIMBAL_WAIT_NEUTRAL,
-        };
-    }
+        .state = CMD_GIMBAL_WAIT_NEUTRAL,
+    };
 }
 
 /**
  * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
  *
- * @param[in,out] ctx 云台任务独占上下文，可为 NULL
- * @param[in] rc 最近遥控快照，可为 NULL
+ * @param[in,out] ctx 云台任务独占上下文，调用方保证非空
+ * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
  * @param[in] now_us 读取快照后的当前时间，单位微秒
  * @param[in] period_s 控制周期，单位秒，合法范围 (0, 0.1]
  * @param[in] gimbal_fault 云台任一轴或共用惯性源故障锁存时为 true
- * @param[out] out 云台命令，可为 NULL
+ * @param[out] out 云台命令，调用方保证非空
  * @return 快照与周期有效时为 true，否则为 false，调用方据此撤销缓存有效性
  */
 bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
                      float period_s, bool gimbal_fault, Gimbal_Command_t *out)
 {
     // 先撤销本周期使能与前馈，所有异常路径均输出待机
-    if (out != NULL)
+    *out = (Gimbal_Command_t)
     {
-        *out = (Gimbal_Command_t)
-        {
-            .mode = GIMBAL_MODE_RELAX,
-        };
-    }
-    if (ctx == NULL || out == NULL || rc == NULL || !rc_valid || !rc->header.online ||
+        .mode = GIMBAL_MODE_RELAX,
+    };
+    if (!rc_valid || !rc->header.online ||
         now_us < rc->header.last_online_time ||
         now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US ||
         !isfinite(period_s) || period_s <= 0.0f || period_s > CMD_GIMBAL_MAX_PERIOD_S)
