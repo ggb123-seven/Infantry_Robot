@@ -26,7 +26,6 @@
 #define MOTOR_ENC_RES (8192)  /* 电机编码器分辨率 */
 #define MOTOR_CUR_RES (16384) /* 电机转矩电流分辨率 */
 #define MOTOR_RM_SUSPICIOUS_DELTA_COUNT ((MOTOR_ENC_RES * 9) / 20)
-
 /*
  * GM6020 电流环兼容协议使用反馈帧 0x209、0x20A 和控制帧 0x2FE
  * ID 5、6 分别位于控制帧数据字节 0~1、2~3，±3 A 对应原始值 ±16384
@@ -36,11 +35,12 @@
 #define GM6020_CTRL_ID (0x2FEU)
 #define GM6020_MAX_ABS_CURRENT_A (3.0F)
 #define GM6020_OUTPUT_SLOT_BASE (4U)
-
 static MOTOR_RM_CANManager_t *can_managers[BSP_CAN_NUM] =
 {
     NULL,
 };
+// GM6020 独立保存两路电流，避免与 0x1FF 的 ID5、ID6 缓存相互覆盖
+static int16_t motor_rm_gimbal_output[BSP_CAN_NUM][2];
 /* 最近一次 RM 组帧发送的调试快照 */
 static MOTOR_RM_TxDebug_t motor_rm_tx_debug =
 {
@@ -50,7 +50,6 @@ MOTOR_RM_SlotTxDebug_t g_motor_rm_slot_tx_debug[MOTOR_RM_MAX_MOTORS] =
 {
     0,
 };
-
 /**
  * @brief 将反馈标识映射为八路输出槽位
  *
@@ -80,7 +79,6 @@ static int8_t MOTOR_RM_GetLogicalIndex(uint16_t can_id, MOTOR_RM_Module_t module
     }
     return DEVICE_ERR;
 }
-
 /**
  * @brief 选择反馈标识所属的电流控制帧组
  *
@@ -117,7 +115,6 @@ static void MOTOR_RM_MarkPendingGroup(MOTOR_RM_CANManager_t *manager, int8_t gro
     }
     manager->pending_tx_groups |= MOTOR_RM_TX_GROUP_MASK((uint8_t)group);
 }
-
 /**
  * @brief 将缓存电流封装为对应控制帧
  *
@@ -158,7 +155,7 @@ static int8_t MOTOR_RM_FillTxFrame(const MOTOR_RM_CANManager_t *manager, uint8_t
         tx_frame->id = GM6020_CTRL_ID;
         for (uint8_t motor_index = 0U; motor_index < 2U; motor_index++)
         {
-            const int16_t current = output_msg->output[GM6020_OUTPUT_SLOT_BASE + motor_index];
+            const int16_t current = motor_rm_gimbal_output[manager->can][motor_index];
             tx_frame->data[motor_index * 2U] = (uint8_t)((current >> 8) & 0xFF);
             tx_frame->data[motor_index * 2U + 1U] = (uint8_t)(current & 0xFF);
         }
@@ -179,15 +176,21 @@ static void MOTOR_RM_UpdateTxDebug(const MOTOR_RM_CANManager_t *manager, const B
     motor_rm_tx_debug.source_motor_id = source_motor_id;
     motor_rm_tx_debug.tx_frame_id = tx_frame->id;
     motor_rm_tx_debug.logical_index = logical_index;
+    // 调试快照按本次实际帧组展示电流，不把独立云台缓存解释成摩擦轮输出
+    memcpy(motor_rm_tx_debug.grouped_output, manager->output_msg.output, sizeof(motor_rm_tx_debug.grouped_output));
+    if (tx_frame->id == GM6020_CTRL_ID)
+    {
+        memcpy(&motor_rm_tx_debug.grouped_output[GM6020_OUTPUT_SLOT_BASE],
+               motor_rm_gimbal_output[manager->can], sizeof(motor_rm_gimbal_output[manager->can]));
+    }
     if (logical_index >= 0 && logical_index < MOTOR_RM_MAX_MOTORS)
     {
-        motor_rm_tx_debug.requested_current = manager->output_msg.output[logical_index];
+        motor_rm_tx_debug.requested_current = motor_rm_tx_debug.grouped_output[logical_index];
     }
     else
     {
         motor_rm_tx_debug.requested_current = 0;
     }
-    memcpy(motor_rm_tx_debug.grouped_output, manager->output_msg.output, sizeof(motor_rm_tx_debug.grouped_output));
     memcpy(motor_rm_tx_debug.tx_data, tx_frame->data, sizeof(motor_rm_tx_debug.tx_data));
     motor_rm_tx_debug.pending_tx_groups = manager->pending_tx_groups;
     for (int i = 0; i < MOTOR_RM_MAX_MOTORS; i++)
@@ -196,7 +199,7 @@ static void MOTOR_RM_UpdateTxDebug(const MOTOR_RM_CANManager_t *manager, const B
         g_motor_rm_slot_tx_debug[i].can = manager->can;
         g_motor_rm_slot_tx_debug[i].tx_frame_id = tx_frame->id;
         g_motor_rm_slot_tx_debug[i].logical_index = (int8_t)i;
-        g_motor_rm_slot_tx_debug[i].output_value = manager->output_msg.output[i];
+        g_motor_rm_slot_tx_debug[i].output_value = motor_rm_tx_debug.grouped_output[i];
         memcpy(g_motor_rm_slot_tx_debug[i].tx_data, tx_frame->data, sizeof(g_motor_rm_slot_tx_debug[i].tx_data));
     }
 }
@@ -329,7 +332,6 @@ static int8_t MOTOR_RM_CreateCANManager(BSP_CAN_t can)
     can_managers[can]->can = can;
     return DEVICE_OK;
 }
-
 /**
  * @brief 解析反馈并维持现有输出轴角度与速度约定
  *
@@ -611,7 +613,15 @@ int8_t MOTOR_RM_SetOutput(MOTOR_RM_Param_t *param, float value)
         return DEVICE_ERR;
     }
     int16_t output_value = (int16_t)(value * (float)MOTOR_RM_GetLSB(param->module));
-    manager->output_msg.output[logical_index] = output_value;
+    // 额外隔离 GM6020 帧组缓存，允许云台与 ID5~8 的 M3508/M2006 在同一总线上独立控制
+    if (param->module == MOTOR_GM6020)
+    {
+        motor_rm_gimbal_output[param->can][logical_index - GM6020_OUTPUT_SLOT_BASE] = output_value;
+    }
+    else
+    {
+        manager->output_msg.output[logical_index] = output_value;
+    }
     MOTOR_RM_MarkPendingGroup(manager, MOTOR_RM_GetTxGroup(param));
     return DEVICE_OK;
 }
@@ -656,7 +666,6 @@ int8_t MOTOR_RM_FlushGroup(MOTOR_RM_Param_t *param)
     }
     return MOTOR_RM_Ctrl(param);
 }
-
 /**
  * @brief 发送指定 CAN 上待提交的电流控制帧
  *
@@ -704,7 +713,6 @@ int8_t MOTOR_RM_FlushAll(void)
     }
     return ret;
 }
-
 MOTOR_RM_t *MOTOR_RM_GetMotor(MOTOR_RM_Param_t *param)
 {
     if (param == NULL)
@@ -718,12 +726,10 @@ MOTOR_RM_t *MOTOR_RM_GetMotor(MOTOR_RM_Param_t *param)
     }
     return MOTOR_RM_FindMotorById(manager, param->id);
 }
-
 int8_t MOTOR_RM_Relax(MOTOR_RM_Param_t *param)
 {
     return MOTOR_RM_SetOutput(param, 0.0f);
 }
-
 int8_t MOTOR_RM_Offine(MOTOR_RM_Param_t *param)
 {
     MOTOR_RM_t *motor = MOTOR_RM_GetMotor(param);
@@ -734,9 +740,7 @@ int8_t MOTOR_RM_Offine(MOTOR_RM_Param_t *param)
     }
     return DEVICE_ERR_NO_DEV;
 }
-
 /* 外部实例适配接口保留物理量命令、发送缓存与调试能力 */
-
 /* C++ 驱动层将外部持有的 vendor instance 绑定到 C 管理器。 */
 int8_t MOTOR_RM_AttachExternal(MOTOR_RM_Param_t *param, MOTOR_RM_t *external_motor)
 {
@@ -755,7 +759,6 @@ int8_t MOTOR_RM_AttachExternal(MOTOR_RM_Param_t *param, MOTOR_RM_t *external_mot
     }
     return MOTOR_RM_BindMotor(manager, param, external_motor, true);
 }
-
 /* C++ RM 驱动的主下发接口：输入为转子侧目标电流，单位 A。 */
 int8_t MOTOR_RM_SetTorqueCurrent(MOTOR_RM_Param_t *param, float current_a)
 {
@@ -773,7 +776,6 @@ int8_t MOTOR_RM_SetTorqueCurrent(MOTOR_RM_Param_t *param, float current_a)
     const float normalized = raw_current / lsb;
     return MOTOR_RM_SetOutput(param, normalized);
 }
-
 /* C++ 驱动层读取底层原始反馈缓存。 */
 const MOTOR_RM_RawFeedback_t *MOTOR_RM_GetRawFeedback(MOTOR_RM_Param_t *param)
 {
@@ -784,12 +786,10 @@ const MOTOR_RM_RawFeedback_t *MOTOR_RM_GetRawFeedback(MOTOR_RM_Param_t *param)
     }
     return &motor->motor.raw_feedback;
 }
-
 const MOTOR_RM_TxDebug_t *MOTOR_RM_GetTxDebug(void)
 {
     return &motor_rm_tx_debug;
 }
-
 const MOTOR_RM_SlotTxDebug_t *MOTOR_RM_GetSlotTxDebug(uint8_t logical_index)
 {
     if (logical_index >= MOTOR_RM_MAX_MOTORS)

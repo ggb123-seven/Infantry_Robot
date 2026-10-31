@@ -1,0 +1,4 @@
+{
+  "host_regression": "PASS: 2000 mixed-model cycles, ten motors, all three frames, native/external, failure retry and debug snapshots",
+  "temporary_files_cleaned": true
+}
