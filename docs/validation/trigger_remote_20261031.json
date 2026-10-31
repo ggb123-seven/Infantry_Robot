@@ -12,6 +12,6 @@
     "component/pid.c",
     "component/filter.c",
     "component/user_math.c"
-  ]
+  ],
+  "firmware_sha256": "bf6fb8b56b108a4b0a496f5280f9e83f1001cf8ee384a716f9316aa7f62dc335"
 }
-
