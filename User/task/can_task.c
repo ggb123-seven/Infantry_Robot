@@ -117,8 +117,6 @@ bool Task_can_Init(void)
     CANDevices_Init(&can_devices_snapshot);
     // 拨弹控制初始化失败保留模块安全状态，不阻断既有底盘和云台通信
     feeder_init_status = Feeder_Init(&feeder, (float)CAN_TASK_FREQ);
-    // 按当前安装方向反转拨弹进给，控制入口统一应用配置快照
-    feeder.config.direction = 1.0f;
     return can_devices_snapshot.initialized;
 }
 

@@ -242,6 +242,6 @@ if (condition)
 - GM6020 与 M2006 的 0x1FF/0x2FE 缓存已隔离，未接摩擦轮和自动卡弹反转
 - Debug、五个 C 文件 ARM 严格检查、ARCH/HW/SPEC、50078 个模块周期、65 个实际 CAN 任务周期及全部 14 个对象失败清理通过
 - 验证细节见 docs/workflows/2026-10-31_feeder_remote.md 与 docs/validation/feeder_remote_20261031.json
-- 2026-10-31 按用户要求反向：Task_can_Init 在模块初始化后将 feeder.config.direction 从默认 -1 设为 +1，首个控制周期统一校验并应用快照
+- 2026-10-31 按用户最新要求恢复原方向：删除 Task_can_Init 中的 +1 覆盖，Feeder_Init 使用模块默认 direction=-1，保留在线可调副本与周期快照
 - 本次 Debug 构建、can_task.c ARM 严格语法检查、ARCH/HW/SPEC 和格式检查通过，详见 docs/workflows/2026-10-31_feeder_reverse.md
 - 未烧录、未验证本次实物旋转方向、未测最坏控制耗时及栈高水位
