@@ -126,7 +126,8 @@ typedef enum
  * - msgq.trigger_feedback：CAN 任务到拨弹任务的最新反馈邮箱，元素为 MOTOR_RM_Feedback_t
  *   转速为 36:1 减速后的输出轴 rpm，源时间单位微秒
  * - msgq.shoot_command、trigger_command：对应任务的连续速度命令邮箱，元素为 Shoot_Command_t、Trigger_Command_t
- *   当前没有自动命令发布者，容量均为 1，每个控制周期缺少新命令时失能
+ *   容量均为 1，每个控制周期缺少新命令时失能；摩擦轮当前没有自动命令发布者
+ *   拨弹由底盘任务以 500 Hz 发布右拨杆下位请求，复用遥控缓存及命令层在线时效校验
  * - msgq.shoot_output、trigger_output：两个控制任务到 CAN 任务的最新电流邮箱，元素为 Shoot_Output_t、Trigger_Output_t
  *   电流单位 A，容量均为 1，CAN 任务合并后只发送一次 0x1FF
  * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果

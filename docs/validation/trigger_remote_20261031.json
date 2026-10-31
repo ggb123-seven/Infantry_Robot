@@ -1,0 +1,17 @@
+{
+  "result": "PASS 184 assertions; production task loops and modules",
+  "scope": "host simulation only",
+  "synthetic_test_p": 0.01,
+  "sources": [
+    "module/cmd.c",
+    "module/chassis.c",
+    "module/config.c",
+    "module/trigger.c",
+    "module/fault_detect.c",
+    "component/mixer.c",
+    "component/pid.c",
+    "component/filter.c",
+    "component/user_math.c"
+  ]
+}
+

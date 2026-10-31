@@ -16,6 +16,17 @@
 
 ## 底盘当前进度
 
+### 2026-10-31 复用周期遥控快照发布拨弹命令
+
+- 右拨杆下位由底盘任务以 500 Hz 向 trigger_command 邮箱发布输出轴 -120 rpm 请求，其余档位失能
+- 遥控有效性复用 Cmd_ParseChassis 的在线和 100 ms 源时间校验，左拨杆档位不影响拨弹使能
+- 沿用现有 Trigger_t、Trigger_Command_t、单槽邮箱和缺命令失能规则，无新增结构体或 RTOS 对象
+- Debug 构建、三个相关 C 文件 ARM 严格检查、ARCH/HW/SPEC 通过，正式任务与模块的 184 项主机断言通过
+- 实测旧固件反馈在线但无命令发布者，速度环 P/I/D 均为零；补齐命令链后默认仍为零电流
+- 已核对 Infantry_Robot_smc 和未命名文件夹：均采用逐齿位置环，不能将其位置 PID 直接写入当前 rpm 速度环
+- 详细证据见 docs/validation/trigger_remote_20261031.md；未烧录、未写 RAM 增益，真实运动和失联时延待上板验证
+- 后续若迁移位置环，先确认 User/module 修改范围及结构体方案；module/config.c 保持不变
+
 ### 2026-10-30 底盘向云台显式发布小陀螺状态
 
 - chassis_gimbal 邮箱由 bool 扩展为 Gimbal_ChassisState_t，明确区分四轮离线、在线未自旋和在线小陀螺，无新增结构体
