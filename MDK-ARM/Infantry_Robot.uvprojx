@@ -656,6 +656,16 @@
               <FilePath>..\User\bsp\imu.c</FilePath>
             </File>
             <File>
+              <FileName>crc8.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\crc8.c</FilePath>
+            </File>
+            <File>
+              <FileName>crc16.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\component\crc16.c</FilePath>
+            </File>
+            <File>
               <FileName>filter.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\component\filter.c</FilePath>

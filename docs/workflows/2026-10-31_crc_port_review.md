@@ -2,6 +2,8 @@
 
 日期：2026-10-31
 
+> 本文前半部分保留授权前评审；用户随后明确授权移植，最终实施与先前建议的差异以文末“授权后实施结果”为准，数学库依赖按用户要求保留
+
 ## 当前结论与授权边界
 
 - 已只读对比 `F:/RM/未命名文件夹/User/component/crc8.[ch]`、`crc16.[ch]` 及参考工程裁判系统、自瞄调用点
@@ -82,3 +84,39 @@ return expected == (uint16_t)((uint16_t)buf[len - 2] | ((uint16_t)buf[len - 1] <
 ## 后续实施验证
 
 获得上述目录授权后，新增四个独立组件文件并登记两套构建，执行真实组件的主机回归、目标 ARM 严格编译、Debug 构建及 ARCH/HW/SPEC，再记录证据并仅提交本次相关文件
+
+## 授权后实施结果
+
+### 已落实的范围与差异
+
+- 用户确认移植 CRC 文件，要求 CRC8 / CRC16 分开，并在函数内说明额外改动
+- 新增 `User/component/crc8.c/.h` 与 `crc16.c/.h`；两张查找表各 256 项，逐项与参考工程比对完全一致
+- 按用户要求保留 `crc16.h` 对 `user_math.h` 的依赖，不修改数学库文件；此前移除该依赖的建议未实施
+- `CRC16_Calc` 内用简体中文说明将原 `CRC16_Byte` 合入计算循环，四个公共接口保持原名与签名
+- `CRC16_Verify` 内用简体中文说明按低字节在前组合帧尾，替代 `uint16_t *` 强转；两种 CRC 均保留原初值、计算范围和最短帧行为
+- 同步登记 CMake、Keil 和组件配置清单，CRC16 清单如实记录数学库头文件依赖
+- 新增文件按 UTF-8、Allman 和 120 列整理，补齐简体中文 Doxygen；没有新增结构体、设备调用、配置参数或 CubeMX 变更
+- 每个源码文件落盘后均重新读取根目录 AGENTS.md、agent.md，并逐文件执行行宽、花括号、行尾空白和注释末尾检查
+
+### 最终验证证据
+
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --list-presets`：Debug / Release 预设可用
+- `python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug`：实际新增 CRC 源文件参与构建，配置与链接成功，产物 `build/Debug/Infantry_Robot.elf`
+- 从 Debug compile_commands.json 逐项取得真实 ARM 编译器与工程参数，对两个 CRC 源码追加 `-Wall -Wextra -Werror -Wcast-align=strict -Wstrict-prototypes -fsyntax-only`：均返回 0，无警告
+- 主机使用实际新增的两个 C 文件、真实数学库头文件，以及从参考文件提取并重命名的原始实现进行对照，另以独立逐位实现交叉验证；编译参数含 `-O2 -Wall -Wextra -Werror -Wcast-align=strict -Wstrict-prototypes -fstrict-aliasing`
+- 主机输出：`PASS calculations=147474 segments=16400 valid_frames=16400 corrupt_frames=213184 short_frames=4 known_vectors=2`，运行返回 0
+- 帧行为检查计数沿用测试输出 valid_frames 标签，包含 CRC8 零负载帧按原约束被拒绝的情况，不表示所有样本都被接受
+- 覆盖 CRC8 全部初值与单字节组合、CRC16 全部初值的单字节样本，0～1024 字节负载、起始偏移 0～7、奇偶长度、分段计算、CRC 尾部每一位破坏及非空负载位破坏；另覆盖 65537 字节长度，确认未截断为 16 位长度
+- 头文件分别通过 C11 / C++17 独立包含严格语法检查；Keil XML 解析、两个文件唯一登记及实际源路径检查通过
+- `python .auto-embedded/scripts/check.py`：ARCH、HW、SPEC 全部 PASS；`git diff --check` 通过
+- 完整命令和返回值记录于 `docs/validation/crc_port_20261031.json`；临时参考源码、对象文件和测试程序已由 TemporaryDirectory 清理
+
+### 最终人工复核与校验自查
+
+- 分层：组件不访问任务、设备、HAL 或 RTOS；CRC16 按用户选择保留同层数学库头文件依赖，未修改其函数或宏
+- 并发与硬件：查找表为 static const，工作状态均为调用局部变量；无 ISR 共享可写状态、临界区、对象创建或硬件资源变更
+- 行为边界：坏帧和过短帧只返回 false，不写输入缓冲区；组件不驱动执行器，不新增 DumpOutput 或业务状态机
+- 判空：未新增；isfinite：未新增；范围检查与保护性 return：CRC8_Verify 的 len < 2U、CRC16_Verify 的 len < sizeof(uint16_t)，各自返回 false
+- 上述两项均为继承参考实现的外部字节流信任边界，实际触发场景是截断帧；当前尚无上游调用者，不存在上游重复检查，Calc 不重复检查
+- 删除的重复校验：无；移除的私有包装：CRC16_Byte，其更新表达式已合入 CRC16_Calc 并在函数内说明
+- 未执行 Keil 编译、烧录及真实协议收发；本轮完成组件移植和软件验证，不表示设备协议已接入

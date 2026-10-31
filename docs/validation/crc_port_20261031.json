@@ -1,0 +1,266 @@
+{
+  "date": "2026-10-31",
+  "source": "F:\\RM\\未命名文件夹\\User\\component",
+  "tables": {
+    "crc8.c": {
+      "elements": 256,
+      "identical_to_reference": true
+    },
+    "crc16.c": {
+      "elements": 256,
+      "identical_to_reference": true
+    }
+  },
+  "checks": [
+    {
+      "command": [
+        "gcc",
+        "-std=c11",
+        "-O2",
+        "-c",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\reference_crc8.c",
+        "-o",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc8.o"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "gcc",
+        "-std=c11",
+        "-O2",
+        "-c",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\reference_crc16.c",
+        "-o",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc16.o"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "gcc",
+        "-x",
+        "c",
+        "-",
+        "-x",
+        "none",
+        "F:\\RM\\Infantry_Robot_smc\\User\\component\\crc8.c",
+        "F:\\RM\\Infantry_Robot_smc\\User\\component\\crc16.c",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc8.o",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc16.o",
+        "-I",
+        "F:\\RM\\Infantry_Robot_smc\\User",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wcast-align=strict",
+        "-Wstrict-prototypes",
+        "-fstrict-aliasing",
+        "-o",
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc_regression.exe"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "C:\\Users\\seven\\AppData\\Local\\Temp\\crc_port_validation_55l3t9p4\\crc_regression.exe"
+      ],
+      "exit_code": 0,
+      "stdout": "PASS calculations=147474 segments=16400 valid_frames=16400 corrupt_frames=213184 short_frames=4 known_vectors=2",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "gcc",
+        "-x",
+        "c",
+        "-",
+        "-I",
+        "F:\\RM\\Infantry_Robot_smc\\User",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "g++",
+        "-x",
+        "c++",
+        "-",
+        "-I",
+        "F:\\RM\\Infantry_Robot_smc\\User",
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "gcc",
+        "-x",
+        "c",
+        "-",
+        "-I",
+        "F:\\RM\\Infantry_Robot_smc\\User",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "g++",
+        "-x",
+        "c++",
+        "-",
+        "-I",
+        "F:\\RM\\Infantry_Robot_smc\\User",
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "C:\\Users\\seven\\AppData\\Local\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin\\arm-none-eabi-gcc.exe",
+        "-DARM_MATH_CM4",
+        "-DDEBUG",
+        "-DSTM32F407xx",
+        "-DUSE_HAL_DRIVER",
+        "-D__FPU_PRESENT=1U",
+        "-IF:/RM/Infantry_Robot_smc/Middlewares/Third_Party/RingBuffer/src/include",
+        "-IF:/RM/Infantry_Robot_smc/Drivers/CMSIS/DSP/Include",
+        "-IF:/RM/Infantry_Robot_smc/User",
+        "-IF:/RM/Infantry_Robot_smc/applications",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard",
+        "-Wall",
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-O0",
+        "-g3",
+        "-std=gnu11",
+        "F:\\RM\\Infantry_Robot_smc\\User\\component\\crc8.c",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wcast-align=strict",
+        "-Wstrict-prototypes",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "C:\\Users\\seven\\AppData\\Local\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin\\arm-none-eabi-gcc.exe",
+        "-DARM_MATH_CM4",
+        "-DDEBUG",
+        "-DSTM32F407xx",
+        "-DUSE_HAL_DRIVER",
+        "-D__FPU_PRESENT=1U",
+        "-IF:/RM/Infantry_Robot_smc/Middlewares/Third_Party/RingBuffer/src/include",
+        "-IF:/RM/Infantry_Robot_smc/Drivers/CMSIS/DSP/Include",
+        "-IF:/RM/Infantry_Robot_smc/User",
+        "-IF:/RM/Infantry_Robot_smc/applications",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/include",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "-IF:/RM/Infantry_Robot_smc/cmake/stm32cubemx/../../Drivers/CMSIS/Include",
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard",
+        "-Wall",
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-O0",
+        "-g3",
+        "-std=gnu11",
+        "F:\\RM\\Infantry_Robot_smc\\User\\component\\crc16.c",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wcast-align=strict",
+        "-Wstrict-prototypes",
+        "-fsyntax-only"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "host_summary": "PASS calculations=147474 segments=16400 valid_frames=16400 corrupt_frames=213184 short_frames=4 known_vectors=2",
+  "temporary_artifacts_removed": true,
+  "keil_source_registration": "PASS both sources registered once with valid paths",
+  "verification_boundary": "已验证主机实际组件、ARM 严格编译、CMake Debug 与 Keil 清单；未执行 Keil 编译和上板协议收发",
+  "source_sha256": {
+    "User/component/crc8.h": "c7f7f89ae41fabc71ad6ecb91007b7d7543cbd0fe492ac37e2dbae9e02674a61",
+    "User/component/crc8.c": "6661eb957ea76048a6974c2de0dea514d797e4ab30f4772da9a482e5f881d359",
+    "User/component/crc16.h": "2668d61c1e07afeadcc9ae5e9e32e4b30cc0c1137df85ed4ad3af2a9bfa70d1b",
+    "User/component/crc16.c": "e023f9c61e9bc0e6a563fdea3ef7d55ea3d89505cb09fce0292894dd87d6a192"
+  },
+  "mechanical_gate": "ARCH PASS; HW PASS; SPEC PASS",
+  "format_review": "PASS UTF-8, Allman, <=120 columns, no trailing whitespace, Chinese comments without full stops",
+  "cmake_debug": {
+    "command": "python .auto-embedded/tools/build-cmake/scripts/cmake_builder.py --source . --preset Debug",
+    "exit_code": 0,
+    "artifact": "build/Debug/Infantry_Robot.elf"
+  },
+  "guard_review": {
+    "null_checks": [],
+    "floating_point_checks": [],
+    "length_checks": [
+      "CRC8_Verify: len < 2U",
+      "CRC16_Verify: len < sizeof(uint16_t)"
+    ],
+    "upstream_duplicate": false,
+    "removed_duplicate_checks": []
+  }
+}

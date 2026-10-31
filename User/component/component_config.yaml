@@ -1,3 +1,10 @@
+crc8:
+  dependencies: []
+  enabled: true
+crc16:
+  dependencies:
+  - component/user_math.h
+  enabled: true
 madgwick_ahrs:
   dependencies: []
   enabled: true

@@ -57,6 +57,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/bsp/uart.c
 
     # User/component 源文件
+    User/component/crc8.c
+    User/component/crc16.c
     User/component/filter.c
     User/component/madgwick_ahrs.c
     User/component/mixer.c
