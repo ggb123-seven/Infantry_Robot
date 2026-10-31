@@ -48,8 +48,8 @@ static MOTOR_RM_Param_t can_devices_chassis_motor_param[CAN_DEVICES_CHASSIS_MOTO
 
 /*
  * 整车 CAN 设备集合私有状态：
- * - initialized：CAN1 初始化成功后为 true
- * - init_status：CAN1 初始化、四路 M3508 注册的聚合结果
+ * - initialized：CAN 总线初始化成功后为 true
+ * - init_status：总线初始化、底盘、云台与拨弹电机注册的聚合结果
  * - register_status[0~3]、feedback_update_status[0~3]：四个 M3508 的注册和反馈更新结果
  * - chassis_motor[0~3]：四个已注册 M3508 实例，注册失败时对应项为 NULL
  * - sequence：反馈更新周期序号
@@ -91,13 +91,31 @@ static MOTOR_RM_Param_t can_devices_gimbal_param[CAN_DEVICES_GIMBAL_MOTOR_COUNT]
 
 static bool can_devices_gimbal_registered[CAN_DEVICES_GIMBAL_MOTOR_COUNT];
 
+/*
+ * 拨弹参数同步自参考工程 User/device/can.h 与 User/module/config.c
+ * 用户确认使用 CAN2 的 M2006，电调 ID7 对应反馈标准帧 0x207，启用驱动内置 36:1 减速比
+ * 方向暂不反转，实际正向仍需上板确认；本轮只注册和更新反馈，不提交 0x1FF 控制帧
+ */
+static MOTOR_RM_Param_t can_devices_feeder_param =
+{
+    .can = BSP_CAN_2,
+    .id = 0x207U,
+    .module = MOTOR_M2006,
+    .reverse = false,
+    .gear = true,
+};
+
+// 保留注册结果和现有驱动实例，供初始化失败隔离与调试器观察
+static int8_t can_devices_feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
+static MOTOR_RM_t *can_devices_feeder_motor;
+
 static void CANDevices_ResetState(void);
 static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot);
 static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_current_a, float *applied_current_a);
 static int8_t CANDevices_InitGimbal(void);
 
 /**
- * @brief 初始化 CAN 总线并注册底盘与云台电机
+ * @brief 初始化 CAN 总线并注册底盘、云台与拨弹电机
  *
  * @param[out] snapshot CAN 设备集合初始化结果快照
  * @return 全部设备注册成功返回 CAN_DEVICES_OK，部分失败或总线不可用时返回对应状态码
@@ -142,9 +160,17 @@ int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot)
         }
     }
 
-    // 云台初始化结果纳入聚合状态，单路失败仍允许已注册的底盘设备运行
+    // 云台与拨弹分别注册，失败只影响聚合结果，不阻止其他设备运行
     const int8_t gimbal_status = CANDevices_InitGimbal();
-    can_devices_state.init_status = all_registered && gimbal_status == CAN_DEVICES_OK ?
+    can_devices_feeder_init_status = MOTOR_RM_Register(&can_devices_feeder_param);
+    if (can_devices_feeder_init_status == DEVICE_OK)
+    {
+        // 注册成功保证实例存在，仅预置零缓存，避免发送共用云台槽位的 0x1FF 帧
+        can_devices_feeder_motor = MOTOR_RM_GetMotor(&can_devices_feeder_param);
+        can_devices_feeder_init_status = MOTOR_RM_SetTorqueCurrent(&can_devices_feeder_param, 0.0f);
+    }
+    can_devices_state.init_status = all_registered && gimbal_status == CAN_DEVICES_OK &&
+                                    can_devices_feeder_init_status == DEVICE_OK ?
                                     CAN_DEVICES_OK : CAN_DEVICES_ERROR;
     CANDevices_ResetSnapshot(snapshot);
     return can_devices_state.init_status;
@@ -305,6 +331,23 @@ static int8_t CANDevices_InitGimbal(void)
 }
 
 /**
+ * @brief 由 CAN 任务轮询拨弹反馈，解码与离线判断复用现有电机驱动
+ *
+ * 新反馈保存在 can_devices_feeder_motor 指向的现有实例，本轮不创建射击控制或反馈邮箱
+ *
+ * @return 新反馈解码成功返回 DEVICE_OK，初始化失败返回设备不可用，否则返回驱动状态码
+ */
+int8_t CANDevices_UpdateFeederFeedback(void)
+{
+    // 初始化失败时隔离拨弹设备，避免把注册失败误认为运行期丢帧
+    if (can_devices_feeder_init_status != DEVICE_OK)
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+    return MOTOR_RM_Update(&can_devices_feeder_motor->param);
+}
+
+/**
  * @brief 获取单轴新反馈，失败时阻止无效数据进入任务邮箱
  *
  * @param[in] axis 云台轴索引，范围 0 至 1
@@ -395,6 +438,8 @@ int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a)
  */
 static void CANDevices_ResetState(void)
 {
+    can_devices_feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
+    can_devices_feeder_motor = NULL;
     can_devices_state = (CANDevices_State_t)
     {
         0,

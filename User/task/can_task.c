@@ -14,6 +14,8 @@ static bool CANTask_PublishSnapshot(void);
 static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
 // 独立保留云台发送结果，避免覆盖底盘快照的发送状态
 static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
+// 独立记录拨弹反馈结果，设备注册失败或丢帧不改变底盘和云台状态
+static int8_t feeder_feedback_status = CAN_DEVICES_NOT_INITIALIZED;
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -37,6 +39,8 @@ void Task_can(void *argument)
         const bool command_received = CANTask_ReadLatestCommand(&command);
         // 刷新四路底盘反馈后应用本周期电流命令，保持同组命令一致提交
         CANDevices_UpdateFeedback(&can_devices_snapshot);
+        // 轮询已注册的拨弹电机，解码结果留在驱动实例，暂不产生拨弹控制输出
+        feeder_feedback_status = CANDevices_UpdateFeederFeedback();
         if (!command_received)
         {
             command.sequence = can_devices_snapshot.sequence;
@@ -71,7 +75,7 @@ void Task_can(void *argument)
  */
 bool Task_can_Init(void)
 {
-    // 初始化两条 CAN 总线及底盘、云台电机，允许单路注册失败后隔离运行
+    // 初始化两条 CAN 总线及底盘、云台和拨弹电机，允许单路注册失败后隔离运行
     CANDevices_Init(&can_devices_snapshot);
     return can_devices_snapshot.initialized;
 }

@@ -106,3 +106,4 @@
 - [约定] 姿态解算统一使用 User/component/madgwick_ahrs.c/.h；旧 User/component/ahrs.c/.h 已删除，组件清单不得重新启用旧 ahrs
 - [坑/gotcha] CRC16 校验字节流时不要将帧尾强转为 uint16_t 指针；按协议字节序显式组合两个字节，避免缓冲区未对齐、宿主字节序及类型访问限制
 - [设计决策] CRC8 与 CRC16 分别维护 crc8.c/.h 和 crc16.c/.h，仅提供 Calc 与 Verify；本项目按用户选择保留 crc16.h 对 user_math.h 的依赖，合并逐字节包装或改变帧尾读取方式时必须在对应函数内用中文说明
+- [坑/gotcha] 现有 RM 驱动在同一 CAN 上混用 GM6020 与 M3508/M2006 时，0x2FE 与 0x1FF 共用 output[4]、output[5]；注册新设备不等于可直接发送整个帧组，启用 FlushGroup 或 FlushCAN 前必须核对所有槽位及实际接收设备，防止将云台缓存带入其他电机命令

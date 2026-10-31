@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-31",
+  "parameters": {
+    "module": "M2006",
+    "can": "CAN2",
+    "esc_id": 7,
+    "feedback_id": "0x207",
+    "gear_ratio": 36,
+    "reverse": false
+  },
+  "host_test": {
+    "actual_sources": [
+      "User/device/can_devices.c",
+      "User/device/motor_rm.c",
+      "User/task/can_task.c"
+    ],
+    "stubbed_boundaries": [
+      "BSP CAN",
+      "BSP memory",
+      "BSP time",
+      "RTOS mailbox and scheduling"
+    ],
+    "cases": [
+      "PASS scenario=0 registrations=7 transmissions=7 cycles=3",
+      "PASS scenario=1 registrations=6 transmissions=6 cycles=3",
+      "PASS scenario=2 registrations=6 transmissions=6 cycles=3",
+      "PASS scenario=3 registrations=0 transmissions=0 cycles=0"
+    ],
+    "checks": [
+      "before-init isolation",
+      "exact seven-device registration",
+      "feeder registration failure isolation",
+      "feeder allocation failure isolation",
+      "bus initialization failure",
+      "zero output cache and no initialization transmission",
+      "3600 rotor rpm becomes 100 output rpm",
+      "100000/100001 us offline boundary",
+      "extended, remote and truncated feedback rejected",
+      "feedback recovery",
+      "nonzero gimbal outputs preserve feeder zero and GM frame reserved bytes",
+      "shared 0x1FF slots confirmed without sending frame",
+      "three actual CAN task cycles per runnable scenario with no 0x1FF transmission"
+    ],
+    "temporary_files_cleaned": true
+  },
+  "arm_strict": {
+    "flags": [
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "sources": [
+      "User/device/can_devices.c",
+      "User/task/can_task.c"
+    ],
+    "result": "PASS"
+  },
+  "build": {
+    "preset": "Debug",
+    "generator": "Ninja",
+    "build_dir": "F:\\RM\\Infantry_Robot_smc\\build\\Debug",
+    "artifact_path": "F:\\RM\\Infantry_Robot_smc\\build\\Debug\\Infantry_Robot.elf",
+    "artifact_kind": "elf",
+    "result": "PASS"
+  },
+  "gates": {
+    "ARCH": "PASS",
+    "HW": "PASS",
+    "SPEC": "PASS"
+  },
+  "limitations": [
+    "未烧录或上板验证",
+    "未接入遥控、射击控制与卡弹处理",
+    "方向未实测",
+    "本轮不发送拨弹 0x1FF 控制帧"
+  ]
+}
