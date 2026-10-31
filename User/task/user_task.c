@@ -23,7 +23,7 @@ static StackType_t motor_trigger_task_stack[1024U / sizeof(StackType_t)] __ALIGN
  * - motor_chassis：普通优先级，栈空间 1024 字节，执行 500 赫兹底盘周期控制
  * - motor_gimbal：普通优先级，栈空间 1024 字节，执行 500 赫兹双轴惯性串级控制及编码器机械保护
  * - motor_shoot：普通优先级，栈空间 1024 字节，执行 500 赫兹双摩擦轮速度控制
- * - motor_trigger：普通优先级，栈空间 1024 字节，执行 500 赫兹拨弹速度控制
+ * - motor_trigger：普通优先级，栈空间 1024 字节，执行 500 赫兹拨弹逐齿位置控制
  * - dr16：高于普通优先级，栈空间 1024 字节，消费 UART 字节流并发布遥控状态
  * - INS：高于普通优先级，栈空间 2048 字节，执行 1000 赫兹 BMI088 采集和姿态解算
  */

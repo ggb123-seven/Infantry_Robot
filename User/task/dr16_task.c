@@ -156,9 +156,9 @@ static bool DR16_TaskInitialize(void)
 }
 
 /**
- * @brief 将最新 DR16 一致快照分别发布到底盘和云台的独立邮箱
+ * @brief 将最新 DR16 一致快照分别发布到底盘、云台和拨弹的独立邮箱
  *
- * @return 两个邮箱均重置并写入成功时返回 true，任一失败时返回 false，仍继续发布另一邮箱
+ * @return 三个邮箱均重置并写入成功时返回 true，任一失败时返回 false，仍继续发布其他邮箱
  */
 static bool DR16_TaskPublishState(void)
 {
@@ -172,6 +172,7 @@ static bool DR16_TaskPublishState(void)
     {
         task_runtime.msgq.dr16_state,
         task_runtime.msgq.dr16_gimbal_state,
+        task_runtime.msgq.trigger_command,
     };
     bool success = true;
     for (size_t i = 0U; i < sizeof(queues) / sizeof(queues[0]); ++i)

@@ -16,6 +16,19 @@
 
 ## 底盘当前进度
 
+### 2026-10-31 拨弹迁移为独立逐齿位置环
+
+- 用户已授权修改 User/module 并确认复用 _smc 的 Feeder_t、Feeder_Config_t 原字段，config.c 保持不变
+- 拨弹独立任务使用 feeder 全局实例，复制参考位置参数 k=12、p=1、i=0、d=0.0450000018，10 齿、20 Hz、方向 -1
+- 右拨杆下位持续进给，首齿立即执行，此后每 50 ms 一齿，位置环输出归一化电流再乘 10 A
+- trigger_command 沿用既有 RTOS 句柄但元素改为 DR16_State_t，DR16 任务直接分发，拨弹任务独占缓存
+- 撤销上一阶段底盘任务的速度命令发布，拨弹不再依赖底盘任务在线，CAN 输出链仍统一合并 0x1FF
+- feeder.config 为在线可调副本，Control 入口复制到持久 cycle_config，PID 引用该快照，未增加已确认结构字段
+- Debug 构建、六个相关 C 文件 ARM 严格检查、ARCH/HW/SPEC 通过，10522 项主机断言通过
+- 已将 feeder、trigger_remote 加入 EmberProbe 侧栏；旧 trigger、trigger_command 全局实例不再存在，新固件生效后使用新入口
+- 当前 USB 探针枚举为空，烧录预检缺少可验证物理身份；未烧录、未写 RAM，真实运动、10 A 参考上限、堆栈余量和失联时延待上板验证
+- 详细证据见 docs/validation/feeder_migration_20261031.md；接回探针后重新生成具体烧录计划并确认
+
 ### 2026-10-31 复用周期遥控快照发布拨弹命令
 
 - 右拨杆下位由底盘任务以 500 Hz 向 trigger_command 邮箱发布输出轴 -120 rpm 请求，其余档位失能

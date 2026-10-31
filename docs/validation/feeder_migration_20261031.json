@@ -1,0 +1,22 @@
+{
+  "result": "PASS 10522 assertions; module, DR16 fan-out, init objects, trigger and CAN task loops",
+  "scope": "host simulation only",
+  "sources": [
+    "User/module/feeder.c",
+    "User/component/pid.c",
+    "User/component/filter.c",
+    "User/component/user_math.c"
+  ],
+  "firmware_sha256": "aa2da513dc514ee899194b074ded1db2c55621f4d23ea3c0a50c47b337b6407f",
+  "mechanical_gates": "ARCH/HW/SPEC PASS",
+  "strict_arm": [
+    "feeder.c",
+    "motor_trigger.c",
+    "init.c",
+    "dr16_task.c",
+    "motor_chassis.c",
+    "user_task.c"
+  ],
+  "hardware_programmed": false,
+  "probe_devices": []
+}

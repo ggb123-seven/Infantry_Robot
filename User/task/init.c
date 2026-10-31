@@ -3,6 +3,7 @@
 #include "device/can_devices.h"
 #include "device/dr16.h"
 #include "module/gimbal.h"
+#include "module/trigger.h"
 #include "task/can_task.h"
 #include "task/dr16_task.h"
 #include "task/ins_task.h"
@@ -175,7 +176,7 @@ static bool Task_InitCreateObjects(void)
     }
 
     task_runtime.init_status = TASK_INIT_TRIGGER_COMMAND_MAILBOX_FAILED;
-    task_runtime.msgq.trigger_command = osMessageQueueNew(1U, sizeof(Trigger_Command_t), NULL);
+    task_runtime.msgq.trigger_command = osMessageQueueNew(1U, sizeof(DR16_State_t), NULL);
     if (task_runtime.msgq.trigger_command == NULL)
     {
         return false;

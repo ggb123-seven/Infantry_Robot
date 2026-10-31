@@ -726,6 +726,11 @@
               <FilePath>..\User\module\trigger.c</FilePath>
             </File>
             <File>
+              <FileName>feeder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\feeder.c</FilePath>
+            </File>
+            <File>
               <FileName>gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\bsp\gpio.c</FilePath>
