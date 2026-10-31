@@ -13,7 +13,7 @@ extern "C"
 /*
  * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册两路 GM6020 和一路拨弹 M2006
  * 云台索引 0、1 分别对应 ID5 yaw 和 ID6 pitch，反馈标准帧为 0x209、0x20A
- * 拨弹使用电调 ID7，反馈标准帧为 0x207，仅注册并轮询反馈，尚未接入控制命令
+ * 拨弹使用电调 ID7，反馈标准帧为 0x207，电流控制使用独立缓存的 0x1FF
  */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
 #define CAN_DEVICES_GIMBAL_MOTOR_COUNT (2U)
@@ -122,11 +122,20 @@ int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedba
 /**
  * @brief 更新 CAN2 拨弹 M2006 反馈，反馈与在线状态保留在现有驱动实例
  *
- * 调用方保证由 CAN 任务串行调用，解码结果可通过 can_devices_feeder_motor 观察
+ * 调用方保证由 CAN 任务串行调用，解码结果也可通过 can_devices_feeder_motor 观察
  *
+ * @param[out] feedback 本周期新反馈，调用方保证非空，仅成功时写入
  * @return 新反馈解码成功返回 DEVICE_OK，初始化失败返回设备不可用，否则返回驱动状态码
  */
-int8_t CANDevices_UpdateFeederFeedback(void);
+int8_t CANDevices_UpdateFeederFeedback(MOTOR_RM_Feedback_t *feedback);
+
+/**
+ * @brief 写入拨弹电流并提交一次 0x1FF 控制帧
+ *
+ * @param[in] current_a 转子侧电流，单位 A，调用方保证为拨弹模块输出的有限值
+ * @return 写入和发送成功返回 DEVICE_OK，否则返回设备错误码
+ */
+int8_t CANDevices_ApplyFeederCurrent(float current_a);
 
 /**
  * @brief 分别写入 yaw 和 pitch 电流，统一发送一次 0x2FE 帧

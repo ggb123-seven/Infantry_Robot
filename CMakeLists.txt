@@ -77,6 +77,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/module/chassis.c
     User/module/cmd.c
     User/module/config.c
+    User/module/feeder.c
     User/module/fault_detect.c
     User/module/gimbal.c
     User/module/ins.c

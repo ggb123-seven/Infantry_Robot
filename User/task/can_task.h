@@ -8,9 +8,13 @@ extern "C"
 #include <stdbool.h>
 
 #include "device/can_devices.h"
+#include "module/feeder.h"
 
 // CAN 设备观测变量：初始化结果、四路反馈和电流提交状态，由 Task_can 每周期写入
 extern CANDevices_Snapshot_t can_devices_snapshot;
+
+// 拨弹状态与在线调参入口，仅 CAN 任务更新控制状态，EmberProbe 可修改 config 副本
+extern Feeder_t feeder;
 
 /**
  * @brief 初始化 CAN 设备集合

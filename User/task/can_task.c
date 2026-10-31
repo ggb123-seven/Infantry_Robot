@@ -1,6 +1,8 @@
 #include "task/can_task.h"
 
 #include "device/can_devices.h"
+#include "bsp/time.h"
+#include "module/feeder.h"
 #include "module/gimbal.h"
 #include "task/user_task.h"
 
@@ -8,6 +10,11 @@
 
 // CAN 设备观测变量，声明见 can_task.h
 CANDevices_Snapshot_t can_devices_snapshot;
+Feeder_t feeder;
+
+// 遥控缓存只由 CAN 任务持有，源时间不得因重复消费而刷新
+static DR16_State_t feeder_remote_cache;
+static bool feeder_remote_valid;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
@@ -16,6 +23,8 @@ static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue
 static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
 // 独立记录拨弹反馈结果，设备注册失败或丢帧不改变底盘和云台状态
 static int8_t feeder_feedback_status = CAN_DEVICES_NOT_INITIALIZED;
+static int8_t feeder_output_status = CAN_DEVICES_NOT_INITIALIZED;
+static int8_t feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -32,6 +41,10 @@ void Task_can(void *argument)
 
     // 建立绝对周期基准，避免通信周期累计漂移
     uint32_t tick = osKernelGetTickCount();
+    uint64_t previous_time_us = BSP_TIME_Get();
+    tick += delay_tick;
+    // 首次也等待完整周期后再测量，避免启动微秒时间小于周期时发生无符号下溢
+    osDelayUntil(tick);
     while (true)
     {
         CANDevices_Command_t command;
@@ -39,20 +52,45 @@ void Task_can(void *argument)
         const bool command_received = CANTask_ReadLatestCommand(&command);
         // 刷新四路底盘反馈后应用本周期电流命令，保持同组命令一致提交
         CANDevices_UpdateFeedback(&can_devices_snapshot);
-        // 轮询已注册的拨弹电机，解码结果留在驱动实例，暂不产生拨弹控制输出
-        feeder_feedback_status = CANDevices_UpdateFeederFeedback();
+        // 读取独立拨弹遥控邮箱，空邮箱保留缓存，读取异常撤销缓存有效性
+        DR16_State_t received_remote;
+        const osStatus_t remote_status = osMessageQueueGet(task_runtime.msgq.dr16_feeder_state,
+                                                          &received_remote, NULL, 0U);
+        if (remote_status == osOK)
+        {
+            feeder_remote_cache = received_remote;
+            feeder_remote_valid = true;
+        }
+        else if (remote_status != osErrorResource)
+        {
+            feeder_remote_valid = false;
+        }
+
+        // 获取完整新反馈，缓存时效由模块输入边界统一判断
+        MOTOR_RM_Feedback_t feeder_feedback =
+        {
+            0,
+        };
+        feeder_feedback_status = CANDevices_UpdateFeederFeedback(&feeder_feedback);
+        // 在读取快照后采集完整单调时间，模块集中处理帧龄、周期与状态，输出闸门统一撤驱
+        const uint64_t now_us = BSP_TIME_Get();
+        Feeder_UpdateFeedback(&feeder, &feeder_feedback, feeder_feedback_status == CAN_DEVICES_OK, now_us);
+        const float period_s = now_us >= previous_time_us ? (float)(now_us - previous_time_us) * 0.000001f : 0.0f;
+        previous_time_us = now_us;
+        Feeder_Control(&feeder, &feeder_remote_cache, feeder_remote_valid, now_us, period_s);
+        feeder_output_status = CANDevices_ApplyFeederCurrent(Feeder_DumpOutput(&feeder));
         if (!command_received)
         {
             command.sequence = can_devices_snapshot.sequence;
         }
+        // 提交底盘本周期四路电流，不与拨弹的独立帧组共用缓存
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
         // 只使用本周期取得的云台输出，邮箱为空或读取失败时立即回到零输出
         Gimbal_Output_t gimbal_output =
         {
             0,
         };
-        if (task_runtime.msgq.gimbal_output == NULL ||
-            osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
+        if (osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
         {
             gimbal_output.yaw_current_a = 0.0f;
             gimbal_output.pitch_current_a = 0.0f;
@@ -77,6 +115,8 @@ bool Task_can_Init(void)
 {
     // 初始化两条 CAN 总线及底盘、云台和拨弹电机，允许单路注册失败后隔离运行
     CANDevices_Init(&can_devices_snapshot);
+    // 拨弹控制初始化失败保留模块安全状态，不阻断既有底盘和云台通信
+    feeder_init_status = Feeder_Init(&feeder, (float)CAN_TASK_FREQ);
     return can_devices_snapshot.initialized;
 }
 

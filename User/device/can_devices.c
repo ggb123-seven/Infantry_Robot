@@ -94,7 +94,7 @@ static bool can_devices_gimbal_registered[CAN_DEVICES_GIMBAL_MOTOR_COUNT];
 /*
  * 拨弹参数同步自参考工程 User/device/can.h 与 User/module/config.c
  * 用户确认使用 CAN2 的 M2006，电调 ID7 对应反馈标准帧 0x207，启用驱动内置 36:1 减速比
- * 方向暂不反转，实际正向仍需上板确认；本轮只注册和更新反馈，不提交 0x1FF 控制帧
+ * 方向暂不反转，模块以负角度实现正面顺时针，实际安装方向仍需上板确认
  */
 static MOTOR_RM_Param_t can_devices_feeder_param =
 {
@@ -165,7 +165,7 @@ int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot)
     can_devices_feeder_init_status = MOTOR_RM_Register(&can_devices_feeder_param);
     if (can_devices_feeder_init_status == DEVICE_OK)
     {
-        // 注册成功保证实例存在，仅预置零缓存，避免发送共用云台槽位的 0x1FF 帧
+        // 注册成功保证实例存在，预置零缓存后由通信任务提交独立的 0x1FF 帧
         can_devices_feeder_motor = MOTOR_RM_GetMotor(&can_devices_feeder_param);
         can_devices_feeder_init_status = MOTOR_RM_SetTorqueCurrent(&can_devices_feeder_param, 0.0f);
     }
@@ -333,18 +333,42 @@ static int8_t CANDevices_InitGimbal(void)
 /**
  * @brief 由 CAN 任务轮询拨弹反馈，解码与离线判断复用现有电机驱动
  *
- * 新反馈保存在 can_devices_feeder_motor 指向的现有实例，本轮不创建射击控制或反馈邮箱
+ * 新反馈保存在现有实例，并复制给同一 CAN 任务内的拨弹模块
  *
+ * @param[out] feedback 本周期新反馈，调用方保证非空，仅成功时写入
  * @return 新反馈解码成功返回 DEVICE_OK，初始化失败返回设备不可用，否则返回驱动状态码
  */
-int8_t CANDevices_UpdateFeederFeedback(void)
+int8_t CANDevices_UpdateFeederFeedback(MOTOR_RM_Feedback_t *feedback)
 {
     // 初始化失败时隔离拨弹设备，避免把注册失败误认为运行期丢帧
     if (can_devices_feeder_init_status != DEVICE_OK)
     {
         return CAN_DEVICES_DEVICE_UNAVAILABLE;
     }
-    return MOTOR_RM_Update(&can_devices_feeder_motor->param);
+    const int8_t status = MOTOR_RM_Update(&can_devices_feeder_motor->param);
+    if (status == DEVICE_OK)
+    {
+        *feedback = can_devices_feeder_motor->feedback;
+    }
+    return status;
+}
+
+/**
+ * @brief 写入拨弹电流并提交与云台缓存隔离的控制帧
+ *
+ * @param[in] current_a 转子侧电流，单位 A，调用方保证来自拨弹模块输出闸门的有限值
+ * @return 缓存写入和发送成功返回 DEVICE_OK，否则返回设备错误码
+ */
+int8_t CANDevices_ApplyFeederCurrent(float current_a)
+{
+    if (can_devices_feeder_init_status != DEVICE_OK)
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+
+    // 帧组隔离由电机驱动保证，未注册的摩擦轮槽位保留零，不再借用云台输出
+    const int8_t status = MOTOR_RM_SetTorqueCurrent(&can_devices_feeder_param, current_a);
+    return status == DEVICE_OK ? MOTOR_RM_FlushGroup(&can_devices_feeder_param) : status;
 }
 
 /**
