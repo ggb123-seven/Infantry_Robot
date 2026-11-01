@@ -76,4 +76,5 @@
 - 未改 .ioc 和 hw-lock，云台与摩擦轮保留独立控制帧，设备层没有改动
 - 编译器局部栈报告：Feeder_Init 408 B、Feeder_Control 184 B、Task_motor_trigger 168 B、Task_motor_shoot 184 B，仅静态函数局部用量，不代表完整调用链高水位
 - 拨弹步骤提交 1bad707；摩擦轮步骤在本记录及结果保存后单独提交，不夹带原有 conventions/guides 修改和诊断文档
+- 摩擦轮步骤提交 8fcda1a；本轮临时 validate_feeder_shoot_20261101.py、validate_friction_20261101.py、shoot_harness_20261101.c 在记录验证结果后精确清理，未删除正式测试资产
 
