@@ -45,12 +45,13 @@ typedef struct
  * 拨弹实例由拨弹任务独占，初始化后不得整体复制
  * config 为可调副本，cycle_config 为本周期持久快照，PID 长期引用快照内参数
  * initialized 与 config_valid 分别表示初始化结果与本周期配置结果
- * state 为唯一运行状态，feedback 为输出轴弧度和 rpm，feedback_valid 表示最近完整帧有效且未超过 10 ms
+ * state 为唯一运行状态，feedback 为输出轴弧度和 rpm，feedback_valid 表示已收到完整速度帧且未超过 10 ms
+ * 纯速度模式不依赖 feedback.angle_valid，角度连续性丢失仍保留原始标志，不阻断独立的转速反馈
  * target_angle_rad 为环绕位置目标，phase_s 为距下一齿的累计秒数，output_current_a 为转子侧安培
  * 速度调试期间 target_angle_rad 只在起控时捕获实际位置，phase_s 保持为零
  * speed_rad_s 为最近有效反馈的输出轴实测角速度，单位 rad/s
  * speed_pid 集中保存速度请求、限幅后目标、实际转速和速度控制器，字段说明见成员定义上方
- * measured_angle_deg、target_angle_deg 为只读角度镜像，单位度，不参与位置控制
+ * measured_angle_deg 为只读实测角度，单位度，连续性无效时为 NaN，target_angle_deg 为起控时的角度镜像
  * measured_speed_deg_s、target_speed_deg_s 为只读角速度镜像，单位度每秒，速度环调参仍使用 rpm
  * position_pid 保存外环历史，frequency_hz 为初始化采样频率
  */

@@ -118,18 +118,14 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
  */
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us)
 {
-    // 新帧只在输入边界检查一次，无新帧时保留缓存和逐齿进给相位
+    // 纯速度模式接收驱动已校验的完整新帧，角度连续性丢失不影响独立的转速反馈
     if (received)
     {
-        // 角度和速度由驱动内整数协议换算，直接信任已完成的解码，仅检查角度连续性标志
-        feeder->feedback_valid = feedback->angle_valid;
-        if (feeder->feedback_valid)
-        {
-            feeder->feedback = *feedback;
-            feeder->measured_angle_deg = feedback->rotor_single_angle * M_RAD2DEG_MULT;
-            feeder->speed_rad_s = feedback->rotor_speed * (FEEDER_TWO_PI / 60.0f);
-            feeder->measured_speed_deg_s = feedback->rotor_speed * 6.0f;
-        }
+        feeder->feedback = *feedback;
+        feeder->feedback_valid = true;
+        feeder->measured_angle_deg = feedback->angle_valid ? feedback->rotor_single_angle * M_RAD2DEG_MULT : NAN;
+        feeder->speed_rad_s = feedback->rotor_speed * (FEEDER_TWO_PI / 60.0f);
+        feeder->measured_speed_deg_s = feedback->rotor_speed * 6.0f;
     }
 
     // 驱动保存微秒时间低 32 位，无符号差值允许正常回绕并拒绝启动时的未来帧

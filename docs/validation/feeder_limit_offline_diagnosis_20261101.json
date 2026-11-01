@@ -1,0 +1,414 @@
+{
+  "type": "sample",
+  "source": "active-sampling",
+  "elf": {
+    "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "mtimeMs": 1793531501683.6482,
+    "size": 1944724,
+    "sha256": "db67fca45ef88107f02ba90c008ca12fe3ecdfa8ffeeef2d82f67cb7553c3569",
+    "machine": 40,
+    "elfClass": 1,
+    "encoding": 1
+  },
+  "firmwareConsistency": {
+    "status": "match",
+    "elfSha256": "db67fca45ef88107f02ba90c008ca12fe3ecdfa8ffeeef2d82f67cb7553c3569",
+    "flashedSha256": "db67fca45ef88107f02ba90c008ca12fe3ecdfa8ffeeef2d82f67cb7553c3569",
+    "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "flashedAt": "2026-11-01T11:21:39.482Z",
+    "target": "stm32f4x.cfg"
+  },
+  "timestamp": 1793532343079,
+  "values": {
+    "trigger_remote_valid": {
+      "requestedName": "trigger_remote_valid",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006998"
+    },
+    "trigger_output_published": {
+      "requestedName": "trigger_output_published",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20000067"
+    },
+    "shoot_output_status": {
+      "requestedName": "shoot_output_status",
+      "value": 0,
+      "valueText": null,
+      "type": "i8",
+      "address": "0x20000065"
+    },
+    "feeder.config.speed_pid": {
+      "requestedName": "feeder.config.speed_pid",
+      "tree": {
+        "name": "speed_pid",
+        "kind": "struct",
+        "typeName": "KPID_Params_t",
+        "byteSize": 32,
+        "offset": 52,
+        "members": [
+          {
+            "name": "k",
+            "offset": 52,
+            "value": 1,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "p",
+            "offset": 56,
+            "value": 0.1599999964237213,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "i",
+            "offset": 60,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "d",
+            "offset": 64,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "i_limit",
+            "offset": 68,
+            "value": 20,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "out_limit",
+            "offset": 72,
+            "value": 4,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "d_cutoff_freq",
+            "offset": 76,
+            "value": 20,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "range",
+            "offset": 80,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x2000680C"
+    },
+    "feeder.config.max_speed_rpm": {
+      "requestedName": "feeder.config.max_speed_rpm",
+      "value": 300,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x200067E4"
+    },
+    "feeder.config.max_current_a": {
+      "requestedName": "feeder.config.max_current_a",
+      "value": 4,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x200067E8"
+    },
+    "feeder.state": {
+      "requestedName": "feeder.state",
+      "value": 2,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x2000688A"
+    },
+    "feeder.initialized": {
+      "requestedName": "feeder.initialized",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006888"
+    },
+    "feeder.config_valid": {
+      "requestedName": "feeder.config_valid",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006889"
+    },
+    "feeder.feedback_valid": {
+      "requestedName": "feeder.feedback_valid",
+      "value": 0,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x200068B0"
+    },
+    "feeder.feedback.angle_valid": {
+      "requestedName": "feeder.feedback.angle_valid",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x200068A4"
+    },
+    "feeder.feedback.last_update_time": {
+      "requestedName": "feeder.feedback.last_update_time",
+      "value": 32039361,
+      "valueText": null,
+      "type": "u32",
+      "address": "0x200068AC"
+    },
+    "feeder.speed_pid.requested_speed_rpm": {
+      "requestedName": "feeder.speed_pid.requested_speed_rpm",
+      "value": 0,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x20006918"
+    },
+    "feeder.speed_pid.target_speed_rpm": {
+      "requestedName": "feeder.speed_pid.target_speed_rpm",
+      "value": 0,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x2000691C"
+    },
+    "feeder.speed_pid.measured_speed_rpm": {
+      "requestedName": "feeder.speed_pid.measured_speed_rpm",
+      "value": "NaN",
+      "valueText": null,
+      "type": "f32",
+      "address": "0x20006920"
+    },
+    "feeder.output_current_a": {
+      "requestedName": "feeder.output_current_a",
+      "value": 2.4316868782043457,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x200068D8"
+    },
+    "trigger_remote.data.sw_r": {
+      "requestedName": "trigger_remote.data.sw_r",
+      "value": 2,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006987"
+    },
+    "trigger_remote.header.online": {
+      "requestedName": "trigger_remote.header.online",
+      "value": 1,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006968"
+    },
+    "can_managers[1]->motors[4]->param": {
+      "requestedName": "can_managers[1]->motors[4]->param",
+      "tree": {
+        "kind": "class",
+        "typeName": "",
+        "members": [
+          {
+            "name": "can",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "",
+            "address": 536881208,
+            "value": 1,
+            "valueText": null,
+            "enumText": "BSP_CAN_2(1)"
+          },
+          {
+            "name": "id",
+            "kind": "scalar",
+            "type": "u16",
+            "typeName": "short unsigned int",
+            "address": 536881210,
+            "value": 519,
+            "valueText": null
+          },
+          {
+            "name": "module",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "",
+            "address": 536881212,
+            "value": 0,
+            "valueText": null,
+            "enumText": "MOTOR_M2006(0)"
+          },
+          {
+            "name": "reverse",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "_Bool",
+            "address": 536881213,
+            "value": 0,
+            "valueText": null
+          },
+          {
+            "name": "gear",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "_Bool",
+            "address": 536881214,
+            "value": 1,
+            "valueText": null
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20005C68"
+    },
+    "can_managers[1]->motors[4]->feedback": {
+      "requestedName": "can_managers[1]->motors[4]->feedback",
+      "tree": {
+        "kind": "class",
+        "typeName": "",
+        "members": [
+          {
+            "name": "rotor_abs_angle",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881216,
+            "value": 3.736402988433838,
+            "valueText": null
+          },
+          {
+            "name": "rotor_single_angle",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881220,
+            "value": 3.736402988433838,
+            "valueText": null
+          },
+          {
+            "name": "rotor_total_angle",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881224,
+            "value": 273.9134216308594,
+            "valueText": null
+          },
+          {
+            "name": "rotor_speed",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881228,
+            "value": 0,
+            "valueText": null
+          },
+          {
+            "name": "torque_current",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881232,
+            "value": -351.5625,
+            "valueText": null
+          },
+          {
+            "name": "temp",
+            "kind": "scalar",
+            "type": "f32",
+            "typeName": "float",
+            "address": 536881236,
+            "value": 0,
+            "valueText": null
+          },
+          {
+            "name": "angle_valid",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "_Bool",
+            "address": 536881240,
+            "value": 0,
+            "valueText": null
+          },
+          {
+            "name": "angle_lost_count",
+            "kind": "scalar",
+            "type": "u32",
+            "typeName": "long unsigned int",
+            "address": 536881244,
+            "value": 1,
+            "valueText": null
+          },
+          {
+            "name": "last_update_time",
+            "kind": "scalar",
+            "type": "u32",
+            "typeName": "long unsigned int",
+            "address": 536881248,
+            "value": 243693333,
+            "valueText": null
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20005C68"
+    },
+    "can_managers[1]->motors[4]->motor.header": {
+      "requestedName": "can_managers[1]->motors[4]->motor.header",
+      "tree": {
+        "kind": "class",
+        "typeName": "",
+        "members": [
+          {
+            "name": "online",
+            "kind": "scalar",
+            "type": "u8",
+            "typeName": "_Bool",
+            "address": 536881256,
+            "value": 1,
+            "valueText": null
+          },
+          {
+            "name": "last_online_time",
+            "kind": "scalar",
+            "type": "u64",
+            "typeName": "long long unsigned int",
+            "address": 536881264,
+            "value": 243697330,
+            "valueText": "243697330"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20005C68"
+    },
+    "can_managers[1]->motors[4]->angle_lost_count": {
+      "requestedName": "can_managers[1]->motors[4]->angle_lost_count",
+      "value": 1,
+      "valueText": null,
+      "type": "u32",
+      "address": "0x200028B8"
+    },
+    "g_motor_rm_slot_tx_debug[6].output_value": {
+      "requestedName": "g_motor_rm_slot_tx_debug[6].output_value",
+      "value": 0,
+      "valueText": null,
+      "type": "i16",
+      "address": "0x20005D06"
+    }
+  }
+}

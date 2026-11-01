@@ -1,0 +1,14 @@
+{
+  "baseline_assertions": 6007,
+  "fixed_assertions": 6129,
+  "normal_cycles": 1000,
+  "normal_trace_match": true,
+  "normal_trace_sha256": "048acf62bf0580cbd0d2892c3a647e7287342bea884a8fb0a8fce144262ad2c4",
+  "old_failure_reproduced": true,
+  "angle_invalid_speed_loop_pass": true,
+  "timeout_pass": true,
+  "current_and_target_limits_unchanged": true,
+  "arm_strict": "PASS",
+  "format": "PASS",
+  "temporary_assets_cleaned": true
+}
