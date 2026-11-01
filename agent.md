@@ -16,6 +16,16 @@
 
 ## 底盘当前进度
 
+### 2026-11-01 拨弹速度改由右摇杆控制
+
+- 用户要求右拨杆下位时用右摇杆上下控制拨弹速度，中点为零、推到底 +300 rpm、推到头 -300 rpm；整程映射复用 660 满量程与 5% 中心死区
+- 新增命令层 `Cmd_ParseFeeder` 与命令结构 `Feeder_Command_t`（mode 加归一化 speed_ratio）；feeder 不再读取遥控快照，也不再依赖 device/dr16.h
+- 目标为 speed_ratio 乘 feeder.config.max_speed_rpm，300 rpm 上限仍只在 config.c 定义一处；右拨杆上位和中位为待机档，是 FEEDER_FAULT 的唯一人工解除途径
+- 删除 feeder.speed_pid.requested_speed_rpm 调试可写字段，EmberProbe 旧绑定需同步移除；新增 feeder_command 观测入口，每周期被命令层覆盖，调试器写入不作为控制入口
+- 顺带删除 User/module/shoot.c 与 config.c 迁移遗留的重复前馈系数定义，修复链接期 multiple definition；该重复定义属上一轮配置迁移遗漏
+- Debug 构建成功（RAM 47176 B / 128 KB、FLASH 124984 B / 1 MB），check.py 的 ARCH、HW、SPEC 全 PASS，4 份 C 文件 ARM 严格检查通过，42 项主机断言 0 失败，见 docs/validation/feeder_joystick_speed_20261101.md
+- 未烧录、未写目标 RAM；摇杆正反方向、中心死区手感和 300 rpm 实际转速仍待上板验证，不得以编译和主机测试代替实车验收
+
 ### 2026-11-01 用户同步 M2006 拨弹速度环参数
 
 - 用户提供的最新 M2006 拨弹速度环参数为 P=0.5、I=0.12、D=0，后续讨论与调参以此组用户记录为准
@@ -196,6 +206,7 @@ FaultDetect_UpdateMotorChassis -> fault_detect_snapshot
 | 四轮观测 | chassis.wheel[i].measured_speed_rpm / filtered_speed_rpm / requested_speed_rpm / target_speed_rpm / output_current_a / state |
 | 诊断 | chassis.initialized、chassis.config_valid、fault_detect_snapshot |
 | 命令观测 | chassis_command，每周期被 DR16 覆盖，调试器写入不作为控制入口 |
+| 拨弹调试入口 | feeder.config.max_speed_rpm 既是输出轴上限也是比例 1 对应转速，feeder.config.speed_pid 可在线调；feeder_command 每周期被 Cmd_ParseFeeder 覆盖，调试器写入不作为控制入口 |
 
 - 删除旧调参和快照类型及其任务初始化接口，源码已无残留引用
 - 机械布局、反馈和电流低通截止频率仅在初始化时生效；其他配置按周期校验采纳
@@ -208,6 +219,7 @@ FaultDetect_UpdateMotorChassis -> fault_detect_snapshot
 - 左拨杆上位：INDEPENDENT，vx=-左摇杆前后、vy=左摇杆左右、wz=0；摇杆回中以零目标主动制动
 - 左拨杆下位：同样平移并叠加 wz=+0.30；回中后继续自旋
 - 中位、非法拨杆、无有效缓存、离线、时间回退或合法帧超过 100 ms：RELAX，四轮复位且零电流
+- 拨弹：右拨杆下位运行，右摇杆上下按 660 满量程与 5% 死区双向映射到 ±max_speed_rpm；上位和中位为待机档并解除故障锁存；遥控失效或非法档位撤驱
 - 轮状态 0 RELAX、1 RUNNING、2 OFFLINE；任一路反馈缺失、更新失败、离线或非有限时仅隔离该轮，其他轮继续运行
 - 反馈恢复后自动从实测转速预置滤波、PID 微分和目标斜坡，再进入运行，不要求拨杆回中；这是本轮确认保留的行为
 - 配置非法、命令非法、解算失败、周期异常时四轮待机；非法轮状态本周期待机，计算异常本轮待机，下周期可重新预置

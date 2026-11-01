@@ -8,10 +8,7 @@
 #define SHOOT_TIMEOUT_US (100000U)
 #define SHOOT_MAX_PERIOD_S (0.1f)
 
-// 参考第 3.9 节作业的前馈系数 30000，按减速比 3591/187、rad/s 转 rpm、16384 对应 20 A 换算
-// 系数单位为 A/rpm，非负且有限；EmberProbe 可在线调整，每周期仅在控制入口读取一次
-volatile float shoot_speed_feedforward_gain_a_per_rpm = 30000.0f * 20.0f / 16384.0f *
-    M_2PI / 60.0f / (3591.0f / 187.0f);
+// 前馈系数集中在 module/config.c 定义，本文件只通过 shoot.h 的外部声明读取
 
 static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz);
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "component/pid.h"
-#include "device/dr16.h"
 #include "device/motor_rm.h"
 
 #ifdef __cplusplus
@@ -18,12 +17,32 @@ typedef enum
     FEEDER_FAULT,
 } Feeder_State_t;
 
+// 拨弹命令档位：离线档不解除故障锁存，待机档可人工解除，运行档按归一化比例输出速度
+typedef enum
+{
+    FEEDER_CMD_OFFLINE = 0,
+    FEEDER_CMD_RELAX,
+    FEEDER_CMD_RUN,
+} Feeder_CmdMode_t;
+
+/*
+ * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改
+ * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
+ * speed_ratio 为归一化速度比例，调用方保证有限且位于 [-1, 1]，运行档内乘本周期 max_speed_rpm
+ */
+typedef struct
+{
+    Feeder_CmdMode_t mode;
+    float speed_ratio;
+} Feeder_Command_t;
+
 /*
  * 拨弹可调配置，初始化复制到实例，运行中通过 EmberProbe 修改实例副本
  * 当前旁路位置外环，tooth_count、feed_hz、direction 和 position_pid 保留但不参与速度目标生成
  * tooth_count 为一圈齿数，须为有限值且至少为 2；feed_hz 为每秒进给齿数，须大于零且不超过采样频率
  * direction 为角度递增方向，只接受 -1 或 +1；默认 -1 沿用参考工程正常拨弹方向
- * max_speed_rpm 为输出轴速度目标上限，单位 rpm；max_current_a 为转子电流上限，单位 A，范围 (0,10]
+ * max_speed_rpm 为输出轴速度目标上限，单位 rpm，也是归一化比例 1 对应的转速
+ * max_current_a 为转子电流上限，单位 A，范围 (0,10]
  * position_pid 输入输出轴弧度，输出 rad/s，range 固定为 2π，输出限幅不得超过速度上限换算值
  * speed_pid 输入输出轴 rpm，输出 A，range 固定为零，输出限幅不得超过电流上限
  * speed_feedforward_gain_a_per_rpm 为目标逐周期差分的电流前馈系数，单位 A/rpm，非负，零表示关闭
@@ -50,7 +69,7 @@ typedef struct
  * target_angle_rad 为环绕位置目标，phase_s 为距下一齿的累计秒数，output_current_a 为转子侧安培
  * 速度调试期间 target_angle_rad 只在起控时捕获实际位置，phase_s 保持为零
  * speed_rad_s 为最近有效反馈的输出轴实测角速度，单位 rad/s
- * speed_pid 集中保存速度请求、限幅后目标、实际转速和速度控制器，字段说明见成员定义上方
+ * speed_pid 集中保存限幅后目标、实际转速和速度控制器，字段说明见成员定义上方
  * measured_angle_deg 为只读实测角度，单位度，连续性无效时为 NaN，target_angle_deg 为起控时的角度镜像
  * measured_speed_deg_s、target_speed_deg_s 为只读角速度镜像，单位度每秒，速度环调参仍使用 rpm
  * position_pid 保存外环历史，frequency_hz 为初始化采样频率
@@ -74,15 +93,13 @@ typedef struct
     float output_current_a;
     KPID_t position_pid;
     /*
-     * 速度环运行数据，三个转速字段均为减速后输出轴 rpm
-     * requested_speed_rpm 为可写请求，上电为零，每周期控制入口只读取一次
-     * target_speed_rpm 为限幅后目标，状态切换或改参时重置，同时保存前馈差分历史
+     * 速度环运行数据，两个转速字段均为减速后输出轴 rpm
+     * target_speed_rpm 为命令比例乘速度上限后的目标，状态切换或改参时重置，同时保存前馈差分历史
      * measured_speed_rpm 为实测转速，反馈无效时为 NaN
      * controller 保存速度 PID 历史，参数指针长期引用实例内 cycle_config.speed_pid
      */
     struct
     {
-        volatile float requested_speed_rpm;
         float target_speed_rpm;
         float measured_speed_rpm;
         KPID_t controller;
@@ -111,16 +128,14 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz);
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us);
 
 /**
- * @brief 读取实例速度请求，校验周期配置与遥控源时间并执行速度控制
+ * @brief 校验周期配置并按命令档位与归一化比例执行速度控制
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
- * @param[in] remote 最近遥控快照，调用方保证非空
- * @param[in] remote_valid 已收到遥控且邮箱读取无异常时为 true
- * @param[in] now_us 读取遥控后的完整单调微秒时间
+ * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存
  * @param[in] period_s 实测控制周期，单位秒，合法范围 (0,0.1]
  * @return 无返回值
  */
-void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, uint64_t now_us, float period_s);
+void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float period_s);
 
 /**
  * @brief 根据唯一运行状态导出电流，其他状态统一输出零

@@ -1,6 +1,7 @@
 #include "task/motor_trigger.h"
 
 #include "bsp/time.h"
+#include "module/cmd.h"
 #include "module/trigger.h"
 #include "task/user_task.h"
 
@@ -8,20 +9,21 @@
 
 /*
  * feeder 为任务独占的拨弹实例，当前旁路位置外环，config 用于在线调参
- * feeder.speed_pid.requested_speed_rpm 为可写调试目标，单位输出轴 rpm，上电为零，正负直接表示方向
- * feeder.speed_pid.target_speed_rpm 为限幅后目标，measured_speed_rpm 为实测转速，反馈无效时为 NaN
- * 右拨杆下位仍为运行使能，其余档位及失联撤驱，角度镜像继续使用度数
+ * feeder_command 为命令层每周期生成的拨弹命令，速度比例乘以 config.max_speed_rpm 得到输出轴 rpm 目标
+ * feeder.speed_pid.target_speed_rpm 为换算后的目标，measured_speed_rpm 为实测转速，反馈无效时为 NaN
+ * 右拨杆下位为运行使能，其余档位及失联撤驱，角度镜像继续使用度数
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
- * trigger_output_published 为上周期电流发布结果，失败后下一周期撤销请求以清除控制历史
+ * trigger_output_published 为上周期电流发布结果，失败后下一周期不提交命令以清除控制历史
  */
 Feeder_t feeder;
 DR16_State_t trigger_remote;
+Feeder_Command_t feeder_command;
 static bool trigger_remote_valid;
 static bool trigger_output_published = true;
 
 /**
- * @brief 周期编排拨弹遥控、反馈、速度调试与电流邮箱发布
+ * @brief 周期编排拨弹遥控、反馈、速度控制与电流邮箱发布
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -61,11 +63,12 @@ void Task_motor_trigger(void *argument)
         const uint64_t now_us = BSP_TIME_Get();
         Feeder_UpdateFeedback(&feeder, &feedback, received, now_us);
 
-        // 模块入口统一读取实例速度请求并校验，发布失败后先撤销请求
+        // 命令层把遥控快照翻译成拨弹命令，发布失败时本周期不提交命令
+        Cmd_ParseFeeder(&trigger_remote, trigger_remote_valid, now_us, &feeder_command);
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
-        Feeder_Control(&feeder, &trigger_remote, trigger_remote_valid && trigger_output_published, now_us, period_s);
+        Feeder_Control(&feeder, trigger_output_published ? &feeder_command : NULL, period_s);
         const Trigger_Output_t output =
         {
             .current_a = Feeder_DumpOutput(&feeder),

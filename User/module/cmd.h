@@ -2,6 +2,7 @@
 
 #include "device/dr16.h"
 #include "module/chassis.h"
+#include "module/feeder.h"
 #include "module/gimbal.h"
 
 #ifdef __cplusplus
@@ -38,6 +39,19 @@ typedef struct
  * @return 遥控快照在线且时效有效时返回 true，否则返回 false
  */
 bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out);
+
+/**
+ * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
+ *
+ * 右拨杆下位为运行，右摇杆上下双向映射到归一化速度比例，上位和中位为待机
+ *
+ * @param[in] rc 最近遥控快照，调用方保证非空
+ * @param[in] rc_valid 已取得有效缓存时为 true
+ * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[out] out 拨弹命令，调用方保证非空
+ * @return 遥控快照在线且时效有效时返回 true，否则返回 false
+ */
+bool Cmd_ParseFeeder(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Feeder_Command_t *out);
 
 /**
  * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位

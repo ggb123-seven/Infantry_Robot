@@ -5,12 +5,8 @@
 #include <string.h>
 
 /*
- * 参数来自用户确认的参考工程 shoot.c 连续模式与默认步兵配置
- * 每秒 20 齿、一圈 10 齿，平均输出轴 120 rpm，M2006 转子约 4320 rpm
- * 正面顺时针采用正常拨弹的负角度方向，实物安装方向仍须上板核对
- * 角度外环复制云台弧度参数，速度内环复制底盘 rpm 参数，旧归一化电流参数不再参与控制
- * 速度上限复用既有拨弹配置，电流上限复用底盘配置且不得超过 M2006 的 10 A 协议范围
- * 当前调试阶段旁路位置外环，从实例的可写请求读取输出轴 rpm 目标，逐齿参数和位置 PID 保留待恢复
+ * 业务参数统一来自 config.c 的 feeder_config，模块只复制到可调实例和本周期快照
+ * 当前调试阶段旁路位置外环，按命令层给出的归一化比例乘速度上限得到输出轴 rpm 目标，逐齿参数和位置 PID 保留待恢复
  * 度数仅用于观察，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
@@ -18,13 +14,6 @@
 #define FEEDER_MAX_PERIOD_S (0.1f)
 // 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获位置
 #define FEEDER_FEEDBACK_TIMEOUT_US (10000U)
-
-static const Feeder_Config_t feeder_default_config =
-{
-    .tooth_count = 10.0f,
-    .feed_hz = 20.0f,
-    .direction = -1.0f,
-};
 
 /**
  * @brief 在配置入口校验单个控制器的公共参数
@@ -77,20 +66,13 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
     // 初始化从安全状态开始，配置副本保留给运行期调参
     *feeder = (Feeder_t)
     {
-        .config = feeder_default_config,
-        .cycle_config = feeder_default_config,
+        .config = feeder_config,
+        .cycle_config = feeder_config,
         .frequency_hz = frequency_hz,
         .state = FEEDER_FAULT,
         .speed_pid.measured_speed_rpm = NAN,
     };
-    // 只复制已确认配置到可调副本，原配置文件保持不变，两个控制器长期引用实例内快照
-    feeder->config.max_speed_rpm = trigger_config.max_speed_rpm;
-    feeder->config.max_current_a = chassis_config.max_current_a;
-    feeder->config.position_pid = gimbal_config.yaw.angle_pid;
-    feeder->config.position_pid.range = FEEDER_TWO_PI;
-    feeder->config.position_pid.out_limit = feeder->config.max_speed_rpm * (FEEDER_TWO_PI / 60.0f);
-    feeder->config.speed_pid = chassis_config.wheel_speed_pid;
-    feeder->cycle_config = feeder->config;
+    // 配置只在统一入口校验，两个控制器长期引用实例内持久快照
     feeder->config_valid = isfinite(frequency_hz) && frequency_hz > 0.0f &&
                            Feeder_ConfigValid(&feeder->cycle_config, frequency_hz);
     if (!feeder->config_valid)
@@ -135,31 +117,28 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 }
 
 /**
- * @brief 集中处理配置、遥控时效和直接速度目标，位置外环暂不运行
+ * @brief 校验周期配置，按命令档位推进状态机并执行速度控制
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
- * @param[in] remote 遥控一致快照，调用方保证非空
- * @param[in] remote_valid 最近邮箱读取和缓存有效性
- * @param[in] now_us 读取遥控后的完整单调时间，单位微秒
- * @param[in] period_s 实测控制周期，单位秒
+ * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存
+ * @param[in] period_s 实测控制周期，单位秒，合法范围 (0,0.1]
  * @return 无返回值
  */
-void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, uint64_t now_us, float period_s)
+void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float period_s)
 {
-    // 每周期入口只读取一次可写请求和配置，后续控制使用本周期快照
-    const float requested_speed_rpm = feeder->speed_pid.requested_speed_rpm;
+    // 每周期入口只读取一次可调配置，后续控制使用本周期快照
     const Feeder_Config_t previous_config = feeder->cycle_config;
     feeder->cycle_config = *(const volatile Feeder_Config_t *)&feeder->config;
     feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
     const bool config_changed = memcmp(&previous_config, &feeder->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
-    const bool remote_online = remote_valid && remote->header.online && now_us >= remote->header.last_online_time &&
-        now_us - remote->header.last_online_time <= DR16_RECEIVER_OFFLINE_TIMEOUT_US;
-    const bool requested = remote_online && remote->data.sw_r == DR16_SWITCH_DOWN;
+    // 命令缺失按离线档处理，只有显式待机档能解除故障锁存
+    const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
+    const float speed_ratio = command != NULL ? command->speed_ratio : 0.0f;
     Feeder_State_t next_state;
 
-    // 停机和通信恢复都重新捕获实际位置，禁止追赶失联期间累积的旧目标
-    if (!feeder->initialized || !feeder->config_valid || !period_valid || !isfinite(requested_speed_rpm))
+    // 停机、配置非法和周期异常锁存故障，等待遥控待机档人工解除
+    if (!feeder->initialized || !feeder->config_valid || !period_valid)
     {
         next_state = FEEDER_FAULT;
     }
@@ -170,13 +149,12 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
             case FEEDER_RELAX:
             case FEEDER_RUNNING:
             case FEEDER_OFFLINE:
-                next_state = !requested ? FEEDER_RELAX :
+                next_state = mode != FEEDER_CMD_RUN ? FEEDER_RELAX :
                              feeder->feedback_valid ? FEEDER_RUNNING : FEEDER_OFFLINE;
                 break;
             case FEEDER_FAULT:
-                // 故障只能由在线遥控的停机档解除，断链或反馈恢复不会自动绕过故障
-                next_state = remote_online && (remote->data.sw_r == DR16_SWITCH_UP ||
-                             remote->data.sw_r == DR16_SWITCH_MIDDLE) ? FEEDER_RELAX : FEEDER_FAULT;
+                // 故障只能由待机档解除，断链或反馈恢复不会自动绕过故障
+                next_state = mode == FEEDER_CMD_RELAX ? FEEDER_RELAX : FEEDER_FAULT;
                 break;
             default:
                 next_state = FEEDER_FAULT;
@@ -212,10 +190,10 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
         return;
     }
 
-    // 速度调试阶段不推进逐齿目标，也不计算位置 PID，直接采用本周期 rpm 请求
+    // 速度调试阶段不推进逐齿目标，也不计算位置 PID，直接把命令比例换算成本周期 rpm 目标
     const Feeder_Config_t *config = &feeder->cycle_config;
     const float previous_target_rpm = feeder->speed_pid.target_speed_rpm;
-    feeder->speed_pid.target_speed_rpm = AbsClip(requested_speed_rpm, config->max_speed_rpm);
+    feeder->speed_pid.target_speed_rpm = speed_ratio * config->max_speed_rpm;
     feeder->target_speed_deg_s = feeder->speed_pid.target_speed_rpm * 6.0f;
     const float feedforward_a = (feeder->speed_pid.target_speed_rpm - previous_target_rpm) *
                                config->speed_feedforward_gain_a_per_rpm;

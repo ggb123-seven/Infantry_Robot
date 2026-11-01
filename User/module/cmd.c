@@ -122,6 +122,50 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 }
 
 /**
+ * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
+ *
+ * 右拨杆下位为运行，右摇杆上下双向线性映射，上位和中位为待机并允许人工解除故障
+ *
+ * @param[in] rc 最近遥控快照，调用方保证非空
+ * @param[in] rc_valid 已取得有效缓存时为 true
+ * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[out] out 拨弹命令，调用方保证非空
+ * @return 遥控快照在线且时效有效时返回 true，否则返回 false
+ */
+bool Cmd_ParseFeeder(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Feeder_Command_t *out)
+{
+    // 默认离线档，失效遥控和非法档位都不得沿用上一周期的速度比例
+    *out = (Feeder_Command_t)
+    {
+        .mode = FEEDER_CMD_OFFLINE,
+    };
+    if (!rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
+        now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
+    {
+        return false;
+    }
+
+    // 下位运行并读取右摇杆，上位和中位撤驱但保留人工解除故障的途径
+    switch (rc->data.sw_r)
+    {
+        case DR16_SWITCH_DOWN:
+            out->mode = FEEDER_CMD_RUN;
+            // 摇杆居中为零，推到底为 +1、推到头为 -1，双向线性映射到速度上限
+            out->speed_ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
+            break;
+
+        case DR16_SWITCH_UP:
+        case DR16_SWITCH_MIDDLE:
+            out->mode = FEEDER_CMD_RELAX;
+            break;
+
+        default:
+            break;
+    }
+    return true;
+}
+
+/**
  * @brief 撤销遥控使能与速度历史，要求重新确认中位
  *
  * @param[out] ctx 云台命令上下文，调用方保证非空

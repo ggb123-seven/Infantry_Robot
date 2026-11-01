@@ -1,32 +1,50 @@
 #include "module/config.h"
 
 /*
- * 拨弹接入阶段默认配置：输出轴目标限幅 300 rpm，转子电流限幅 2 A
- * 速度 PID 的 k=1、p/i/d=0，未调参时即使命令使能也保持零电流
- * 积分限幅 20 rpm·s、输出限幅 2 A、微分截止 20 Hz、range=0
- * 这些限幅仅作为初始调试边界，不表示已完成真实机构整定
+ * 拨弹默认配置独立定义，初始化只复制本配置，不再从底盘或云台覆盖参数
+ * 输出轴目标限幅 300 rpm、转子电流限幅 4 A，保留迁移前实际使用的边界
+ * 速度 PID 采用用户提供的 P=0.5、I=0.12、D=0，k=1、积分限幅 20 rpm·s
+ * 速度 PID 输出限幅 4 A、微分截止 20 Hz、range=0，输入输出轴 rpm、输出 A
+ * 位置外环保留现有弧度参数及 2π 环绕，输出限幅为 300 rpm 对应的 rad/s，当前旁路
+ * 逐齿配置为一圈 10 齿、每秒 20 齿、方向 -1，直接速度调试期间不推进逐齿目标
+ * 目标逐周期差分前馈单位 A/rpm，默认零；实物方向和闭环响应仍须上板验证
  */
-const Trigger_Config_t trigger_config =
+const Feeder_Config_t feeder_config =
 {
+    .tooth_count = 10.0f,
+    .feed_hz = 20.0f,
+    .direction = -1.0f,
     .max_speed_rpm = 300.0f,
-    .max_current_a = 2.0f,
+    .max_current_a = 4.0f,
+    .position_pid =
+    {
+        .k = 1.0f,
+        .p = 15.0f,
+        .i = 0.005f,
+        .d = 0.0f,
+        .i_limit = 1.0f,
+        .out_limit = 300.0f * (M_2PI / 60.0f),
+        .d_cutoff_freq = 0.0f,
+        .range = M_2PI,
+    },
     .speed_pid =
     {
         .k = 1.0f,
-        .p = 0.0f,
-        .i = 0.0f,
+        .p = 0.5f,
+        .i = 0.12f,
         .d = 0.0f,
         .i_limit = 20.0f,
-        .out_limit = 2.0f,
+        .out_limit = 4.0f,
         .d_cutoff_freq = 20.0f,
         .range = 0.0f,
     },
+    .speed_feedforward_gain_a_per_rpm = 0.0f,
 };
 
 /*
  * 双摩擦轮接入阶段默认配置：转子目标限幅 8000 rpm，每轮转子电流限幅 3 A
  * 两轮使用相同参数、独立控制历史，目标符号由各自命令指定
- * 速度 PID 的 k=1、p/i/d=0，未调参时保持零电流
+ * 速度 PID 独立保存迁移前实际使用的 k=1、p=0.16、i=d=0，不再借用底盘参数
  * 积分限幅 20 rpm·s、输出限幅 3 A、微分截止 20 Hz、range=0
  * 尚未标定实际弹速，当前只提供独立转速命令接口
  */
@@ -37,7 +55,7 @@ const Shoot_Config_t shoot_config =
     .speed_pid =
     {
         .k = 1.0f,
-        .p = 0.0f,
+        .p = 0.16f,
         .i = 0.0f,
         .d = 0.0f,
         .i_limit = 20.0f,
@@ -46,6 +64,14 @@ const Shoot_Config_t shoot_config =
         .range = 0.0f,
     },
 };
+
+/*
+ * 摩擦轮目标逐周期差分前馈的可写参数集中定义于配置文件，控制入口每周期读取一次
+ * 参考第 3.9 节作业的系数 30000，按减速比 3591/187、rad/s 转 rpm、16384 对应 20 A 换算
+ * 单位 A/rpm，保留既有在线调参变量和数值，零表示关闭
+ */
+volatile float shoot_speed_feedforward_gain_a_per_rpm = 30000.0f * 20.0f / 16384.0f *
+    M_2PI / 60.0f / (3591.0f / 187.0f);
 
 /*
  * 轮速旋转标定系数，单位为每 rpm 对应的 rad/s
