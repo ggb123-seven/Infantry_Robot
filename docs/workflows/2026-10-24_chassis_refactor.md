@@ -1,4 +1,4 @@
-﻿# 底盘重构验证记录
+# 底盘重构验证记录
 
 日期：2026-10-24；依据根目录《底盘重构方案.md》执行
 
@@ -28,7 +28,7 @@
 
 验证命令与结果：
 
-1. `cmake --build --preset Debug --clean-first`：88/88 项通过，零 warning/error；RAM 42544 B、FLASH 110804 B；日志 `build/chassis_refactor_debug_build.log`
+1. `cmake --build --preset Debug --clean-first`：88/88 项通过，零 warning/error；RAM 42544 B、FLASH 110804 B；日志 `build/chassis_refactor_debug_build.log`（该日志已在 2026-11-01 清理中间构建产物时删除，数值以本记录为准）
 2. 主机控制与故障回归编译命令：
 
    ```powershell

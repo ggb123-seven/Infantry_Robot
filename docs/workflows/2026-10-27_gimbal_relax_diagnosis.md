@@ -47,7 +47,7 @@
 | `User/device/motor_rm.c` | 两轴成功解码次数、无新帧次数、帧格式拒绝次数和最近拒绝原因 | BSP 后到设备解码前的丢失或校验拒绝 |
 | `User/task/can_task.c` | 两轴设备更新结果及反馈邮箱重置、写入失败次数 | 设备正常更新但未交付云台任务 |
 
-用户已明确同意临时修改表中三个文件，并要求找到错误后直接撤销本次更改。三个文件的原始字节和原 ELF 已备份至忽略目录 `build/relax-baseline`，撤销时仅恢复本次差异，不覆盖其他用户修改
+用户已明确同意临时修改表中三个文件，并要求找到错误后直接撤销本次更改。三个文件的原始字节和原 ELF 已备份至忽略目录 `build/relax-baseline`（该备份目录已在 2026-11-01 清理中间构建产物时删除），撤销时仅恢复本次差异，不覆盖其他用户修改
 
 已加入的观测数组索引均为 yaw=0、pitch=1；BSP 的寄存器数组按 CAN1=0、CAN2=1 索引：
 
@@ -99,8 +99,8 @@ ISR 计数只由相同优先级 5 的 CAN 接收中断更新；设备和交付�
 
 ### 工作树与恢复基线
 
-- 三个诊断源文件仍为未提交修改；原始字节位于 `build/relax-baseline/can.c.bak`、`motor_rm.c.bak`、`can_task.c.bak`
-- 原 ELF 位于 `build/relax-baseline/Infantry_Robot.elf`，SHA-256 为 `25c65aa10f1ad52fdbb35430d0b36c86ce0146abaa4c4e90be3f3112fea8805a`
+- 三个诊断源文件仍为未提交修改；原始字节位于 `build/relax-baseline/can.c.bak`、`motor_rm.c.bak`、`can_task.c.bak`（备份目录已在 2026-11-01 清理时删除）
+- 原 ELF 位于 `build/relax-baseline/Infantry_Robot.elf`，SHA-256 为 `25c65aa10f1ad52fdbb35430d0b36c86ce0146abaa4c4e90be3f3112fea8805a`（备份目录已在 2026-11-01 清理时删除，SHA 记录保留）
 - 当前构建 ELF 与板上诊断固件 SHA 均为 `ba47bfc62f6869486114d79b4df31b9a937b1b83376866b91d4e98432e1bfe2b`
 - 找到错误后只撤销本次诊断差异并核验备份字节，不重置整个仓库，不覆盖用户 `User/module/config.c` 的 PID 改动或其他并行修改
 - 原有用户删除文件、两份 2026-10-26 CSV 及新增诊断证据均保留；不要暂存或提交用户的其他修改
