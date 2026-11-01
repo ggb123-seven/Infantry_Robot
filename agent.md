@@ -16,6 +16,14 @@
 
 ## 底盘当前进度
 
+### 2026-11-01 用户同步 M2006 拨弹速度环参数
+
+- 用户提供的最新 M2006 拨弹速度环参数为 P=0.5、I=0.12、D=0，后续讨论与调参以此组用户记录为准
+- 对应在线入口为 feeder.config.speed_pid.p/i/d，仅适用于拨弹 M2006，不同步到底盘 M3508 或摩擦轮
+- 本次仅同步记录，未修改 config.c 或初始化逻辑、未写目标 RAM、未烧录，也未回读确认板上数值
+- 当前源码仍在 Feeder_Init 中复制 chassis_config.wheel_speed_pid，初始化值 P=0.16、I=0、D=0；用户新参数与固件默认值尚未统一
+- 其他参数、限流与限速不由本次消息推断；同步范围和验证证据见 docs/validation/feeder_speed_pid_user_values_20261101.md
+
 ### 2026-11-01 纯速度拨弹解除角度连续性耦合
 
 - 现场只读确认当前固件与 ELF 一致，拨弹驱动在线但 angle_lost_count=1、angle_valid=0；模块进入 FEEDER_OFFLINE，0x1FF 的 ID7 电流槽为零
