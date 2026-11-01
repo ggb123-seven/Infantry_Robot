@@ -10,6 +10,7 @@
  * 正面顺时针采用正常拨弹的负角度方向，实物安装方向仍须上板核对
  * 角度外环复制云台弧度参数，速度内环复制底盘 rpm 参数，旧归一化电流参数不再参与控制
  * 速度上限复用既有拨弹配置，电流上限复用底盘配置且不得超过 M2006 的 10 A 协议范围
+ * 当前调试阶段旁路位置外环，由调用方提供输出轴 rpm 目标，逐齿参数和位置 PID 保留待恢复
  * 度数仅用于观察，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
@@ -62,18 +63,6 @@ static bool Feeder_ConfigValid(const Feeder_Config_t *config, float frequency_hz
            Feeder_PidConfigValid(&config->speed_pid, frequency_hz) &&
            config->speed_pid.out_limit <= config->max_current_a && config->speed_pid.range == 0.0f &&
            isfinite(config->speed_feedforward_gain_a_per_rpm) && config->speed_feedforward_gain_a_per_rpm >= 0.0f;
-}
-
-/**
- * @brief 将有限角度映射到一圈内
- *
- * @param[in] angle_rad 调用方保证有限的输出轴角度，单位 rad
- * @return [0,2π) 内的角度，单位 rad
- */
-static float Feeder_WrapAngle(float angle_rad)
-{
-    const float wrapped = fmodf(angle_rad, FEEDER_TWO_PI);
-    return wrapped < 0.0f ? wrapped + FEEDER_TWO_PI : wrapped;
 }
 
 /**
@@ -148,16 +137,18 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 }
 
 /**
- * @brief 集中处理配置、遥控时效、逐齿目标和串级控制状态
+ * @brief 集中处理配置、遥控时效和直接速度目标，位置外环暂不运行
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] remote 遥控一致快照，调用方保证非空
  * @param[in] remote_valid 最近邮箱读取和缓存有效性
+ * @param[in] target_speed_rpm 调试速度目标，单位输出轴 rpm，正负表示两个旋转方向
  * @param[in] now_us 读取遥控后的完整单调时间，单位微秒
  * @param[in] period_s 实测控制周期，单位秒
  * @return 无返回值
  */
-void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, uint64_t now_us, float period_s)
+void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, float target_speed_rpm,
+                    uint64_t now_us, float period_s)
 {
     // 每周期只读取一次可调副本，之后 PID、目标生成和输出只使用持久快照
     const Feeder_Config_t previous_config = feeder->cycle_config;
@@ -171,7 +162,7 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
     Feeder_State_t next_state;
 
     // 停机和通信恢复都重新捕获实际位置，禁止追赶失联期间累积的旧目标
-    if (!feeder->initialized || !feeder->config_valid || !period_valid)
+    if (!feeder->initialized || !feeder->config_valid || !period_valid || !isfinite(target_speed_rpm))
     {
         next_state = FEEDER_FAULT;
     }
@@ -215,7 +206,7 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
             feeder->speed_pid.last.k_fb = LowPassFilter2p_Reset(&feeder->speed_pid.dfilter,
                 feeder->cycle_config.speed_pid.k * feeder->feedback.rotor_speed);
             feeder->target_angle_rad = feeder->feedback.rotor_single_angle;
-            feeder->phase_s = 1.0 / (double)feeder->cycle_config.feed_hz;
+            feeder->target_angle_deg = feeder->measured_angle_deg;
         }
     }
     feeder->state = next_state;
@@ -224,33 +215,10 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
         return;
     }
 
-    // 参考工程每 50 ms 前进一齿，按实际周期累计时间并保留不足一齿的余量
+    // 速度调试阶段不推进逐齿目标，也不计算位置 PID，直接采用本周期 rpm 请求
     const Feeder_Config_t *config = &feeder->cycle_config;
-    const double interval_s = 1.0 / (double)config->feed_hz;
-    // 首齿立即执行，后续间隔从本周期起算，避免把启动前的周期时间计入下一齿
-    if (!restart)
-    {
-        // 实测周期来自整数微秒，恢复其分辨率并以双精度累积，避免长时间运行后整齿边界漂移
-        feeder->phase_s += (double)roundf(period_s * 1000000.0f) * 0.000001;
-    }
-    const double teeth = floor((feeder->phase_s + 0.000000001) / interval_s);
-    feeder->phase_s -= teeth * interval_s;
-    feeder->target_angle_rad = Feeder_WrapAngle(feeder->target_angle_rad +
-        config->direction * (float)teeth * FEEDER_TWO_PI / config->tooth_count);
-    const float derivative = config->position_pid.k * feeder->speed_rad_s;
-    feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
-
-    // 目标与微分换算属于本层计算链，在进入 PID 前统一拒绝溢出
-    if (!isfinite(feeder->target_angle_rad) || !isfinite(derivative))
-    {
-        feeder->state = FEEDER_FAULT;
-        return;
-    }
-    // 外环只计算弧度位置误差，换算为输出轴 rpm 后交给速度内环，电流不再乘归一化标度
-    const float target_rad_s = PID_Calc(&feeder->position_pid, feeder->target_angle_rad,
-        feeder->feedback.rotor_single_angle, derivative, period_s);
     const float previous_target_rpm = feeder->target_speed_rpm;
-    feeder->target_speed_rpm = AbsClip(target_rad_s * (60.0f / FEEDER_TWO_PI), config->max_speed_rpm);
+    feeder->target_speed_rpm = AbsClip(target_speed_rpm, config->max_speed_rpm);
     feeder->target_speed_deg_s = feeder->target_speed_rpm * 6.0f;
     const float feedforward_a = (feeder->target_speed_rpm - previous_target_rpm) *
                                config->speed_feedforward_gain_a_per_rpm;

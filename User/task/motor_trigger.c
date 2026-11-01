@@ -7,19 +7,21 @@
 #include <stddef.h>
 
 /*
- * feeder 为任务独占的逐齿位置与速度串级实例，config 用于在线调参
- * 位置内部使用弧度，角度镜像使用度数，速度内环与前馈目标使用输出轴 rpm
+ * feeder 为任务独占的拨弹实例，当前旁路位置外环，config 用于在线调参
+ * feeder_speed_target_rpm 为可写调试目标，单位输出轴 rpm，上电为零，正负直接表示方向
+ * 右拨杆下位仍为运行使能，其余档位及失联撤驱，角度镜像继续使用度数
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 为上周期电流发布结果，失败后下一周期撤销请求以清除控制历史
  */
 Feeder_t feeder;
+volatile float feeder_speed_target_rpm = 0.0f;
 DR16_State_t trigger_remote;
 static bool trigger_remote_valid;
 static bool trigger_output_published = true;
 
 /**
- * @brief 周期编排拨弹遥控、反馈、逐齿串级控制与电流邮箱发布
+ * @brief 周期编排拨弹遥控、反馈、速度调试与电流邮箱发布
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -59,11 +61,13 @@ void Task_motor_trigger(void *argument)
         const uint64_t now_us = BSP_TIME_Get();
         Feeder_UpdateFeedback(&feeder, &feedback, received, now_us);
 
-        // 模块统一处理配置快照、遥控时效、状态转换和串级闭环，发布失败后先撤销一次请求
+        // 每周期只读取一次可写调试目标，模块统一处理参数和遥控校验，发布失败后先撤销请求
+        const float target_speed_rpm = feeder_speed_target_rpm;
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
-        Feeder_Control(&feeder, &trigger_remote, trigger_remote_valid && trigger_output_published, now_us, period_s);
+        Feeder_Control(&feeder, &trigger_remote, trigger_remote_valid && trigger_output_published,
+                       target_speed_rpm, now_us, period_s);
         const Trigger_Output_t output =
         {
             .current_a = Feeder_DumpOutput(&feeder),

@@ -16,6 +16,15 @@
 
 ## 底盘当前进度
 
+### 2026-11-01 拨弹暂时旁路位置环
+
+- 当前仅运行 M2006 输出轴 rpm 速度环，逐齿目标停止推进，位置参数和实例布局保留以便后续恢复
+- 新增任务级 volatile float feeder_speed_target_rpm，默认 0，每周期读取一次后经 Feeder_Control 入口检查有限性
+- 右拨杆下位使能，其余档位撤驱；正负 rpm 直接指定方向，当前不使用 config.direction 生成目标
+- 调参仍使用 feeder.config.speed_pid，限速 300 rpm、限流 4 A，目标差分前馈与 config/cycle_config 快照不变
+- Debug 构建、两份修改 C 文件 ARM 严格检查和 30044 项主机断言通过；未烧录、未写目标 RAM、未上板整定
+- 验证及新增检查自查见 docs/validation/feeder_speed_debug_20261101.md；未改 config.c、设备层、CubeMX 或摩擦轮
+
 ### 2026-11-01 拨弹串级与摩擦轮速度参数同步
 
 - 用户确认扩展既有 Feeder_Config_t、Feeder_t，内部位置 rad，观察字段使用度数，速度内环使用输出轴 rpm
