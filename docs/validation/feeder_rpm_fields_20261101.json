@@ -1,0 +1,13 @@
+{
+  "module_assertions": 4039,
+  "task_assertions": 54,
+  "task_cycles": 7,
+  "continuous_module_cycles": 500,
+  "temporary_assets_cleaned": true,
+  "format": "PASS",
+  "arm_strict": [
+    "User/module/feeder.c",
+    "User/task/motor_trigger.c"
+  ],
+  "single_request_read": true
+}

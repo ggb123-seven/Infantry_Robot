@@ -8,8 +8,9 @@ extern "C"
 #include "module/feeder.h"
 
 /*
- * 拨弹调试入口：feeder 当前仅运行速度环，config 可调，其他字段由拨弹任务更新
- * feeder_speed_target_rpm 为直接速度目标，单位输出轴 rpm，上电为零，右拨杆下位使能
+ * 拨弹调试入口：feeder 当前仅运行速度环，config 与 requested_speed_rpm 可写，其他字段由拨弹任务更新
+ * feeder.requested_speed_rpm 为直接速度请求，单位输出轴 rpm，上电为零，右拨杆下位使能
+ * feeder.target_speed_rpm 为限幅后目标，feeder.measured_speed_rpm 为实测转速，反馈无效时为 NaN
  * feeder.cycle_config 为本周期快照，两环长期引用该快照，速度 PID 输入输出轴 rpm、输出 A
  * measured_angle_deg、target_angle_deg 为实际和目标角度观察值，内部位置运算使用弧度
  * measured_speed_deg_s、target_speed_deg_s 为角速度观察值，前馈系数在 config 内修改
@@ -17,7 +18,6 @@ extern "C"
  * task_runtime.msgq.trigger_command 传递 DR16_State_t，空邮箱保留缓存，源时间超时后撤驱
  */
 extern Feeder_t feeder;
-extern volatile float feeder_speed_target_rpm;
 extern DR16_State_t trigger_remote;
 
 /**

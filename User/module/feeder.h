@@ -48,7 +48,10 @@ typedef struct
  * state 为唯一运行状态，feedback 为输出轴弧度和 rpm，feedback_valid 表示最近完整帧有效且未超过 10 ms
  * target_angle_rad 为环绕位置目标，phase_s 为距下一齿的累计秒数，output_current_a 为转子侧安培
  * 速度调试期间 target_angle_rad 只在起控时捕获实际位置，phase_s 保持为零
- * speed_rad_s 为本周期输出轴实测角速度，target_speed_rpm 为限幅后的速度内环目标并保存前馈差分历史
+ * speed_rad_s 为最近有效反馈的输出轴实测角速度，单位 rad/s
+ * requested_speed_rpm 为可写输出轴速度请求，单位 rpm，上电为零，每周期入口只读取一次
+ * measured_speed_rpm 为输出轴实测转速，单位 rpm，反馈无效时为 NaN
+ * target_speed_rpm 为限幅后的速度内环目标，单位 rpm，状态切换或改参时重置，并保存前馈差分历史
  * measured_angle_deg、target_angle_deg 为只读角度镜像，单位度，不参与位置控制
  * measured_speed_deg_s、target_speed_deg_s 为只读角速度镜像，单位度每秒，速度环调参仍使用 rpm
  * position_pid、speed_pid 分别保存外环和内环历史，frequency_hz 为初始化采样频率
@@ -64,6 +67,8 @@ typedef struct
     bool feedback_valid;
     float target_angle_rad;
     float speed_rad_s;
+    volatile float requested_speed_rpm;
+    float measured_speed_rpm;
     float target_speed_rpm;
     float measured_angle_deg;
     float target_angle_deg;
@@ -97,18 +102,16 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz);
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us);
 
 /**
- * @brief 校验周期配置与遥控源时间并执行直接 rpm 速度控制
+ * @brief 读取实例速度请求，校验周期配置与遥控源时间并执行速度控制
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] remote 最近遥控快照，调用方保证非空
  * @param[in] remote_valid 已收到遥控且邮箱读取无异常时为 true
- * @param[in] target_speed_rpm 调试速度目标，单位输出轴 rpm，入口检查有限性并按速度上限限幅
  * @param[in] now_us 读取遥控后的完整单调微秒时间
  * @param[in] period_s 实测控制周期，单位秒，合法范围 (0,0.1]
  * @return 无返回值
  */
-void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, float target_speed_rpm,
-                    uint64_t now_us, float period_s);
+void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, uint64_t now_us, float period_s);
 
 /**
  * @brief 根据唯一运行状态导出电流，其他状态统一输出零

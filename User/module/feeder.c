@@ -10,7 +10,7 @@
  * 正面顺时针采用正常拨弹的负角度方向，实物安装方向仍须上板核对
  * 角度外环复制云台弧度参数，速度内环复制底盘 rpm 参数，旧归一化电流参数不再参与控制
  * 速度上限复用既有拨弹配置，电流上限复用底盘配置且不得超过 M2006 的 10 A 协议范围
- * 当前调试阶段旁路位置外环，由调用方提供输出轴 rpm 目标，逐齿参数和位置 PID 保留待恢复
+ * 当前调试阶段旁路位置外环，从实例的可写请求读取输出轴 rpm 目标，逐齿参数和位置 PID 保留待恢复
  * 度数仅用于观察，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
@@ -81,6 +81,7 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
         .cycle_config = feeder_default_config,
         .frequency_hz = frequency_hz,
         .state = FEEDER_FAULT,
+        .measured_speed_rpm = NAN,
     };
     // 只复制已确认配置到可调副本，原配置文件保持不变，两个控制器长期引用实例内快照
     feeder->config.max_speed_rpm = trigger_config.max_speed_rpm;
@@ -134,6 +135,7 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
     // 驱动保存微秒时间低 32 位，无符号差值允许正常回绕并拒绝启动时的未来帧
     const uint32_t age_us = (uint32_t)now_us - feeder->feedback.last_update_time;
     feeder->feedback_valid = feeder->feedback_valid && age_us <= FEEDER_FEEDBACK_TIMEOUT_US && now_us >= age_us;
+    feeder->measured_speed_rpm = feeder->feedback_valid ? feeder->feedback.rotor_speed : NAN;
 }
 
 /**
@@ -142,15 +144,14 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] remote 遥控一致快照，调用方保证非空
  * @param[in] remote_valid 最近邮箱读取和缓存有效性
- * @param[in] target_speed_rpm 调试速度目标，单位输出轴 rpm，正负表示两个旋转方向
  * @param[in] now_us 读取遥控后的完整单调时间，单位微秒
  * @param[in] period_s 实测控制周期，单位秒
  * @return 无返回值
  */
-void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, float target_speed_rpm,
-                    uint64_t now_us, float period_s)
+void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_valid, uint64_t now_us, float period_s)
 {
-    // 每周期只读取一次可调副本，之后 PID、目标生成和输出只使用持久快照
+    // 每周期入口只读取一次可写请求和配置，后续控制使用本周期快照
+    const float requested_speed_rpm = feeder->requested_speed_rpm;
     const Feeder_Config_t previous_config = feeder->cycle_config;
     feeder->cycle_config = *(const volatile Feeder_Config_t *)&feeder->config;
     feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
@@ -162,7 +163,7 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
     Feeder_State_t next_state;
 
     // 停机和通信恢复都重新捕获实际位置，禁止追赶失联期间累积的旧目标
-    if (!feeder->initialized || !feeder->config_valid || !period_valid || !isfinite(target_speed_rpm))
+    if (!feeder->initialized || !feeder->config_valid || !period_valid || !isfinite(requested_speed_rpm))
     {
         next_state = FEEDER_FAULT;
     }
@@ -204,7 +205,7 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
             LowPassFilter2p_Init(&feeder->speed_pid.dfilter, feeder->frequency_hz,
                 feeder->cycle_config.speed_pid.d_cutoff_freq);
             feeder->speed_pid.last.k_fb = LowPassFilter2p_Reset(&feeder->speed_pid.dfilter,
-                feeder->cycle_config.speed_pid.k * feeder->feedback.rotor_speed);
+                feeder->cycle_config.speed_pid.k * feeder->measured_speed_rpm);
             feeder->target_angle_rad = feeder->feedback.rotor_single_angle;
             feeder->target_angle_deg = feeder->measured_angle_deg;
         }
@@ -218,12 +219,12 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
     // 速度调试阶段不推进逐齿目标，也不计算位置 PID，直接采用本周期 rpm 请求
     const Feeder_Config_t *config = &feeder->cycle_config;
     const float previous_target_rpm = feeder->target_speed_rpm;
-    feeder->target_speed_rpm = AbsClip(target_speed_rpm, config->max_speed_rpm);
+    feeder->target_speed_rpm = AbsClip(requested_speed_rpm, config->max_speed_rpm);
     feeder->target_speed_deg_s = feeder->target_speed_rpm * 6.0f;
     const float feedforward_a = (feeder->target_speed_rpm - previous_target_rpm) *
                                config->speed_feedforward_gain_a_per_rpm;
     const float current_a = PID_Calc(&feeder->speed_pid, feeder->target_speed_rpm,
-        feeder->feedback.rotor_speed, 0.0f, period_s) + feedforward_a;
+        feeder->measured_speed_rpm, 0.0f, period_s) + feedforward_a;
 
     // 前馈乘法和叠加在控制计算出口检查一次，异常只改变状态，由输出闸门统一撤驱
     if (!isfinite(current_a))
