@@ -1,4 +1,5 @@
 #include "module/feeder.h"
+#include "module/config.h"
 
 #include <math.h>
 #include <string.h>
@@ -7,10 +8,12 @@
  * 参数来自用户确认的参考工程 shoot.c 连续模式与默认步兵配置
  * 每秒 20 齿、一圈 10 齿，平均输出轴 120 rpm，M2006 转子约 4320 rpm
  * 正面顺时针采用正常拨弹的负角度方向，实物安装方向仍须上板核对
- * 位置 PID 沿用 k=12、p=1、i=0、d=0.0450000018，归一化输出换算为 M2006 的 ±10 A
+ * 角度外环复制云台弧度参数，速度内环复制底盘 rpm 参数，旧归一化电流参数不再参与控制
+ * 速度上限复用既有拨弹配置，电流上限复用底盘配置且不得超过 M2006 的 10 A 协议范围
+ * 度数仅用于观察，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
-#define FEEDER_CURRENT_RANGE_A (10.0f)
+#define FEEDER_MAX_CURRENT_A (10.0f)
 #define FEEDER_MAX_PERIOD_S (0.1f)
 // 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获位置
 #define FEEDER_FEEDBACK_TIMEOUT_US (10000U)
@@ -20,18 +23,23 @@ static const Feeder_Config_t feeder_default_config =
     .tooth_count = 10.0f,
     .feed_hz = 20.0f,
     .direction = -1.0f,
-    .position_pid =
-    {
-        .k = 12.0f,
-        .p = 1.0f,
-        .i = 0.0f,
-        .d = 0.0450000018f,
-        .i_limit = 1.0f,
-        .out_limit = 1.0f,
-        .d_cutoff_freq = -1.0f,
-        .range = FEEDER_TWO_PI,
-    },
 };
+
+/**
+ * @brief 在配置入口校验单个控制器的公共参数
+ *
+ * @param[in] pid 待校验参数，调用方保证非空
+ * @param[in] frequency_hz 控制采样频率，单位 Hz
+ * @return 增益、积分和滤波参数合法时返回 true
+ */
+static bool Feeder_PidConfigValid(const KPID_Params_t *pid, float frequency_hz)
+{
+    return isfinite(pid->k) && pid->k > 0.0f && isfinite(pid->p) && pid->p >= 0.0f &&
+           isfinite(pid->i) && pid->i >= 0.0f && isfinite(pid->d) && pid->d >= 0.0f &&
+           isfinite(pid->i_limit) && pid->i_limit >= 0.0f &&
+           isfinite(pid->out_limit) && pid->out_limit > 0.000001f &&
+           isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq < frequency_hz * 0.5f;
+}
 
 /**
  * @brief 在初始化和控制入口集中校验配置快照
@@ -42,15 +50,18 @@ static const Feeder_Config_t feeder_default_config =
  */
 static bool Feeder_ConfigValid(const Feeder_Config_t *config, float frequency_hz)
 {
-    const KPID_Params_t *pid = &config->position_pid;
     return isfinite(config->tooth_count) && config->tooth_count >= 2.0f &&
            isfinite(config->feed_hz) && config->feed_hz > 0.0f && config->feed_hz <= frequency_hz &&
            (config->direction == -1.0f || config->direction == 1.0f) &&
-           isfinite(pid->k) && pid->k > 0.0f && isfinite(pid->p) && pid->p >= 0.0f &&
-           isfinite(pid->i) && pid->i >= 0.0f && isfinite(pid->d) && pid->d >= 0.0f &&
-           isfinite(pid->i_limit) && pid->i_limit >= 0.0f && pid->i_limit <= 1.0f &&
-           isfinite(pid->out_limit) && pid->out_limit > 0.000001f && pid->out_limit <= 1.0f &&
-           isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq <= 0.0f && pid->range == FEEDER_TWO_PI;
+           isfinite(config->max_speed_rpm) && config->max_speed_rpm > 0.0f &&
+           isfinite(config->max_current_a) && config->max_current_a > 0.0f &&
+           config->max_current_a <= FEEDER_MAX_CURRENT_A &&
+           Feeder_PidConfigValid(&config->position_pid, frequency_hz) &&
+           config->position_pid.out_limit <= config->max_speed_rpm * (FEEDER_TWO_PI / 60.0f) &&
+           config->position_pid.range == FEEDER_TWO_PI &&
+           Feeder_PidConfigValid(&config->speed_pid, frequency_hz) &&
+           config->speed_pid.out_limit <= config->max_current_a && config->speed_pid.range == 0.0f &&
+           isfinite(config->speed_feedforward_gain_a_per_rpm) && config->speed_feedforward_gain_a_per_rpm >= 0.0f;
 }
 
 /**
@@ -82,6 +93,14 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
         .frequency_hz = frequency_hz,
         .state = FEEDER_FAULT,
     };
+    // 只复制已确认配置到可调副本，原配置文件保持不变，两个控制器长期引用实例内快照
+    feeder->config.max_speed_rpm = trigger_config.max_speed_rpm;
+    feeder->config.max_current_a = chassis_config.max_current_a;
+    feeder->config.position_pid = gimbal_config.yaw.angle_pid;
+    feeder->config.position_pid.range = FEEDER_TWO_PI;
+    feeder->config.position_pid.out_limit = feeder->config.max_speed_rpm * (FEEDER_TWO_PI / 60.0f);
+    feeder->config.speed_pid = chassis_config.wheel_speed_pid;
+    feeder->cycle_config = feeder->config;
     feeder->config_valid = isfinite(frequency_hz) && frequency_hz > 0.0f &&
                            Feeder_ConfigValid(&feeder->cycle_config, frequency_hz);
     if (!feeder->config_valid)
@@ -91,7 +110,9 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
 
     // 用实测速度提供微分，避免位置在 0 与 2π 之间环绕时产生虚假的微分脉冲
     feeder->initialized = PID_Init(&feeder->position_pid, KPID_MODE_SET_D, frequency_hz,
-                                   &feeder->cycle_config.position_pid) == 0;
+                                   &feeder->cycle_config.position_pid) == 0 &&
+                          PID_Init(&feeder->speed_pid, KPID_MODE_CALC_D, frequency_hz,
+                                   &feeder->cycle_config.speed_pid) == 0;
     feeder->state = feeder->initialized ? FEEDER_RELAX : FEEDER_FAULT;
     return feeder->initialized ? 0 : -1;
 }
@@ -115,6 +136,9 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
         if (feeder->feedback_valid)
         {
             feeder->feedback = *feedback;
+            feeder->measured_angle_deg = feedback->rotor_single_angle * M_RAD2DEG_MULT;
+            feeder->speed_rad_s = feedback->rotor_speed * (FEEDER_TWO_PI / 60.0f);
+            feeder->measured_speed_deg_s = feedback->rotor_speed * 6.0f;
         }
     }
 
@@ -124,7 +148,7 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 }
 
 /**
- * @brief 集中处理配置、遥控时效、逐齿目标与状态转换
+ * @brief 集中处理配置、遥控时效、逐齿目标和串级控制状态
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] remote 遥控一致快照，调用方保证非空
@@ -177,9 +201,19 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
     if (restart)
     {
         PID_Reset(&feeder->position_pid);
+        PID_Reset(&feeder->speed_pid);
         feeder->phase_s = 0.0f;
+        feeder->target_speed_rpm = 0.0f;
+        feeder->target_speed_deg_s = 0.0f;
         if (next_state == FEEDER_RUNNING)
         {
+            // 恢复与在线改参时按本周期实测速度预置微分，避免沿用停机前的历史
+            LowPassFilter2p_Init(&feeder->position_pid.dfilter, feeder->frequency_hz,
+                feeder->cycle_config.position_pid.d_cutoff_freq);
+            LowPassFilter2p_Init(&feeder->speed_pid.dfilter, feeder->frequency_hz,
+                feeder->cycle_config.speed_pid.d_cutoff_freq);
+            feeder->speed_pid.last.k_fb = LowPassFilter2p_Reset(&feeder->speed_pid.dfilter,
+                feeder->cycle_config.speed_pid.k * feeder->feedback.rotor_speed);
             feeder->target_angle_rad = feeder->feedback.rotor_single_angle;
             feeder->phase_s = 1.0 / (double)feeder->cycle_config.feed_hz;
         }
@@ -203,8 +237,8 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
     feeder->phase_s -= teeth * interval_s;
     feeder->target_angle_rad = Feeder_WrapAngle(feeder->target_angle_rad +
         config->direction * (float)teeth * FEEDER_TWO_PI / config->tooth_count);
-    const float speed_rad_s = feeder->feedback.rotor_speed * (FEEDER_TWO_PI / 60.0f);
-    const float derivative = config->position_pid.k * speed_rad_s;
+    const float derivative = config->position_pid.k * feeder->speed_rad_s;
+    feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
 
     // 目标与微分换算属于本层计算链，在进入 PID 前统一拒绝溢出
     if (!isfinite(feeder->target_angle_rad) || !isfinite(derivative))
@@ -212,8 +246,24 @@ void Feeder_Control(Feeder_t *feeder, const DR16_State_t *remote, bool remote_va
         feeder->state = FEEDER_FAULT;
         return;
     }
-    feeder->output_current_a = PID_Calc(&feeder->position_pid, feeder->target_angle_rad,
-        feeder->feedback.rotor_single_angle, derivative, period_s) * FEEDER_CURRENT_RANGE_A;
+    // 外环只计算弧度位置误差，换算为输出轴 rpm 后交给速度内环，电流不再乘归一化标度
+    const float target_rad_s = PID_Calc(&feeder->position_pid, feeder->target_angle_rad,
+        feeder->feedback.rotor_single_angle, derivative, period_s);
+    const float previous_target_rpm = feeder->target_speed_rpm;
+    feeder->target_speed_rpm = AbsClip(target_rad_s * (60.0f / FEEDER_TWO_PI), config->max_speed_rpm);
+    feeder->target_speed_deg_s = feeder->target_speed_rpm * 6.0f;
+    const float feedforward_a = (feeder->target_speed_rpm - previous_target_rpm) *
+                               config->speed_feedforward_gain_a_per_rpm;
+    const float current_a = PID_Calc(&feeder->speed_pid, feeder->target_speed_rpm,
+        feeder->feedback.rotor_speed, 0.0f, period_s) + feedforward_a;
+
+    // 前馈乘法和叠加在控制计算出口检查一次，异常只改变状态，由输出闸门统一撤驱
+    if (!isfinite(current_a))
+    {
+        feeder->state = FEEDER_FAULT;
+        return;
+    }
+    feeder->output_current_a = AbsClip(current_a, config->max_current_a);
 }
 
 /**

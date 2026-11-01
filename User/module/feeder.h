@@ -22,15 +22,22 @@ typedef enum
  * 拨弹可调配置，初始化复制到实例，运行中通过 EmberProbe 修改实例副本
  * tooth_count 为一圈齿数，须为有限值且至少为 2；feed_hz 为每秒进给齿数，须大于零且不超过采样频率
  * direction 为角度递增方向，只接受 -1 或 +1；默认 -1 沿用参考工程正常拨弹方向
- * position_pid 输入输出轴弧度，输出归一化电流，out_limit 范围为 (0.000001,1]，i_limit 范围为 [0,1]
- * PID 的 k 须为正，p/i/d 非负，d_cutoff_freq 仅支持非正的直通配置，range 固定为 2π
+ * max_speed_rpm 为输出轴速度目标上限，单位 rpm；max_current_a 为转子电流上限，单位 A，范围 (0,10]
+ * position_pid 输入输出轴弧度，输出 rad/s，range 固定为 2π，输出限幅不得超过速度上限换算值
+ * speed_pid 输入输出轴 rpm，输出 A，range 固定为零，输出限幅不得超过电流上限
+ * speed_feedforward_gain_a_per_rpm 为目标逐周期差分的电流前馈系数，单位 A/rpm，非负，零表示关闭
+ * 两环的 k 须为正，p/i/d/i_limit 非负，out_limit 大于 0.000001，微分截止频率小于采样频率一半
  */
 typedef struct
 {
     float tooth_count;
     float feed_hz;
     float direction;
+    float max_speed_rpm;
+    float max_current_a;
     KPID_Params_t position_pid;
+    KPID_Params_t speed_pid;
+    float speed_feedforward_gain_a_per_rpm;
 } Feeder_Config_t;
 
 /*
@@ -39,7 +46,10 @@ typedef struct
  * initialized 与 config_valid 分别表示初始化结果与本周期配置结果
  * state 为唯一运行状态，feedback 为输出轴弧度和 rpm，feedback_valid 表示最近完整帧有效且未超过 10 ms
  * target_angle_rad 为环绕位置目标，phase_s 为距下一齿的累计秒数，output_current_a 为转子侧安培
- * position_pid 保存位置控制历史，frequency_hz 为初始化采样频率
+ * speed_rad_s 为本周期输出轴实测角速度，target_speed_rpm 为限幅后的速度内环目标并保存前馈差分历史
+ * measured_angle_deg、target_angle_deg 为只读角度镜像，单位度，不参与位置控制
+ * measured_speed_deg_s、target_speed_deg_s 为只读角速度镜像，单位度每秒，速度环调参仍使用 rpm
+ * position_pid、speed_pid 分别保存外环和内环历史，frequency_hz 为初始化采样频率
  */
 typedef struct
 {
@@ -51,14 +61,21 @@ typedef struct
     MOTOR_RM_Feedback_t feedback;
     bool feedback_valid;
     float target_angle_rad;
+    float speed_rad_s;
+    float target_speed_rpm;
+    float measured_angle_deg;
+    float target_angle_deg;
+    float measured_speed_deg_s;
+    float target_speed_deg_s;
     double phase_s;
     float output_current_a;
     KPID_t position_pid;
+    KPID_t speed_pid;
     float frequency_hz;
 } Feeder_t;
 
 /**
- * @brief 复制参考拨弹配置并初始化位置控制器
+ * @brief 复制默认拨弹配置并初始化位置外环和速度内环
  *
  * @param[out] feeder 拨弹实例，调用方保证非空
  * @param[in] frequency_hz 调度频率，单位 Hz，须为有限正值
@@ -78,7 +95,7 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz);
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us);
 
 /**
- * @brief 校验周期配置与遥控源时间并推进拨弹状态和位置控制
+ * @brief 校验周期配置与遥控源时间并推进逐齿位置和速度串级控制
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] remote 最近遥控快照，调用方保证非空

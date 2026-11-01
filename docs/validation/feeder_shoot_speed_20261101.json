@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-01",
+  "host": {
+    "checks": 20089,
+    "feeder": "PASS"
+  },
+  "arm_strict": [
+    "User/module/feeder.c",
+    "User/task/motor_trigger.c"
+  ],
+  "production_sources": [
+    "feeder.c",
+    "config.c",
+    "pid.c",
+    "filter.c",
+    "user_math.c"
+  ],
+  "temporary_programs": "TemporaryDirectory removed",
+  "hardware_tested": false
+}

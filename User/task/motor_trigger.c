@@ -7,7 +7,8 @@
 #include <stddef.h>
 
 /*
- * feeder 为任务独占的逐齿位置环实例，config 用于在线调参
+ * feeder 为任务独占的逐齿位置与速度串级实例，config 用于在线调参
+ * 位置内部使用弧度，角度镜像使用度数，速度内环与前馈目标使用输出轴 rpm
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 为上周期电流发布结果，失败后下一周期撤销请求以清除控制历史
@@ -18,7 +19,7 @@ static bool trigger_remote_valid;
 static bool trigger_output_published = true;
 
 /**
- * @brief 周期编排拨弹遥控、反馈、逐齿位置控制与电流邮箱发布
+ * @brief 周期编排拨弹遥控、反馈、逐齿串级控制与电流邮箱发布
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -58,7 +59,7 @@ void Task_motor_trigger(void *argument)
         const uint64_t now_us = BSP_TIME_Get();
         Feeder_UpdateFeedback(&feeder, &feedback, received, now_us);
 
-        // 模块统一处理配置快照、遥控时效、状态转换和位置闭环，发布失败后先撤销一次请求
+        // 模块统一处理配置快照、遥控时效、状态转换和串级闭环，发布失败后先撤销一次请求
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
