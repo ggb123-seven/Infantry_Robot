@@ -8,10 +8,11 @@
 #include <stddef.h>
 
 /*
- * feeder 为任务独占的拨弹实例，当前旁路位置外环，config 用于在线调参
- * feeder_command 为命令层每周期生成的拨弹命令，速度比例乘以 config.max_speed_rpm 得到输出轴 rpm 目标
- * feeder.speed_pid.target_speed_rpm 为换算后的目标，measured_speed_rpm 为实测转速，反馈无效时为 NaN
- * 右拨杆下位为运行使能，其余档位及失联撤驱，角度镜像继续使用度数
+ * feeder 为任务独占的拨弹实例，config 用于在线调参，逐齿位置外环与速度内环均在本实例内保存
+ * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为归一化进给倍率，倍率乘 feed_hz 得到每秒齿数
+ * feeder.target_angle_rad 为逐齿推进后的目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
+ * 反馈无效或超时时模块进入离线态并清空观察量，角度和转速同时为非数值
+ * 右拨杆下位为运行使能，摇杆回中、其余档位及失联撤驱，角度镜像继续使用度数
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 为上周期电流发布结果，失败后下一周期不提交命令以清除控制历史
