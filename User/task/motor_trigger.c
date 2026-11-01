@@ -8,8 +8,8 @@
 
 /*
  * feeder 为任务独占的拨弹实例，当前旁路位置外环，config 用于在线调参
- * feeder.requested_speed_rpm 为可写调试目标，单位输出轴 rpm，上电为零，正负直接表示方向
- * feeder.target_speed_rpm 为限幅后目标，feeder.measured_speed_rpm 为实测转速，反馈无效时为 NaN
+ * feeder.speed_pid.requested_speed_rpm 为可写调试目标，单位输出轴 rpm，上电为零，正负直接表示方向
+ * feeder.speed_pid.target_speed_rpm 为限幅后目标，measured_speed_rpm 为实测转速，反馈无效时为 NaN
  * 右拨杆下位仍为运行使能，其余档位及失联撤驱，角度镜像继续使用度数
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性

@@ -1,0 +1,13 @@
+{
+  "assertions_per_version": 8031,
+  "versions_compared": 2,
+  "cycles_per_version": 1000,
+  "trace_match": true,
+  "trace_sha256": "80f22070a754440a5ab3210ff86ffa77d39032149243a67b1383eaede15c864b",
+  "format": "PASS",
+  "arm_strict": [
+    "User/module/feeder.c",
+    "User/task/motor_trigger.c"
+  ],
+  "temporary_assets_cleaned": true
+}

@@ -8,9 +8,10 @@ extern "C"
 #include "module/feeder.h"
 
 /*
- * 拨弹调试入口：feeder 当前仅运行速度环，config 与 requested_speed_rpm 可写，其他字段由拨弹任务更新
- * feeder.requested_speed_rpm 为直接速度请求，单位输出轴 rpm，上电为零，右拨杆下位使能
- * feeder.target_speed_rpm 为限幅后目标，feeder.measured_speed_rpm 为实测转速，反馈无效时为 NaN
+ * 拨弹调试入口：feeder 当前仅运行速度环，config 与 speed_pid.requested_speed_rpm 可写
+ * feeder.speed_pid.requested_speed_rpm 为直接速度请求，单位输出轴 rpm，上电为零，右拨杆下位使能
+ * feeder.speed_pid.target_speed_rpm 为限幅后目标，measured_speed_rpm 为实测转速，反馈无效时为 NaN
+ * feeder.speed_pid.controller 保存 PID 控制历史，调参仍使用 feeder.config.speed_pid，其他字段由任务更新
  * feeder.cycle_config 为本周期快照，两环长期引用该快照，速度 PID 输入输出轴 rpm、输出 A
  * measured_angle_deg、target_angle_deg 为实际和目标角度观察值，内部位置运算使用弧度
  * measured_speed_deg_s、target_speed_deg_s 为角速度观察值，前馈系数在 config 内修改

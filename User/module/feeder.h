@@ -49,12 +49,10 @@ typedef struct
  * target_angle_rad 为环绕位置目标，phase_s 为距下一齿的累计秒数，output_current_a 为转子侧安培
  * 速度调试期间 target_angle_rad 只在起控时捕获实际位置，phase_s 保持为零
  * speed_rad_s 为最近有效反馈的输出轴实测角速度，单位 rad/s
- * requested_speed_rpm 为可写输出轴速度请求，单位 rpm，上电为零，每周期入口只读取一次
- * measured_speed_rpm 为输出轴实测转速，单位 rpm，反馈无效时为 NaN
- * target_speed_rpm 为限幅后的速度内环目标，单位 rpm，状态切换或改参时重置，并保存前馈差分历史
+ * speed_pid 集中保存速度请求、限幅后目标、实际转速和速度控制器，字段说明见成员定义上方
  * measured_angle_deg、target_angle_deg 为只读角度镜像，单位度，不参与位置控制
  * measured_speed_deg_s、target_speed_deg_s 为只读角速度镜像，单位度每秒，速度环调参仍使用 rpm
- * position_pid、speed_pid 分别保存外环和内环历史，frequency_hz 为初始化采样频率
+ * position_pid 保存外环历史，frequency_hz 为初始化采样频率
  */
 typedef struct
 {
@@ -67,9 +65,6 @@ typedef struct
     bool feedback_valid;
     float target_angle_rad;
     float speed_rad_s;
-    volatile float requested_speed_rpm;
-    float measured_speed_rpm;
-    float target_speed_rpm;
     float measured_angle_deg;
     float target_angle_deg;
     float measured_speed_deg_s;
@@ -77,7 +72,20 @@ typedef struct
     double phase_s;
     float output_current_a;
     KPID_t position_pid;
-    KPID_t speed_pid;
+    /*
+     * 速度环运行数据，三个转速字段均为减速后输出轴 rpm
+     * requested_speed_rpm 为可写请求，上电为零，每周期控制入口只读取一次
+     * target_speed_rpm 为限幅后目标，状态切换或改参时重置，同时保存前馈差分历史
+     * measured_speed_rpm 为实测转速，反馈无效时为 NaN
+     * controller 保存速度 PID 历史，参数指针长期引用实例内 cycle_config.speed_pid
+     */
+    struct
+    {
+        volatile float requested_speed_rpm;
+        float target_speed_rpm;
+        float measured_speed_rpm;
+        KPID_t controller;
+    } speed_pid;
     float frequency_hz;
 } Feeder_t;
 
