@@ -47,6 +47,33 @@
 - motor_rm.c 对两类控制帧独立缓存和组帧，源码无上述帧冲突；尚未核对实物设置
 
 ## 尚待上板
+- 当前总计 29110 项主机断言通过：拨弹 20089 项、摩擦轮 9021 项；三份修改 C 文件 ARM 严格检查通过
 - 未烧录，增益是用户指定参考起点，非已整定参数
 - 真实方向、速度响应、电流上限、前馈系数、失联时延、任务栈待上板
+
+## 步骤二：摩擦轮参数与调试注册
+- Task_motor_shoot 从 shoot_config 复制原有 8000 rpm 和 3 A 边界，再将速度 PID 初值复制自 chassis_config.wheel_speed_pid
+- k=1、p=0.16、i=d=0、i_limit=20、d_cutoff_freq=20、range=0，与底盘一致；out_limit 受摩擦轮既有 3 A 边界限制
+- 新增 fminf 只在初始化装配边界把底盘 4 A PID 上限约束为摩擦轮已有 3 A；不是运行中重复校验，下游仍按自身唯一电流边界输出
+- Shoot_Init 继续将配置复制进 RAM config、将 PID 参数复制进 applied_speed_pid；没有参数指针指向任务局部 initial_config
+- 摩擦轮已有双轮独立速度控制与一阶目标差分前馈保持，目标差分不除控制周期，原前馈默认系数保持
+- 不增加新结构体、判空、isfinite、保护性 return、状态分支或 RTOS 对象；任务仍只编排模块
+- 当前没有 shoot_command 周期发布者，每周期缺命令即失能；EmberProbe 的 shoot_command 只用于观察最近消费值，单次写入不会成为持续命令
+- 真实 motor_shoot.c、shoot.c、config.c、pid.c、filter.c、user_math.c 与 RTOS 邮箱替身主机编译，9021 项断言通过
+- 覆盖任务实际初始化、RAM 配置与原配置隔离、持久 PID 指针、缺命令停机、正反独立 rpm 目标、PID 加前馈、恒目标零前馈、3 A 限幅、单轮失联整对撤驱、恢复、非法前馈及 3000 连续周期
+- 再次 Debug 构建成功，三份修改 C 文件 ARM strict PASS，ARCH/HW/SPEC 全 PASS
+
+## EmberProbe 注册证据
+- 使用 .agents/skills/mcu-variables/scripts/read.js --workspace F:/RM/Infantry_Robot --variables <以下列表> --add-to sidebar，返回 exit_code=0 和 watchUpdate
+- 新增 shoot、shoot_command、shoot_speed_feedforward_gain_a_per_rpm
+- 新增 feeder.measured_angle_deg、feeder.target_angle_deg、feeder.measured_speed_deg_s、feeder.target_speed_deg_s、feeder.target_speed_rpm
+- feeder 已存在，返回 alreadyPresent；只更新观察列表，不开始采样、不连接目标、不写 RAM
+- 新 ELF 未烧录，观察字段地址仅适用于新固件，不以新 ELF 地址解释旧固件状态
+
+## 人工复核与资源边界
+- 所有改动源码保持 Allman、120 列、UTF-8 中文集中字段说明和阶段注释，git diff --check 通过
+- 分层依赖、PID 参数生命周期、初始化失败状态和 DumpOutput 安全输出已核对，无新的 HAL 调用、ISR 共享量、临界区和 RTOS 创建点
+- 未改 .ioc 和 hw-lock，云台与摩擦轮保留独立控制帧，设备层没有改动
+- 编译器局部栈报告：Feeder_Init 408 B、Feeder_Control 184 B、Task_motor_trigger 168 B、Task_motor_shoot 184 B，仅静态函数局部用量，不代表完整调用链高水位
+- 拨弹步骤提交 1bad707；摩擦轮步骤在本记录及结果保存后单独提交，不夹带原有 conventions/guides 修改和诊断文档
 

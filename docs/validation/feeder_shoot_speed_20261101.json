@@ -6,7 +6,8 @@
   },
   "arm_strict": [
     "User/module/feeder.c",
-    "User/task/motor_trigger.c"
+    "User/task/motor_trigger.c",
+    "User/task/motor_shoot.c"
   ],
   "production_sources": [
     "feeder.c",
@@ -16,5 +17,10 @@
     "user_math.c"
   ],
   "temporary_programs": "TemporaryDirectory removed",
-  "hardware_tested": false
+  "hardware_tested": false,
+  "friction": {
+    "checks": 9021,
+    "shoot": "PASS",
+    "production_task": "PASS"
+  }
 }
