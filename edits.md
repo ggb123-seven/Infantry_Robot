@@ -508,3 +508,13 @@
 - 临时主机回归覆盖 45° 单发到位后保持拨杆下位并推动摇杆，确认待机、单发结束且输出 0 A
 - ARM 严格检查、Debug 构建、ARCH/HW/SPEC 和格式检查通过，临时测试资产已清理
 - 证据见 `docs/validation/feeder_single_joystick_isolation_20261102.md`；未烧录或进行 M2006 实机复测
+
+## FEEDER-ANGLE-DEBUG-ENABLE-20261102
+
+- 按用户确认将 `feeder_fire_mode = 1` 改为临时角度环调试模式，最终单发策略留待后续确定
+- 模式 1 只有右拨杆下位时使能串级，进入或反馈恢复先捕获当前位置，不再自动推进 45°
+- 新增 EmberProbe 入口 `feeder_angle_target_deg`，单位度，使用 `volatile` 并在 Control 入口每周期快照一次
+- 临时主机回归覆盖单独写模式、首次使能静止、手动目标动作、持续离线、反馈恢复和拨杆撤驱，全部通过
+- ARM 严格检查、Debug 构建、ARCH/HW/SPEC 与格式检查通过；RAM 47200 B，FLASH 126120 B
+- 未修改结构体布局、`config.c`、BSP、设备层或 CubeMX；未烧录或进行 M2006 实机复测
+- 证据见 `docs/validation/feeder_angle_debug_enable_20261102.md`
