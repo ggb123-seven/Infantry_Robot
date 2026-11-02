@@ -45,6 +45,18 @@ typedef enum
 extern volatile uint8_t feeder_fire_mode;
 
 /*
+ * 拨弹环路结构，由 EmberProbe 直接写 feeder_pid_mode 切换，上电默认只走速度环
+ * 仅速度环用于连发：摇杆倍率直接映射输出轴转速，角度环不参与
+ * 串级用于逐齿或单发定位：角度外环输出 rpm 目标，再交给速度内环
+ * 单发模式强制串级，忽略该开关
+ */
+#define FEEDER_PID_MODE_SPEED_ONLY (0U)
+#define FEEDER_PID_MODE_CASCADE (1U)
+
+// 环路结构开关，运行期写入 0 或 1 即切换，控制周期入口只读一次形成本周期快照
+extern volatile uint8_t feeder_pid_mode;
+
+/*
  * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改
  * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
  * speed_ratio 沿用命令层既有字段名，语义为归一化进给倍率，调用方保证有限且位于 [-1, 1]
@@ -89,10 +101,11 @@ typedef struct
  * state 为唯一运行状态，非运行状态由 Feeder_DumpOutput 统一输出零电流
  * feedback 为最近一帧输出轴反馈，feedback_valid 表示角度连续有效且未超过 10 ms
  * 角度外环依赖角度连续性，反馈无效或超时进入离线态，恢复后按当前齿位重新捕获目标
- * measured_angle_rad、measured_angle_deg 为输出轴单圈角度，反馈无效时为非数值
- * measured_speed_rpm 为速度内环反馈，单位 rpm；measured_speed_rad_s 为角度外环微分输入，单位 rad/s
- * target_angle_rad、target_angle_deg 为逐齿推进后的环绕目标角，非运行时保持上次值
- * target_speed_rpm 为角度外环输出换算并限幅后的速度目标，单位 rpm
+ * measured_angle_rad、measured_angle_deg 为输出轴单圈角度，角度不连续或超时为非数值
+ * measured_speed_rpm 为速度内环反馈，单位 rpm；帧未超时即为数值，角度不连续不影响速度环
+ * measured_speed_rad_s 为角度外环微分输入，单位 rad/s
+ * target_angle_rad、target_angle_deg 为逐齿推进后的环绕目标角，仅串级模式维护，速度环模式保持上次值
+ * target_speed_rpm 为速度内环目标，单位 rpm；串级模式来自角度外环输出，速度环模式来自摇杆倍率映射
  * phase_s 为距下一齿的累计秒数，双精度保存，用于按实测周期推进逐齿目标
  * trigger_level_last 保存上周期拨杆电平，用于单发上升沿判定
  * single_active 表示单发执行中，角度进入到位窗口即结束本发，超时进入故障等待人工解除
@@ -151,10 +164,10 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz);
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us);
 
 /**
- * @brief 校验周期配置，按命令档位推进状态机并执行逐齿位置与速度串级控制
+ * @brief 校验周期配置，按命令档位推进状态机并按环路结构执行速度环或角度速度串级控制
  *
- * 运行档内按进给倍率推进环绕目标角，角度外环输出输出轴 rpm 目标并交给速度内环，倍率为零回到待机
- * 单发模式内由拨杆上升沿推进一个齿距，进入角度外环等待到位，到位后回待机，超时进入故障
+ * 仅速度环时按进给倍率直接映射输出轴转速目标；串级时按倍率推进环绕目标角并交给速度内环
+ * 倍率为零回到待机，单发模式内由拨杆上升沿推进一个齿距，进入角度外环等待到位，到位后回待机，超时进入故障
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存
