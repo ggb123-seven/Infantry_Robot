@@ -35,26 +35,15 @@ typedef enum
 
 /*
  * 拨弹进给模式，由 EmberProbe 直接写 feeder_fire_mode 切换，上电默认自动
- * 自动档按右摇杆比例连续进给，单发档在摇杆回中时由右拨杆中位拨到下位触发一发
- * 单发档内推动摇杆仍按自动连续进给处理，并取消正在执行的那一发
+ * 自动档为连发：只走速度环，摇杆倍率直接映射输出轴转速，角度环不参与
+ * 单发档在摇杆回中时由右拨杆中位拨到下位触发一发，起发与执行走角度速度串级
+ * 单发档内推动摇杆按连发处理，只走速度环并取消正在执行的那一发
  */
 #define FEEDER_FIRE_MODE_AUTO (0U)
 #define FEEDER_FIRE_MODE_SINGLE (1U)
 
 // 进给模式开关，运行期写入 0 或 1 即切换，控制周期入口只读一次形成本周期快照
 extern volatile uint8_t feeder_fire_mode;
-
-/*
- * 拨弹环路结构，由 EmberProbe 直接写 feeder_pid_mode 切换，上电默认只走速度环
- * 仅速度环用于连发：摇杆倍率直接映射输出轴转速，角度环不参与
- * 串级用于逐齿或单发定位：角度外环输出 rpm 目标，再交给速度内环
- * 单发模式强制串级，忽略该开关
- */
-#define FEEDER_PID_MODE_SPEED_ONLY (0U)
-#define FEEDER_PID_MODE_CASCADE (1U)
-
-// 环路结构开关，运行期写入 0 或 1 即切换，控制周期入口只读一次形成本周期快照
-extern volatile uint8_t feeder_pid_mode;
 
 /*
  * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改

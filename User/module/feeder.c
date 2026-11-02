@@ -6,8 +6,8 @@
 
 /*
  * 业务参数统一来自 config.c 的 feeder_config，模块只复制到可调实例和本周期快照
- * 环路结构由 feeder_pid_mode 决定：仅速度环用于连发，串级在速度环外再套角度外环用于逐齿与单发定位
- * 仅速度环时摇杆倍率直接映射输出轴转速目标；串级时角度外环推进环绕目标角并输出 rpm 目标
+ * 环路结构由 feeder_fire_mode 决定：连发只走速度环，单发在速度环外再套角度外环完成逐齿定位
+ * 连发时摇杆倍率直接映射输出轴转速目标；单发时角度外环推进环绕目标角并输出 rpm 目标
  * 每秒进给齿数为 config.feed_hz 与进给倍率的乘积，方向由 config.direction 决定，倍率为零按待机撤驱
  * 单发模式不累计相位，由拨杆上升沿推进一个齿距并等待到位，超时判定堵转
  * 度数仅用于观察，角度外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
@@ -22,8 +22,6 @@
 #define FEEDER_SINGLE_TIMEOUT_S (0.3f)
 // 单发与自动连发模式切换入口，上电默认自动，运行期由 EmberProbe 写入 0 或 1
 volatile uint8_t feeder_fire_mode = FEEDER_FIRE_MODE_AUTO;
-// 环路结构切换入口，上电默认仅速度环，单发模式强制串级而忽略该开关
-volatile uint8_t feeder_pid_mode = FEEDER_PID_MODE_SPEED_ONLY;
 
 /**
  * @brief 在配置入口校验单个控制器的公共参数
@@ -202,8 +200,8 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
         feeder->single_active = false;
         feeder->single_elapsed_s = 0.0f;
     }
-    // 单发起发与执行必须串级，其余情况按环路开关决定，连发默认只走速度环
-    const bool cascade = feeder->single_active || single_start || feeder_pid_mode == FEEDER_PID_MODE_CASCADE;
+    // 单发起发与执行走串级，连发以及单发档内的连续进给都只走速度环
+    const bool cascade = feeder->single_active || single_start;
     // 串级需要角度连续，纯速度环只要求转速反馈新鲜，状态机统一使用该判据
     const bool feedback_drive_valid = cascade ? feeder->feedback_valid : isfinite(feeder->measured_speed_rpm);
     const bool feed_requested = mode == FEEDER_CMD_RUN &&
