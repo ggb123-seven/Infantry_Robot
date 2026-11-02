@@ -124,7 +124,7 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 /**
  * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
  *
- * 右拨杆下位为运行，右摇杆上下双向线性映射，上位和中位为待机并允许人工解除故障
+ * 右拨杆下位为运行并输出单发触发电平，右摇杆上下双向线性映射，上位和中位为待机并允许人工解除故障
  *
  * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
@@ -150,6 +150,8 @@ bool Cmd_ParseFeeder(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Fee
     {
         case DR16_SWITCH_DOWN:
             out->mode = FEEDER_CMD_RUN;
+            // 下位电平同时作为单发触发输入，单发模式由模块取非下位到下位的上升沿
+            out->trigger_level = true;
             // 摇杆居中为零，推到底为 +1、推到头为 -1，双向线性映射到速度上限
             out->speed_ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
             break;

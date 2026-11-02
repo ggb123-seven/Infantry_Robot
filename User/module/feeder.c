@@ -8,6 +8,7 @@
  * 业务参数统一来自 config.c 的 feeder_config，模块只复制到可调实例和本周期快照
  * 控制链为逐齿位置外环、速度内环和电流输出：外环推进环绕目标角，输出输出轴 rpm 目标
  * 每秒进给齿数为 config.feed_hz 与进给倍率的乘积，方向由 config.direction 决定，倍率为零按待机撤驱
+ * 单发模式不累计相位，由拨杆上升沿推进一个齿距并等待到位，超时判定堵转
  * 度数仅用于观察，位置外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
@@ -15,6 +16,11 @@
 #define FEEDER_MAX_PERIOD_S (0.1f)
 // 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获齿位
 #define FEEDER_FEEDBACK_TIMEOUT_US (10000U)
+// 单发到位窗口与超时：8 齿每发 45°，4° 窗口约占齿距的 8.9%，0.3 s 未到位判定堵转
+#define FEEDER_SINGLE_IN_POSITION_RAD (0.06981317f)
+#define FEEDER_SINGLE_TIMEOUT_S (0.3f)
+// 单发与自动连发模式切换入口，上电默认自动，运行期由 EmberProbe 写入 0 或 1
+volatile uint8_t feeder_fire_mode = FEEDER_FIRE_MODE_AUTO;
 
 /**
  * @brief 在配置入口校验单个控制器的公共参数
@@ -87,6 +93,9 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
         .measured_angle_deg = NAN,
         .measured_speed_rpm = NAN,
         .measured_speed_rad_s = NAN,
+        // 单发默认参数在实例内初始化，运行期可被 EmberProbe 覆盖
+        .single_in_position_rad = FEEDER_SINGLE_IN_POSITION_RAD,
+        .single_timeout_s = FEEDER_SINGLE_TIMEOUT_S,
     };
     // 配置只在统一入口校验，两个控制器长期引用实例内持久快照
     feeder->config_valid = isfinite(frequency_hz) && frequency_hz > 0.0f &&
@@ -163,11 +172,35 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     // 命令缺失按离线档处理，倍率取绝对值，零倍率视同待机以避免位置环把转子锁死在齿位
     const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
     const float feed_ratio = command != NULL ? fabsf(command->speed_ratio) : 0.0f;
-    const bool feed_requested = mode == FEEDER_CMD_RUN && feed_ratio > 0.0f;
+    // 单发参数同属在线调参入口，只在控制入口校验一次，非法值按故障处理
+    const uint8_t fire_mode = feeder_fire_mode;
+    const bool single_mode = fire_mode == FEEDER_FIRE_MODE_SINGLE;
+    const bool single_config_valid = !single_mode ||
+        (isfinite(feeder->single_in_position_rad) && feeder->single_in_position_rad > 0.0f &&
+         feeder->single_in_position_rad < FEEDER_TWO_PI &&
+         isfinite(feeder->single_timeout_s) && feeder->single_timeout_s > 0.0f);
+    // 拨杆电平只在命令有效时更新，断链恢复后不会把保持下位误判成新的触发
+    const bool trigger_known = command != NULL && mode != FEEDER_CMD_OFFLINE;
+    const bool trigger_level = trigger_known && command->trigger_level;
+    const bool single_trigger = single_mode && trigger_known && trigger_level && !feeder->trigger_level_last;
+    if (trigger_known)
+    {
+        feeder->trigger_level_last = trigger_level;
+    }
+    // 单发只在摇杆回中时接受触发，执行中推动摇杆由自动连续进给接管
+    const bool single_start = single_trigger && !feeder->single_active && feed_ratio <= 0.0f &&
+                              feeder->feedback_valid;
+    if (feed_ratio > 0.0f)
+    {
+        feeder->single_active = false;
+        feeder->single_elapsed_s = 0.0f;
+    }
+    const bool feed_requested = mode == FEEDER_CMD_RUN &&
+                                (feed_ratio > 0.0f || feeder->single_active || single_start);
     Feeder_State_t next_state;
 
-    // 停机、配置非法和周期异常锁存故障，等待遥控待机档人工解除
-    if (!feeder->initialized || !feeder->config_valid || !period_valid)
+    // 停机、配置非法、周期异常或单发参数非法锁存故障，等待遥控待机档人工解除
+    if (!feeder->initialized || !feeder->config_valid || !period_valid || !single_config_valid)
     {
         next_state = FEEDER_FAULT;
     }
@@ -210,10 +243,27 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
                 feeder->cycle_config.speed_pid.d_cutoff_freq);
             feeder->speed_pid.last.k_fb = LowPassFilter2p_Reset(&feeder->speed_pid.dfilter,
                 feeder->cycle_config.speed_pid.k * feeder->measured_speed_rpm);
-            // 从当前齿位起控，相位预置一个满速进给间隔使首齿立即执行
+            // 单发起控目标固定推进一个齿距，自动档从当前齿位起控并预置一个满速进给间隔
             feeder->target_angle_rad = feeder->measured_angle_rad;
             feeder->target_angle_deg = feeder->measured_angle_deg;
-            feeder->phase_s = 1.0 / (double)feeder->cycle_config.feed_hz;
+            if (single_start)
+            {
+                feeder->target_angle_rad = Feeder_WrapAngle(feeder->target_angle_rad +
+                    feeder->cycle_config.direction * FEEDER_TWO_PI / feeder->cycle_config.tooth_count);
+                feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
+                feeder->single_active = true;
+                feeder->single_elapsed_s = 0.0f;
+            }
+            else
+            {
+                feeder->phase_s = 1.0 / (double)feeder->cycle_config.feed_hz;
+            }
+        }
+        else
+        {
+            // 任何非运行状态都终止单发，恢复后需要重新拨杆触发
+            feeder->single_active = false;
+            feeder->single_elapsed_s = 0.0f;
         }
     }
     feeder->state = next_state;
@@ -222,19 +272,45 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
         return;
     }
 
-    // 逐齿推进：按进给倍率缩放每秒齿数，用双精度秒累积保留不足一齿的余量
-    const Feeder_Config_t *config = &feeder->cycle_config;
-    const double interval_s = 1.0 / ((double)config->feed_hz * (double)feed_ratio);
-    if (!restart)
+    // 单发执行中只等待到位或超时：到位当周期回待机，超时锁存故障等待人工解除
+    if (feeder->single_active)
     {
-        // 实测周期来自整数微秒，恢复其分辨率并以双精度累积，避免长时间运行后整齿边界漂移
-        feeder->phase_s += (double)roundf(period_s * 1000000.0f) * 0.000001;
+        feeder->single_elapsed_s += period_s;
+        const float position_error = CircleError(feeder->target_angle_rad, feeder->measured_angle_rad,
+                                                 FEEDER_TWO_PI);
+        if (fabsf(position_error) <= feeder->single_in_position_rad)
+        {
+            feeder->single_active = false;
+            feeder->single_elapsed_s = 0.0f;
+            feeder->state = FEEDER_RELAX;
+            return;
+        }
+        if (feeder->single_elapsed_s > feeder->single_timeout_s)
+        {
+            feeder->single_active = false;
+            feeder->single_elapsed_s = 0.0f;
+            feeder->state = FEEDER_FAULT;
+            return;
+        }
     }
-    const double teeth = floor((feeder->phase_s + 0.000000001) / interval_s);
-    feeder->phase_s -= teeth * interval_s;
-    feeder->target_angle_rad = Feeder_WrapAngle(feeder->target_angle_rad +
-        config->direction * (float)teeth * FEEDER_TWO_PI / config->tooth_count);
-    feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
+
+    // 逐齿推进：按进给倍率缩放每秒齿数，用双精度秒累积保留不足一齿的余量
+    // 单发模式摇杆回中时目标已由触发推进，不再按相位累积
+    const Feeder_Config_t *config = &feeder->cycle_config;
+    if (feed_ratio > 0.0f)
+    {
+        const double interval_s = 1.0 / ((double)config->feed_hz * (double)feed_ratio);
+        if (!restart)
+        {
+            // 实测周期来自整数微秒，恢复其分辨率并以双精度累积，避免长时间运行后整齿边界漂移
+            feeder->phase_s += (double)roundf(period_s * 1000000.0f) * 0.000001;
+        }
+        const double teeth = floor((feeder->phase_s + 0.000000001) / interval_s);
+        feeder->phase_s -= teeth * interval_s;
+        feeder->target_angle_rad = Feeder_WrapAngle(feeder->target_angle_rad +
+            config->direction * (float)teeth * FEEDER_TWO_PI / config->tooth_count);
+        feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
+    }
 
     // 位置外环用实测角速度提供微分，避免角度在 0 与 2π 之间环绕时产生虚假的微分脉冲
     const float derivative = config->position_pid.k * feeder->measured_speed_rad_s;
