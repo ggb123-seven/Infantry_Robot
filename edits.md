@@ -518,3 +518,13 @@
 - ARM 严格检查、Debug 构建、ARCH/HW/SPEC 与格式检查通过；RAM 47200 B，FLASH 126120 B
 - 未修改结构体布局、`config.c`、BSP、设备层或 CubeMX；未烧录或进行 M2006 实机复测
 - 证据见 `docs/validation/feeder_angle_debug_enable_20261102.md`
+
+## FEEDER-BIDIRECTIONAL-SPEED-20261102
+
+- 修复连发速度环对 `speed_ratio` 使用 `fabsf` 导致右摇杆上下同向的问题
+- 保留摇杆倍率正负号，运行请求按非零判断，目标转速继续由 `config.direction × speed_ratio × max_speed_rpm` 计算
+- 默认方向配置未改，用户已确认的下拨顺时针保持不变，上拨目标符号反转
+- 临时主机回归验证 `+1 -> -100 rpm`、`-1 -> +100 rpm`、回中待机零输出
+- ARM 严格检查、Debug 构建、ARCH/HW/SPEC 与格式检查通过；RAM 47200 B，FLASH 126108 B
+- 未修改结构体、`config.c`、BSP、设备层或 CubeMX；修复后尚未烧录和实测 M2006
+- 证据见 `docs/validation/feeder_bidirectional_speed_20261102.md`

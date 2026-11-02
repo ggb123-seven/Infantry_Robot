@@ -49,8 +49,8 @@ extern volatile float feeder_angle_target_deg;
 /*
  * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改
  * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
- * speed_ratio 沿用命令层既有字段名，语义为连发归一化进给倍率，调用方保证有限且位于 [-1, 1]
- * 连发档取绝对值映射速度目标，方向始终由 config.direction 决定；模式 1 忽略该字段
+ * speed_ratio 沿用命令层既有字段名，语义为连发归一化转速倍率，调用方保证有限且位于 [-1, 1]
+ * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定；模式 1 忽略该字段
  * trigger_level 为右拨杆下位电平，暂时保留给后续单发策略，当前运行使能由 mode 统一表达
  */
 typedef struct

@@ -176,20 +176,20 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
     const bool config_changed = memcmp(&previous_config, &feeder->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
-    // 命令缺失按离线档处理，角度模式隔离摇杆倍率，连发模式取绝对值作为速度请求
+    // 命令缺失按离线档处理，角度模式隔离摇杆倍率，连发模式保留摇杆正负方向
     const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
     // EmberProbe 输入在控制入口只读取一次，角度环已运行时目标非法按故障处理
     const uint8_t fire_mode = feeder_fire_mode;
     const bool fire_mode_valid = fire_mode == FEEDER_FIRE_MODE_AUTO || fire_mode == FEEDER_FIRE_MODE_SINGLE;
     const bool angle_mode = fire_mode == FEEDER_FIRE_MODE_SINGLE;
-    const float feed_ratio = !angle_mode && command != NULL ? fabsf(command->speed_ratio) : 0.0f;
+    const float feed_ratio = !angle_mode && command != NULL ? command->speed_ratio : 0.0f;
     const bool cascade = angle_mode && mode == FEEDER_CMD_RUN;
     const bool cascade_changed = cascade != feeder->single_active;
     float angle_target_deg = feeder_angle_target_deg;
     const bool angle_target_valid = !cascade || !feeder->single_active || isfinite(angle_target_deg);
     // 串级需要角度连续，纯速度环只要求转速反馈新鲜，状态机统一使用该判据
     const bool feedback_drive_valid = cascade ? feeder->feedback_valid : isfinite(feeder->measured_speed_rpm);
-    const bool feed_requested = mode == FEEDER_CMD_RUN && (cascade || feed_ratio > 0.0f);
+    const bool feed_requested = mode == FEEDER_CMD_RUN && (cascade || feed_ratio != 0.0f);
     Feeder_State_t next_state;
 
     // 停机、配置非法、周期异常或在线目标非法锁存故障，等待遥控待机档人工解除
