@@ -1,4 +1,5 @@
 #include "motor_rm.h"
+#include <math.h>
 #include <stdbool.h>
 #include <string.h>
 #include "bsp/can.h"
@@ -259,15 +260,9 @@ static float MOTOR_RM_GetCurrentRangeAmp(MOTOR_RM_Module_t module)
 }
 static float MOTOR_RM_WrapAnglePositive(float angle)
 {
-    while (angle < 0.0f)
-    {
-        angle += M_2PI;
-    }
-    while (angle >= M_2PI)
-    {
-        angle -= M_2PI;
-    }
-    return angle;
+    // 单次取模代替逐圈加减，避免多圈累计后单帧耗时随运行时间线性增长
+    const float wrapped = fmodf(angle, M_2PI);
+    return (wrapped < 0.0f) ? (wrapped + M_2PI) : wrapped;
 }
 static int32_t MOTOR_RM_UnwrapRawDelta(uint16_t current_raw_angle, uint16_t last_raw_angle)
 {
