@@ -13,7 +13,7 @@ extern "C"
 /*
  * 拨弹运行状态：
  * - FEEDER_RELAX：待机零输出，进给倍率为零或命令回到待机档时进入
- * - FEEDER_RUNNING：逐齿位置外环与速度内环串级运行
+ * - FEEDER_RUNNING：逐齿角度外环与速度内环串级运行
  * - FEEDER_OFFLINE：反馈超时或角度连续性丢失，零输出等待有效反馈后自动重新起控
  * - FEEDER_FAULT：初始化失败、配置非法、周期异常或控制量溢出，零输出锁存至命令回到待机档
  */
@@ -65,7 +65,7 @@ typedef struct
  * direction 为角度递增方向，只接受 -1 或 +1；默认 -1 沿用参考工程正常拨弹方向
  * max_speed_rpm 为输出轴速度目标上限，单位 rpm
  * max_current_a 为转子电流上限，单位 A，范围 (0,10]
- * position_pid 为位置外环参数，输入输出轴弧度，输出 rad/s，range 固定为 2π，输出限幅不得超过速度上限换算值
+ * position_pid 为角度外环参数，输入输出轴弧度，输出 rad/s，range 固定为 2π，输出限幅不得超过速度上限换算值
  * speed_pid 为速度内环参数，输入输出轴 rpm，输出 A，range 固定为零，输出限幅不得超过电流上限
  * speed_feedforward_gain_a_per_rpm 为目标逐周期差分的电流前馈系数，单位 A/rpm，非负，零表示关闭
  * 两环的 k 须为正，p/i/d/i_limit 非负，out_limit 大于 0.000001，微分截止频率小于采样频率一半
@@ -88,11 +88,11 @@ typedef struct
  * initialized 与 config_valid 分别表示初始化结果与本周期配置校验结果
  * state 为唯一运行状态，非运行状态由 Feeder_DumpOutput 统一输出零电流
  * feedback 为最近一帧输出轴反馈，feedback_valid 表示角度连续有效且未超过 10 ms
- * 位置外环依赖角度连续性，反馈无效或超时进入离线态，恢复后按当前齿位重新捕获目标
+ * 角度外环依赖角度连续性，反馈无效或超时进入离线态，恢复后按当前齿位重新捕获目标
  * measured_angle_rad、measured_angle_deg 为输出轴单圈角度，反馈无效时为非数值
- * measured_speed_rpm 为速度内环反馈，单位 rpm；measured_speed_rad_s 为位置外环微分输入，单位 rad/s
+ * measured_speed_rpm 为速度内环反馈，单位 rpm；measured_speed_rad_s 为角度外环微分输入，单位 rad/s
  * target_angle_rad、target_angle_deg 为逐齿推进后的环绕目标角，非运行时保持上次值
- * target_speed_rpm 为位置外环输出换算并限幅后的速度目标，单位 rpm
+ * target_speed_rpm 为角度外环输出换算并限幅后的速度目标，单位 rpm
  * phase_s 为距下一齿的累计秒数，双精度保存，用于按实测周期推进逐齿目标
  * trigger_level_last 保存上周期拨杆电平，用于单发上升沿判定
  * single_active 表示单发执行中，角度进入到位窗口即结束本发，超时进入故障等待人工解除
@@ -131,7 +131,7 @@ typedef struct
 } Feeder_t;
 
 /**
- * @brief 复制默认拨弹配置并初始化位置外环和速度内环
+ * @brief 复制默认拨弹配置并初始化角度外环和速度内环
  *
  * @param[out] feeder 拨弹实例，调用方保证非空
  * @param[in] frequency_hz 调度频率，单位 Hz，须为有限正值
@@ -153,8 +153,8 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 /**
  * @brief 校验周期配置，按命令档位推进状态机并执行逐齿位置与速度串级控制
  *
- * 运行档内按进给倍率推进环绕目标角，位置外环输出输出轴 rpm 目标并交给速度内环，倍率为零回到待机
- * 单发模式内由拨杆上升沿推进一个齿距，进入位置外环等待到位，到位后回待机，超时进入故障
+ * 运行档内按进给倍率推进环绕目标角，角度外环输出输出轴 rpm 目标并交给速度内环，倍率为零回到待机
+ * 单发模式内由拨杆上升沿推进一个齿距，进入角度外环等待到位，到位后回待机，超时进入故障
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存

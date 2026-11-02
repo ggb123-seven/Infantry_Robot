@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 /*
- * feeder 为任务独占的拨弹实例，config 用于在线调参，逐齿位置外环与速度内环均在本实例内保存
+ * feeder 为任务独占的拨弹实例，config 用于在线调参，逐齿角度外环与速度内环均在本实例内保存
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为归一化进给倍率，倍率乘 feed_hz 得到每秒齿数
  * feeder.target_angle_rad 为逐齿推进后的目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
  * 反馈无效或超时时模块进入离线态并清空观察量，角度和转速同时为非数值

@@ -6,10 +6,10 @@
 
 /*
  * 业务参数统一来自 config.c 的 feeder_config，模块只复制到可调实例和本周期快照
- * 控制链为逐齿位置外环、速度内环和电流输出：外环推进环绕目标角，输出输出轴 rpm 目标
+ * 控制链为逐齿角度外环、速度内环和电流输出：外环推进环绕目标角，输出输出轴 rpm 目标
  * 每秒进给齿数为 config.feed_hz 与进给倍率的乘积，方向由 config.direction 决定，倍率为零按待机撤驱
  * 单发模式不累计相位，由拨杆上升沿推进一个齿距并等待到位，超时判定堵转
- * 度数仅用于观察，位置外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
+ * 度数仅用于观察，角度外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
 #define FEEDER_MAX_CURRENT_A (10.0f)
@@ -125,7 +125,7 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
  */
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us)
 {
-    // 位置外环依赖角度连续性，新帧的有效性由驱动给出的角度连续性标志决定
+    // 角度外环依赖角度连续性，新帧的有效性由驱动给出的角度连续性标志决定
     if (received)
     {
         feeder->feedback = *feedback;
@@ -169,7 +169,7 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
     const bool config_changed = memcmp(&previous_config, &feeder->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
-    // 命令缺失按离线档处理，倍率取绝对值，零倍率视同待机以避免位置环把转子锁死在齿位
+    // 命令缺失按离线档处理，倍率取绝对值，零倍率视同待机以避免角度环把转子锁死在齿位
     const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
     const float feed_ratio = command != NULL ? fabsf(command->speed_ratio) : 0.0f;
     // 单发参数同属在线调参入口，只在控制入口校验一次，非法值按故障处理
@@ -312,7 +312,7 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
         feeder->target_angle_deg = feeder->target_angle_rad * M_RAD2DEG_MULT;
     }
 
-    // 位置外环用实测角速度提供微分，避免角度在 0 与 2π 之间环绕时产生虚假的微分脉冲
+    // 角度外环用实测角速度提供微分，避免角度在 0 与 2π 之间环绕时产生虚假的微分脉冲
     const float derivative = config->position_pid.k * feeder->measured_speed_rad_s;
     // 目标推进与微分换算属于本层计算链，在进入外环前统一拒绝溢出
     if (!isfinite(feeder->target_angle_rad) || !isfinite(derivative))
