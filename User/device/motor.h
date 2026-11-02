@@ -26,8 +26,8 @@ typedef struct {
     float rotor_speed; /* 实际转子转速 */
     float torque_current; /* 转矩电流 */
     float temp; /* 温度 */
-    bool angle_valid; /* 连续角度是否可信 */
-    uint32_t angle_lost_count; /* 疑似跨零/反馈丢失计数 */
+    bool angle_valid; /* 本帧角度增量是否可信，出现疑似丢帧的帧为 false */
+    uint32_t angle_lost_count; /* 疑似跨零/反馈丢失累计次数，供上层决定是否重新对零 */
     uint32_t last_update_time; /* 最近反馈更新时间，单位由底层驱动决定 */
 } MOTOR_Feedback_t;
 

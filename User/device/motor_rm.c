@@ -351,6 +351,8 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
     motor->motor.raw_feedback.raw_temp = msg->data[6];
     motor->motor.raw_feedback.raw_error_code = msg->data[7];
     // 按减速箱配置维护连续角度，再应用安装方向并发布反馈时间
+    // 单帧增量是否可信单独判定：疑似丢帧只让本帧角度无效，下一帧增量合理后自动恢复相对参考
+    bool delta_plausible = true;
     if (motor->param.gear)
     {
         if (!motor->angle_inited)
@@ -358,7 +360,8 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
             MOTOR_RM_ResetAngleTracker(motor, raw_angle);
         }
         int32_t delta = MOTOR_RM_UnwrapRawDelta(raw_angle, motor->last_raw_angle);
-        if (delta >= MOTOR_RM_SUSPICIOUS_DELTA_COUNT || delta <= -MOTOR_RM_SUSPICIOUS_DELTA_COUNT)
+        delta_plausible = delta < MOTOR_RM_SUSPICIOUS_DELTA_COUNT && delta > -MOTOR_RM_SUSPICIOUS_DELTA_COUNT;
+        if (!delta_plausible)
         {
             motor->angle_lost_count++;
         }
@@ -383,7 +386,8 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
         motor->feedback.rotor_speed = rotor_speed;
         motor->feedback.torque_current = torque_current;
     }
-    motor->feedback.angle_valid = (motor->angle_lost_count == 0U);
+    // 本帧角度增量连续才发布可信标志，累计丢失次数保留为诊断量供上层决定是否重新对零
+    motor->feedback.angle_valid = delta_plausible;
     if (motor->motor.reverse)
     {
         motor->feedback.rotor_total_angle = -motor->feedback.rotor_total_angle;

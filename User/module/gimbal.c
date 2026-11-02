@@ -690,8 +690,10 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, const Gimbal_AxisConf
     const uint64_t frame_time_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
     const float encoder_rad = motor->rotor_single_angle;
     const float speed_rpm = motor->rotor_speed;
-    const bool frame_valid = motor->angle_valid && frame_time_us != UINT64_MAX && age_us <= timeout_us &&
-                             encoder_rad >= 0.0f && encoder_rad < M_2PI;
+    // 编码器一旦出现丢帧，输出轴机械角可能整圈偏移，云台在重新对零前保持该轴故障
+    const bool frame_valid = motor->angle_valid && motor->angle_lost_count == 0U &&
+                             frame_time_us != UINT64_MAX && age_us <= timeout_us && encoder_rad >= 0.0f &&
+                             encoder_rad < M_2PI;
     const bool continuous = axis->feedback_time_us != UINT64_MAX && frame_time_us > axis->feedback_time_us &&
                             frame_time_us - axis->feedback_time_us <= timeout_us;
     const bool has_reference = signed_angle ? isfinite(axis->mechanical_angle_deg) : axis->unwrap.has_reference;
