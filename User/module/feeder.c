@@ -7,7 +7,7 @@
 /*
  * 业务参数统一来自 config.c 的 feeder_config，模块只复制到可调实例和本周期快照
  * 环路结构由 feeder_fire_mode 决定：连发只走速度环，单发在速度环外再套角度外环完成逐齿定位
- * 连发时摇杆倍率直接映射输出轴转速目标；单发时角度外环推进环绕目标角并输出 rpm 目标
+ * 连发时摇杆倍率直接映射输出轴转速目标；单发时忽略摇杆倍率并由拨杆触发角度外环推进一个齿距
  * 每秒进给齿数为 config.feed_hz 与进给倍率的乘积，方向由 config.direction 决定，倍率为零按待机撤驱
  * 单发模式不累计相位，由拨杆上升沿推进一个齿距并等待到位，超时判定堵转
  * 度数仅用于观察，角度外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
@@ -174,12 +174,12 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
     const bool config_changed = memcmp(&previous_config, &feeder->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
-    // 命令缺失按离线档处理，倍率取绝对值，零倍率视同待机以避免角度环把转子锁死在齿位
+    // 命令缺失按离线档处理，单发模式隔离摇杆倍率，连发模式取绝对值作为速度请求
     const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
-    const float feed_ratio = command != NULL ? fabsf(command->speed_ratio) : 0.0f;
     // 单发参数同属在线调参入口，只在控制入口校验一次，非法值按故障处理
     const uint8_t fire_mode = feeder_fire_mode;
     const bool single_mode = fire_mode == FEEDER_FIRE_MODE_SINGLE;
+    const float feed_ratio = !single_mode && command != NULL ? fabsf(command->speed_ratio) : 0.0f;
     const bool single_config_valid = !single_mode ||
         (isfinite(feeder->single_in_position_rad) && feeder->single_in_position_rad > 0.0f &&
          feeder->single_in_position_rad < FEEDER_TWO_PI &&
@@ -192,15 +192,14 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     {
         feeder->trigger_level_last = trigger_level;
     }
-    // 单发只在摇杆回中时接受触发，执行中推动摇杆由自动连续进给接管
-    const bool single_start = single_trigger && !feeder->single_active && feed_ratio <= 0.0f &&
-                              feeder->feedback_valid;
-    if (feed_ratio > 0.0f)
+    // 切回连发时终止残留单发，单发模式只响应拨杆边沿并忽略摇杆位置
+    if (!single_mode)
     {
         feeder->single_active = false;
         feeder->single_elapsed_s = 0.0f;
     }
-    // 单发起发与执行走串级，连发以及单发档内的连续进给都只走速度环
+    const bool single_start = single_trigger && !feeder->single_active && feeder->feedback_valid;
+    // 单发起发与执行固定走串级，连发固定走速度环
     const bool cascade = feeder->single_active || single_start;
     // 串级需要角度连续，纯速度环只要求转速反馈新鲜，状态机统一使用该判据
     const bool feedback_drive_valid = cascade ? feeder->feedback_valid : isfinite(feeder->measured_speed_rpm);

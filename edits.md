@@ -499,3 +499,12 @@
 - 用户确认新增 `Gimbal_Axis_t.base_speed_rad_s`，等于欧拉角速度减编码器关节转速，底座水平时精确，本步仅观测、不参与控制
 - 主机数值核对：按 `ins.c` 四元数转欧拉定义随机 2000 组姿态与角速度，换算结果与数值微分最大偏差约 1.3e-4 rad/s
 - Debug 构建与 ARCH/HW/SPEC 检查通过；未烧录或实测，pitch 约 20° 时速度环反馈增益约增大 6%，上板后须复核响应并采集 `gimbal.yaw.base_speed_rad_s`
+
+## FEEDER-SINGLE-JOYSTICK-ISOLATION-20261102
+
+- 修复 `feeder_fire_mode = 1` 时推动右摇杆会转入纯速度环的问题
+- 单发模式在控制入口忽略 `speed_ratio`，只响应右拨杆下位触发边沿并固定使用角度速度串级
+- 切回连发时终止残留单发状态；未修改 `config.c`、结构体布局、BSP、设备层或 CubeMX
+- 临时主机回归覆盖 45° 单发到位后保持拨杆下位并推动摇杆，确认待机、单发结束且输出 0 A
+- ARM 严格检查、Debug 构建、ARCH/HW/SPEC 和格式检查通过，临时测试资产已清理
+- 证据见 `docs/validation/feeder_single_joystick_isolation_20261102.md`；未烧录或进行 M2006 实机复测

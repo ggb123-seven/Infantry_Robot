@@ -9,11 +9,11 @@ extern "C"
 #include "module/feeder.h"
 
 /*
- * 拨弹调试入口：feeder 连发默认只走速度环、单发走角度与速度串级，config 可调，进给节拍由遥控命令生成
+ * 拨弹调试入口：feeder 连发只走速度环、单发走角度与速度串级，config 可调，进给节拍由遥控命令生成
  * feeder.config 为可写副本，max_speed_rpm 为输出轴转速上限，feed_hz 为满倍率下的每秒进给齿数
  * feeder.cycle_config 为本周期集中校验的持久快照，position_pid 输入弧度输出 rad/s，speed_pid 输入 rpm 输出 A
- * feeder_fire_mode 为 0 连发（仅速度环）、1 单发（角度速度串级），单发起发与执行固定串级
- * 单发起发与执行强制串级；仅速度环时 target_speed_rpm 由摇杆倍率乘 max_speed_rpm 直接给出，target_angle 不更新
+ * feeder_fire_mode 为 0 连发（仅速度环）、1 单发（角度速度串级），单发模式忽略右摇杆上下输入
+ * 单发起发与执行固定串级；连发时 target_speed_rpm 由摇杆倍率乘 max_speed_rpm 直接给出，target_angle 不更新
  * feeder.state 为唯一运行状态，0 待机、1 运行、2 反馈离线、3 故障锁存，仅运行状态输出电流
  * feeder.target_angle_rad、measured_angle_rad 为角度外环目标与实际角度，仅在串级模式推进
  * feeder.target_angle_deg、measured_angle_deg 为同两组角度的度数镜像，仅用于观察

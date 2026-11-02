@@ -12,7 +12,7 @@
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为归一化进给倍率，倍率乘 feed_hz 得到每秒齿数
  * feeder.target_angle_rad 为逐齿推进后的目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
  * 反馈无效或超时时模块进入离线态并清空观察量，角度和转速同时为非数值
- * 右拨杆下位为运行使能，摇杆回中、其余档位及失联撤驱，角度镜像继续使用度数
+ * 右拨杆下位为运行使能，连发时摇杆回中撤驱，单发时忽略摇杆输入，其余档位及失联撤驱
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 为上周期电流发布结果，失败后下一周期不提交命令以清除控制历史
