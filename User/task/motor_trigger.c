@@ -2,10 +2,14 @@
 
 #include "bsp/time.h"
 #include "module/cmd.h"
+#include "module/shoot.h"
 #include "module/trigger.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
+
+// 拨弹运行时两只摩擦轮的转子目标转速，单位 rpm
+#define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
 /*
  * feeder 为任务独占的拨弹实例，config 用于在线调参，角度外环与速度内环均在本实例内保存
@@ -15,7 +19,7 @@
  * 右拨杆下位为运行使能，连发时摇杆回中撤驱，模式 1 忽略摇杆并采用手动目标角，其余档位及失联撤驱
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
- * trigger_output_published 为上周期电流发布结果，失败后下一周期不提交命令以清除控制历史
+ * trigger_output_published 表示上周期拨弹输出与摩擦轮命令均发布成功，失败后下一周期不提交拨弹命令
  */
 Feeder_t feeder;
 DR16_State_t trigger_remote;
@@ -24,7 +28,7 @@ static bool trigger_remote_valid;
 static bool trigger_output_published = true;
 
 /**
- * @brief 周期编排拨弹遥控、反馈、速度控制与电流邮箱发布
+ * @brief 周期编排拨弹遥控、反馈控制及摩擦轮联动命令发布
  *
  * @param[in] argument 任务参数，本任务不使用
  * @return 本任务不会返回
@@ -75,8 +79,22 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
+        // 拨弹模块确认进入运行态后联动两只摩擦轮，其他状态发布失能命令
+        const Shoot_Command_t shoot_command =
+        {
+            .enabled = feeder.state == FEEDER_RUNNING,
+            .target_speed_rpm =
+            {
+                MOTOR_TRIGGER_SHOOT_SPEED_RPM,
+                MOTOR_TRIGGER_SHOOT_SPEED_RPM,
+            },
+        };
+        const bool shoot_command_published = osMessageQueueReset(task_runtime.msgq.shoot_command) == osOK &&
+            osMessageQueuePut(task_runtime.msgq.shoot_command, &shoot_command, 0U, 0U) == osOK;
+
         // CAN 任务独占总线输出，记录发布结果供下一周期撤驱，禁止在任务内运行第二次控制
-        trigger_output_published = osMessageQueueReset(task_runtime.msgq.trigger_output) == osOK &&
+        trigger_output_published = shoot_command_published &&
+            osMessageQueueReset(task_runtime.msgq.trigger_output) == osOK &&
             osMessageQueuePut(task_runtime.msgq.trigger_output, &output, 0U, 0U) == osOK;
 
         // 错过周期时跳过追赶计算，避免同一时刻推进多个齿距
