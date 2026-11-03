@@ -79,10 +79,10 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
-        // 右拨杆下位直接启动两只摩擦轮，遥控失效或上一周期发布失败时保持失能
+        // 摩擦轮只跟随已校验的右拨杆运行档，不受拨弹电流发布状态影响
         const Shoot_Command_t shoot_command =
         {
-            .enabled = trigger_output_published && feeder_command.mode == FEEDER_CMD_RUN,
+            .enabled = feeder_command.mode == FEEDER_CMD_RUN,
             .target_speed_rpm =
             {
                 MOTOR_TRIGGER_SHOOT_SPEED_RPM,
