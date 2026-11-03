@@ -51,13 +51,11 @@ extern volatile float feeder_angle_target_deg;
  * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
  * speed_ratio 沿用命令层既有字段名，语义为连发归一化转速倍率，调用方保证有限且位于 [-1, 1]
  * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定；模式 1 忽略该字段
- * trigger_level 为右拨杆下位电平，暂时保留给后续单发策略，当前运行使能由 mode 统一表达
  */
 typedef struct
 {
     Feeder_CmdMode_t mode;
     float speed_ratio;
-    bool trigger_level;
 } Feeder_Command_t;
 
 /*
@@ -85,49 +83,26 @@ typedef struct
 } Feeder_Config_t;
 
 /*
- * 拨弹实例由拨弹任务独占，初始化后不得整体复制，内部 PID 参数指针引用实例内持久快照
- * config 为可调副本，cycle_config 为本周期集中校验的持久快照，两环参数指针长期指向后者
- * initialized 与 config_valid 分别表示初始化结果与本周期配置校验结果
+ * 本项目仅使用一个拨弹实例，结构体只保留 EmberProbe 配置、运行状态和必要控制观测
+ * config 为 EmberProbe 可写配置副本，Control 每周期复制并校验后供控制器使用
+ * config_valid 为最近一次 Control 周期的配置校验结果
  * state 为唯一运行状态，非运行状态由 Feeder_DumpOutput 统一输出零电流
- * feedback 为最近一帧输出轴反馈，feedback_valid 表示角度连续有效且未超过 10 ms
- * 角度外环依赖角度连续性，反馈无效或超时进入离线态，恢复后按当前位置重新捕获目标
- * measured_angle_rad、measured_angle_deg 为输出轴单圈角度，角度不连续或超时为非数值
- * measured_speed_rpm 为速度内环反馈，单位 rpm；帧未超时即为数值，角度不连续不影响连发速度环
- * measured_speed_rad_s 为角度外环微分输入，单位 rad/s
- * target_angle_rad、target_angle_deg 为本周期采用的手动目标角，仅串级模式维护，速度环模式保持上次值
- * target_speed_rpm 为速度内环目标，单位 rpm；串级时来自角度外环输出，连发时来自摇杆倍率映射
- * single_active 暂存模式 1 与右拨杆下位的组合使能，用于识别环路切换并安全捕获当前位置
- * phase_s、trigger_level_last、single_elapsed_s、single_in_position_rad、single_timeout_s 暂时保留给后续单发策略
- * output_current_a 为候选转子电流，单位 A，非运行时保留但由输出闸门归零
- * position_pid、speed_pid 分别保存外环和内环控制历史，不由任务或其他模块直接执行
- * frequency_hz 为初始化时的控制采样频率，单位 Hz
+ * measured_angle_deg 为输出轴单圈角度，单位度；角度无效或超时时为非数值
+ * measured_speed_rpm 为输出轴实测转速，单位 rpm；反馈超时时为非数值
+ * target_angle_deg 为角度模式采用的目标，单位度
+ * target_speed_rpm 为速度内环目标，单位 rpm
+ * output_current_a 为限幅后的候选转子电流，单位 A，非运行状态由输出闸门归零
  */
 typedef struct
 {
     Feeder_Config_t config;
-    Feeder_Config_t cycle_config;
-    bool initialized;
     bool config_valid;
     Feeder_State_t state;
-    MOTOR_RM_Feedback_t feedback;
-    bool feedback_valid;
-    bool trigger_level_last;
-    bool single_active;
-    float measured_angle_rad;
     float measured_angle_deg;
     float measured_speed_rpm;
-    float measured_speed_rad_s;
-    float target_angle_rad;
     float target_angle_deg;
     float target_speed_rpm;
-    float single_elapsed_s;
-    float single_in_position_rad;
-    float single_timeout_s;
-    double phase_s;
     float output_current_a;
-    KPID_t position_pid;
-    KPID_t speed_pid;
-    float frequency_hz;
 } Feeder_t;
 
 /**

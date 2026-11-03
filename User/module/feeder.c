@@ -17,13 +17,36 @@
 #define FEEDER_MAX_PERIOD_S (0.1f)
 // 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获当前位置
 #define FEEDER_FEEDBACK_TIMEOUT_US (10000U)
-// 单发到位窗口与超时参数暂时保留，本轮角度环调试模式不使用
-#define FEEDER_SINGLE_IN_POSITION_RAD (0.06981317f)
-#define FEEDER_SINGLE_TIMEOUT_S (0.3f)
 // 速度环与角度环调试模式切换入口，上电默认速度环，运行期由 EmberProbe 写入 0 或 1
 volatile uint8_t feeder_fire_mode = FEEDER_FIRE_MODE_AUTO;
 // 角度环调试目标，单位度，右拨杆下位进入角度环后由 EmberProbe 写入
 volatile float feeder_angle_target_deg = 0.0f;
+
+/*
+ * 拨弹私有运行数据仅服务于唯一的拨弹实例，EmberProbe 不直接显示其中的控制历史
+ * cycle_config 为 Control 每周期校验的持久配置快照
+ * feedback_time_us 为驱动反馈源时间低 32 位，单位微秒
+ * feedback_angle_rad 为最近一帧输出轴单圈角度，单位 rad
+ * initialized 表示两路 PID 初始化成功
+ * feedback_valid 表示最近一帧角度连续且未超时
+ * cascade_active 表示上一周期角度与速度串级控制处于使能状态
+ * position_pid 与 speed_pid 分别保存角度外环和速度内环历史，参数指向 cycle_config
+ * frequency_hz 为初始化采样频率，单位 Hz
+ */
+typedef struct
+{
+    Feeder_Config_t cycle_config;
+    uint32_t feedback_time_us;
+    float feedback_angle_rad;
+    bool initialized;
+    bool feedback_valid;
+    bool cascade_active;
+    KPID_t position_pid;
+    KPID_t speed_pid;
+    float frequency_hz;
+} Feeder_Internal_t;
+
+static Feeder_Internal_t feeder_internal;
 
 /**
  * @brief 在配置入口校验单个控制器的公共参数
@@ -85,36 +108,34 @@ static float Feeder_WrapAngle(float angle_rad)
  */
 int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
 {
-    // 初始化从安全状态开始，配置副本保留给运行期调参，未取得反馈前观察量均为非数值
+    Feeder_Internal_t *internal = &feeder_internal;
+
+    // 初始化私有控制历史并建立公开调参副本，未取得反馈前观测量保持非数值
+    memset(internal, 0, sizeof(*internal));
     *feeder = (Feeder_t)
     {
         .config = feeder_config,
-        .cycle_config = feeder_config,
-        .frequency_hz = frequency_hz,
         .state = FEEDER_FAULT,
-        .measured_angle_rad = NAN,
         .measured_angle_deg = NAN,
         .measured_speed_rpm = NAN,
-        .measured_speed_rad_s = NAN,
-        // 预留单发参数在实例内初始化，本轮角度环调试模式不使用
-        .single_in_position_rad = FEEDER_SINGLE_IN_POSITION_RAD,
-        .single_timeout_s = FEEDER_SINGLE_TIMEOUT_S,
     };
-    // 配置只在统一入口校验，两个控制器长期引用实例内持久快照
+    internal->cycle_config = feeder_config;
+    internal->frequency_hz = frequency_hz;
+    // 配置只在统一入口校验，两个控制器长期引用模块私有的持久快照
     feeder->config_valid = isfinite(frequency_hz) && frequency_hz > 0.0f &&
-                           Feeder_ConfigValid(&feeder->cycle_config, frequency_hz);
+                           Feeder_ConfigValid(&internal->cycle_config, frequency_hz);
     if (!feeder->config_valid)
     {
         return -1;
     }
 
     // 外环用实测角速度提供微分，避免位置在 0 与 2π 之间环绕时产生虚假的微分脉冲
-    feeder->initialized = PID_Init(&feeder->position_pid, KPID_MODE_SET_D, frequency_hz,
-                                   &feeder->cycle_config.position_pid) == 0 &&
-                          PID_Init(&feeder->speed_pid, KPID_MODE_CALC_D, frequency_hz,
-                                   &feeder->cycle_config.speed_pid) == 0;
-    feeder->state = feeder->initialized ? FEEDER_RELAX : FEEDER_FAULT;
-    return feeder->initialized ? 0 : -1;
+    internal->initialized = PID_Init(&internal->position_pid, KPID_MODE_SET_D, frequency_hz,
+                                     &internal->cycle_config.position_pid) == 0 &&
+                            PID_Init(&internal->speed_pid, KPID_MODE_CALC_D, frequency_hz,
+                                     &internal->cycle_config.speed_pid) == 0;
+    feeder->state = internal->initialized ? FEEDER_RELAX : FEEDER_FAULT;
+    return internal->initialized ? 0 : -1;
 }
 
 /**
@@ -128,35 +149,34 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz)
  */
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us)
 {
+    Feeder_Internal_t *internal = &feeder_internal;
+
     // 角度外环依赖角度连续性，新帧的有效性由驱动给出的角度连续性标志决定
     if (received)
     {
-        feeder->feedback = *feedback;
-        feeder->feedback_valid = feedback->angle_valid;
+        internal->feedback_time_us = feedback->last_update_time;
+        internal->feedback_angle_rad = feedback->rotor_single_angle;
+        internal->feedback_valid = feedback->angle_valid;
         feeder->measured_speed_rpm = feedback->rotor_speed;
-        feeder->measured_speed_rad_s = feedback->rotor_speed * (FEEDER_TWO_PI / 60.0f);
     }
 
     // 驱动保存微秒时间低 32 位，无符号差值允许正常回绕并拒绝启动时的未来帧
-    const uint32_t age_us = (uint32_t)now_us - feeder->feedback.last_update_time;
+    const uint32_t age_us = (uint32_t)now_us - internal->feedback_time_us;
     const bool frame_fresh = age_us <= FEEDER_FEEDBACK_TIMEOUT_US && now_us >= age_us;
-    feeder->feedback_valid = feeder->feedback_valid && frame_fresh;
+    internal->feedback_valid = internal->feedback_valid && frame_fresh;
 
     // 角度环调试需要角度连续，连发速度环只需要帧新鲜，两类观察量分别置为非数值
-    if (feeder->feedback_valid)
+    if (internal->feedback_valid)
     {
-        feeder->measured_angle_rad = feeder->feedback.rotor_single_angle;
-        feeder->measured_angle_deg = feeder->feedback.rotor_single_angle * M_RAD2DEG_MULT;
+        feeder->measured_angle_deg = internal->feedback_angle_rad * M_RAD2DEG_MULT;
     }
     else
     {
-        feeder->measured_angle_rad = NAN;
         feeder->measured_angle_deg = NAN;
     }
     if (!frame_fresh)
     {
         feeder->measured_speed_rpm = NAN;
-        feeder->measured_speed_rad_s = NAN;
     }
 }
 
@@ -170,11 +190,13 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
  */
 void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float period_s)
 {
+    Feeder_Internal_t *internal = &feeder_internal;
+
     // 每周期入口只读取一次可调配置，后续控制使用本周期快照
-    const Feeder_Config_t previous_config = feeder->cycle_config;
-    feeder->cycle_config = *(const volatile Feeder_Config_t *)&feeder->config;
-    feeder->config_valid = Feeder_ConfigValid(&feeder->cycle_config, feeder->frequency_hz);
-    const bool config_changed = memcmp(&previous_config, &feeder->cycle_config, sizeof(previous_config)) != 0;
+    const Feeder_Config_t previous_config = internal->cycle_config;
+    internal->cycle_config = *(const volatile Feeder_Config_t *)&feeder->config;
+    feeder->config_valid = Feeder_ConfigValid(&internal->cycle_config, internal->frequency_hz);
+    const bool config_changed = memcmp(&previous_config, &internal->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
     // 命令缺失按离线档处理，角度模式隔离摇杆倍率，连发模式保留摇杆正负方向
     const Feeder_CmdMode_t mode = command != NULL ? command->mode : FEEDER_CMD_OFFLINE;
@@ -184,16 +206,16 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     const bool angle_mode = fire_mode == FEEDER_FIRE_MODE_SINGLE;
     const float feed_ratio = !angle_mode && command != NULL ? command->speed_ratio : 0.0f;
     const bool cascade = angle_mode && mode == FEEDER_CMD_RUN;
-    const bool cascade_changed = cascade != feeder->single_active;
+    const bool cascade_changed = cascade != internal->cascade_active;
     float angle_target_deg = feeder_angle_target_deg;
-    const bool angle_target_valid = !cascade || !feeder->single_active || isfinite(angle_target_deg);
+    const bool angle_target_valid = !cascade || !internal->cascade_active || isfinite(angle_target_deg);
     // 串级需要角度连续，纯速度环只要求转速反馈新鲜，状态机统一使用该判据
-    const bool feedback_drive_valid = cascade ? feeder->feedback_valid : isfinite(feeder->measured_speed_rpm);
+    const bool feedback_drive_valid = cascade ? internal->feedback_valid : isfinite(feeder->measured_speed_rpm);
     const bool feed_requested = mode == FEEDER_CMD_RUN && (cascade || feed_ratio != 0.0f);
     Feeder_State_t next_state;
 
     // 停机、配置非法、周期异常或在线目标非法锁存故障，等待遥控待机档人工解除
-    if (!feeder->initialized || !feeder->config_valid || !period_valid || !fire_mode_valid || !angle_target_valid)
+    if (!internal->initialized || !feeder->config_valid || !period_valid || !fire_mode_valid || !angle_target_valid)
     {
         next_state = FEEDER_FAULT;
     }
@@ -223,38 +245,32 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     const bool restart = next_state != feeder->state || config_changed || cascade_changed;
     if (restart)
     {
-        PID_Reset(&feeder->position_pid);
-        PID_Reset(&feeder->speed_pid);
-        feeder->phase_s = 0.0;
+        PID_Reset(&internal->position_pid);
+        PID_Reset(&internal->speed_pid);
         feeder->target_speed_rpm = 0.0f;
         if (next_state == FEEDER_RUNNING)
         {
             // 起控与在线改参时按本周期实测转速预置微分，避免沿用停机前的历史
-            LowPassFilter2p_Init(&feeder->speed_pid.dfilter, feeder->frequency_hz,
-                feeder->cycle_config.speed_pid.d_cutoff_freq);
-            feeder->speed_pid.last.k_fb = LowPassFilter2p_Reset(&feeder->speed_pid.dfilter,
-                feeder->cycle_config.speed_pid.k * feeder->measured_speed_rpm);
+            LowPassFilter2p_Init(&internal->speed_pid.dfilter, internal->frequency_hz,
+                internal->cycle_config.speed_pid.d_cutoff_freq);
+            internal->speed_pid.last.k_fb = LowPassFilter2p_Reset(&internal->speed_pid.dfilter,
+                internal->cycle_config.speed_pid.k * feeder->measured_speed_rpm);
             // 串级才维护目标角，纯速度环模式的目标由摇杆倍率每周期直接给出
             if (cascade)
             {
-                LowPassFilter2p_Init(&feeder->position_pid.dfilter, feeder->frequency_hz,
-                    feeder->cycle_config.position_pid.d_cutoff_freq);
+                LowPassFilter2p_Init(&internal->position_pid.dfilter, internal->frequency_hz,
+                    internal->cycle_config.position_pid.d_cutoff_freq);
                 // 首次使能或反馈恢复时捕获当前位置，防止切换模式或拨杆下位产生自动转动
-                if (!feeder->single_active || feeder->state != FEEDER_RUNNING)
+                if (!internal->cascade_active || feeder->state != FEEDER_RUNNING)
                 {
                     angle_target_deg = feeder->measured_angle_deg;
                     feeder_angle_target_deg = angle_target_deg;
                 }
             }
         }
-        else
-        {
-            // 非运行状态清除角度环活动标志，恢复时重新捕获当前位置
-            feeder->single_elapsed_s = 0.0f;
-        }
     }
     feeder->state = next_state;
-    feeder->single_active = cascade;
+    internal->cascade_active = cascade;
     if (feeder->state != FEEDER_RUNNING)
     {
         return;
@@ -263,12 +279,12 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     // 连发只走速度环：摇杆倍率直接映射输出轴转速，角度外环完全不参与
     if (!cascade)
     {
-        const Feeder_Config_t *config = &feeder->cycle_config;
+        const Feeder_Config_t *config = &internal->cycle_config;
         const float previous_target_rpm = feeder->target_speed_rpm;
         feeder->target_speed_rpm = config->direction * feed_ratio * config->max_speed_rpm;
         const float feedforward_a = (feeder->target_speed_rpm - previous_target_rpm) *
             config->speed_feedforward_gain_a_per_rpm;
-        const float current_a = PID_Calc(&feeder->speed_pid, feeder->target_speed_rpm,
+        const float current_a = PID_Calc(&internal->speed_pid, feeder->target_speed_rpm,
             feeder->measured_speed_rpm, 0.0f, period_s) + feedforward_a;
         // 前馈乘法和叠加在控制计算出口检查一次，异常只改变状态，由输出闸门统一撤驱
         if (!isfinite(current_a))
@@ -281,27 +297,28 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     }
 
     // 角度调试模式每周期采用一次 EmberProbe 目标快照，不执行自动齿距推进
-    const Feeder_Config_t *config = &feeder->cycle_config;
+    const Feeder_Config_t *config = &internal->cycle_config;
     feeder->target_angle_deg = angle_target_deg;
-    feeder->target_angle_rad = Feeder_WrapAngle(angle_target_deg * M_DEG2RAD_MULT);
+    const float target_angle_rad = Feeder_WrapAngle(angle_target_deg * M_DEG2RAD_MULT);
 
     // 角度外环用实测角速度提供微分，避免角度在 0 与 2π 之间环绕时产生虚假的微分脉冲
-    const float derivative = config->position_pid.k * feeder->measured_speed_rad_s;
+    const float measured_speed_rad_s = feeder->measured_speed_rpm * (FEEDER_TWO_PI / 60.0f);
+    const float derivative = config->position_pid.k * measured_speed_rad_s;
     // 目标推进与微分换算属于本层计算链，在进入外环前统一拒绝溢出
-    if (!isfinite(feeder->target_angle_rad) || !isfinite(derivative))
+    if (!isfinite(target_angle_rad) || !isfinite(derivative))
     {
         feeder->state = FEEDER_FAULT;
         return;
     }
 
     // 外环按环绕误差输出 rad/s，换算为输出轴 rpm 后限幅，交给已整定的速度内环
-    const float target_rad_s = PID_Calc(&feeder->position_pid, feeder->target_angle_rad,
-        feeder->feedback.rotor_single_angle, derivative, period_s);
+    const float target_rad_s = PID_Calc(&internal->position_pid, target_angle_rad,
+        internal->feedback_angle_rad, derivative, period_s);
     const float previous_target_rpm = feeder->target_speed_rpm;
     feeder->target_speed_rpm = AbsClip(target_rad_s * (60.0f / FEEDER_TWO_PI), config->max_speed_rpm);
     const float feedforward_a = (feeder->target_speed_rpm - previous_target_rpm) *
         config->speed_feedforward_gain_a_per_rpm;
-    const float current_a = PID_Calc(&feeder->speed_pid, feeder->target_speed_rpm,
+    const float current_a = PID_Calc(&internal->speed_pid, feeder->target_speed_rpm,
         feeder->measured_speed_rpm, 0.0f, period_s) + feedforward_a;
 
     // 前馈乘法和叠加在控制计算出口检查一次，异常只改变状态，由输出闸门统一撤驱

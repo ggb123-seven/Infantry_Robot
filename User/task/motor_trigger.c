@@ -12,9 +12,9 @@
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
 /*
- * feeder 为任务独占的拨弹实例，config 用于在线调参，角度外环与速度内环均在本实例内保存
+ * feeder 为任务独占的拨弹观测实例，config 用于在线调参，控制历史由拨弹模块私有保存
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为连发归一化转速倍率
- * feeder.target_angle_rad 为手动目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
+ * feeder.target_angle_deg 为手动目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
  * 角度连续性失效时角度观察量为非数值，帧超时后角度和转速均为非数值
  * 右拨杆下位为运行使能，连发时摇杆回中撤驱，模式 1 忽略摇杆并采用手动目标角，其余档位及失联撤驱
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
