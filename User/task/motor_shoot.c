@@ -4,13 +4,12 @@
 #include "module/config.h"
 #include "task/user_task.h"
 
-#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
 /*
  * 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱
- * shoot.config.speed_pid 为可调转子 rpm 速度参数，初值复制底盘参数并服从摩擦轮电流上限
+ * shoot.config.speed_pid 为直接复制 shoot_config 的可调转子 rpm 速度参数
  * shoot_speed_feedforward_gain_a_per_rpm 为既有目标差分前馈入口，单位 A/rpm
  */
 Shoot_t shoot;
@@ -30,11 +29,8 @@ void Task_motor_shoot(void *argument)
     const uint32_t tick_frequency = osKernelGetTickFreq();
     const uint32_t delay_tick = tick_frequency / MOTOR_SHOOT_FREQ;
     osDelay(MOTOR_SHOOT_INIT_DELAY);
-    // 从配置源复制边界并采用底盘速度参数，模块再复制为实例内独立的在线可调配置
-    Shoot_Config_t initial_config = shoot_config;
-    initial_config.speed_pid = chassis_config.wheel_speed_pid;
-    initial_config.speed_pid.out_limit = fminf(initial_config.speed_pid.out_limit, initial_config.max_current_a);
-    Shoot_Init(&shoot, &initial_config, (float)MOTOR_SHOOT_FREQ);
+    // 摩擦轮 PID 直接沿用 config.c 的独立默认值，模块再复制为实例内在线可调配置
+    Shoot_Init(&shoot, &shoot_config, (float)MOTOR_SHOOT_FREQ);
 
     // 首周期使用名义间隔，后续使用实际无符号节拍差
     uint32_t tick = osKernelGetTickCount();
