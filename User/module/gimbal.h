@@ -13,19 +13,6 @@ extern "C"
 #include "device/motor_rm.h"
 
 /*
- * 云台单圈角度展开器状态，角度单位为度，单圈周期为 360 度：
- * - has_reference：已记录上一帧单圈角度时为 true
- * - last_wrapped_angle：上一帧单圈角度，范围 [0, 360)
- * - continuous_angle：展开后的连续角度，首帧等于单圈角度，之后按相邻帧最短路径累加
- */
-typedef struct
-{
-    bool has_reference;
-    float last_wrapped_angle;
-    float continuous_angle;
-} AngleUnwrap_t;
-
-/*
  * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标
  * - angle_deg：依次为 Roll、Pitch、累计 Yaw，单位度
  * - gyro_rad_s：当前机体系 X、Y、Z 轴角速度，单位 rad/s
@@ -160,16 +147,6 @@ typedef struct
 } Gimbal_AxisCommand_t;
 
 /*
- * 模块内部持久设定值，供捕获和保护改写：target_angle_deg 为姿态角，单位度
- * target_speed_rad_s 为速度目标或前馈，单位 rad/s，外部调用方不得写入
- */
-typedef struct
-{
-    float target_angle_deg;
-    float target_speed_rad_s;
-} Gimbal_AxisSetpoint_t;
-
-/*
  * 云台命令：mode 为两轴共用模式，yaw、pitch 为两轴各自目标
  */
 typedef struct
@@ -180,75 +157,48 @@ typedef struct
 } Gimbal_Command_t;
 
 /*
- * 单轴运行数据，调试器可直接观察：
+ * 单轴公开观测：
  * - state：单轴运行状态
- * - setpoint：模块持有的原始目标与前馈，起控捕获可覆盖，区别于下方实际限幅目标
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
  * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
  * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
  * - speed_rad_s：大地系欧拉角速度，单位 rad/s，由机体系陀螺仪按 ZYX 欧拉运动学换算
  *   yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，姿态未就绪时与角度均为非数值
- * - base_speed_rad_s：底座大地系角速度估计，单位 rad/s，等于 speed_rad_s − motor_speed_rad_s
- *   底座水平时精确，倾斜时含投影误差，仅用于观测，任一输入失效时为非数值
  * - target_angle_deg：限幅后实际采用的目标角度，单位度
  * - target_speed_rad_s：限幅后实际送入速度环的目标，单位 rad/s
  * - output_current_a：本周期输出电流，单位 A，正方向与角度增大方向一致
- * - feedback_time_us：最近反馈帧时刻，单位微秒，无反馈时为 UINT64_MAX
- * - applied_zero_encoder_deg：当前连续角坐标采用的零点，用于识别零点修改
- * - applied_reversed：当前机械反馈采用的方向，用于识别运行中方向修改
- * - applied_angle_pid、applied_speed_pid：PID 实际使用的参数副本，与配置不同时同步并清空积分
- * - unwrap：yaw 连续角展开器，pitch 不使用
- * - angle_pid、speed_pid：角度外环和速度内环运行状态
  */
 typedef struct
 {
     Gimbal_AxisState_t state;
-    Gimbal_AxisSetpoint_t setpoint;
     float encoder_deg;
     float mechanical_angle_deg;
     float motor_speed_rad_s;
     float angle_deg;
     float speed_rad_s;
-    float base_speed_rad_s;
     float target_angle_deg;
     float target_speed_rad_s;
     float output_current_a;
-    uint64_t feedback_time_us;
-    float applied_zero_encoder_deg;
-    bool applied_reversed;
-    KPID_Params_t applied_angle_pid;
-    KPID_Params_t applied_speed_pid;
-    AngleUnwrap_t unwrap;
-    KPID_t angle_pid;
-    KPID_t speed_pid;
 } Gimbal_Axis_t;
 
 /*
  * 云台实例：
  * - config：初始化时复制的配置副本，EmberProbe 可在运行中修改
- * - control_config：最近一次集中校验通过的快照，反馈处理读取该副本，不读取可写配置
  * - config_valid：本周期 Control 的快照校验结果，非法时两轴进入故障并由输出闸门归零
  * - mode：上一周期采用的控制模式
- * - yaw、pitch：两轴运行数据
- * - imu：INS 发布的完整原始快照，角度单位度，角速度单位 rad/s，源时间单位微秒
+ * - yaw、pitch：两轴状态和必要的机械/惯性观测
  * - imu_state：惯性反馈就绪及故障状态
- * - chassis_offline_s：底盘四个电机持续全部离线的时间，单位 s，任一在线时清零，达到确认时间后封顶
- * - yaw_drag_s：底盘离线确认后 yaw 持续被带转的时间，单位 s，yaw 未运行时清零
- * 实例内 PID 持有指向自身参数副本的指针，初始化后不得整体复制实例
+ * 本工程使用单一云台实例，初始化后不得整体复制实例
  */
 typedef struct
 {
     Gimbal_Config_t config;
-    Gimbal_Config_t control_config;
     bool config_valid;
     Gimbal_Mode_t mode;
     Gimbal_Axis_t yaw;
     Gimbal_Axis_t pitch;
-    Gimbal_ImuFeedback_t imu;
     Gimbal_ImuState_t imu_state;
-    float chassis_offline_s;
-    float yaw_drag_s;
 } Gimbal_t;
 
 /*
