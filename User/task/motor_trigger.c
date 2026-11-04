@@ -11,12 +11,12 @@
 // 右拨杆下位时两只摩擦轮的转子目标转速，单位 rpm，中位制动目标为零
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
-// 撤驱、运行与零速保持互斥，上电撤驱；只有运行后回中位才保持速度闭环
+// 撤驱、运行与零速制动请求互斥，上电撤驱；实际停稳撤驱由摩擦轮任务按反馈确认
 typedef enum
 {
     MOTOR_TRIGGER_SHOOT_DISABLED = 0,
     MOTOR_TRIGGER_SHOOT_RUNNING,
-    MOTOR_TRIGGER_SHOOT_HOLDING,
+    MOTOR_TRIGGER_SHOOT_BRAKING,
 } MotorTrigger_ShootState_t;
 
 /*
@@ -29,7 +29,7 @@ typedef enum
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 表示上周期拨弹输出与摩擦轮命令均发布成功，失败后下一周期不提交拨弹命令
- * trigger_shoot_state 只保存本任务的摩擦轮命令阶段，上位或遥控失效清除零速保持记忆
+ * trigger_shoot_state 只保存本任务的摩擦轮命令阶段，上位或遥控失效清除零速制动记忆
  */
 Feeder_t feeder;
 DR16_State_t trigger_remote;
@@ -94,7 +94,7 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
-        // 下位回中位后摩擦轮保持零速闭环，拨弹仍按待机撤驱，上位或遥控失效取消保持
+        // 下位回中位持续请求零速制动，停稳后由摩擦轮任务撤驱，拨弹仍待机
         const Shoot_Command_t shoot_command =
             MotorTrigger_ParseShootCommand(feeder_command.mode, trigger_remote.data.sw_r);
         const bool shoot_command_published = osMessageQueueReset(task_runtime.msgq.shoot_command) == osOK &&
@@ -117,14 +117,14 @@ void Task_motor_trigger(void *argument)
 }
 
 /**
- * @brief 将已校验的拨杆命令映射为双摩擦轮运行、零速保持或撤驱命令
+ * @brief 将已校验的拨杆命令映射为双摩擦轮运行、零速制动或撤驱请求
  *
- * 下位进入运行，下位回中位持续零速闭环；上位和离线清除运行记忆
- * 中位保持不设置超时，反馈异常和模块故障继续由摩擦轮模块处理
+ * 下位进入运行，下位回中位请求零速制动；上位和离线清除运行记忆
+ * 停稳撤驱由摩擦轮任务消费已校验反馈确认，反馈异常和故障继续由模块处理
  *
  * @param[in] feeder_mode 命令解析器输出的拨弹档位，离线档包含遥控失效和非法输入
  * @param[in] right_switch 同一遥控快照的右拨杆位置，仅在有效待机档区分中位与上位
- * @return 两轮共用使能和目标，运行目标为 8000 rpm，零速保持及撤驱目标为 0 rpm
+ * @return 两轮共用使能和目标，运行目标为 8000 rpm，零速制动及撤驱目标为 0 rpm
  */
 static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode,
                                                       DR16_SwitchPosition_t right_switch)
@@ -134,7 +134,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
     {
         case MOTOR_TRIGGER_SHOOT_DISABLED:
         case MOTOR_TRIGGER_SHOOT_RUNNING:
-        case MOTOR_TRIGGER_SHOOT_HOLDING:
+        case MOTOR_TRIGGER_SHOOT_BRAKING:
             switch (feeder_mode)
             {
                 case FEEDER_CMD_RUN:
@@ -144,7 +144,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
                 case FEEDER_CMD_RELAX:
                     trigger_shoot_state = right_switch == DR16_SWITCH_MIDDLE &&
                         trigger_shoot_state != MOTOR_TRIGGER_SHOOT_DISABLED ?
-                        MOTOR_TRIGGER_SHOOT_HOLDING : MOTOR_TRIGGER_SHOOT_DISABLED;
+                        MOTOR_TRIGGER_SHOOT_BRAKING : MOTOR_TRIGGER_SHOOT_DISABLED;
                     break;
 
                 default:
@@ -158,7 +158,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
             break;
     }
 
-    // 保持阶段只把目标归零，继续使能既有速度环，由模块输出闸门处理实际电流
+    // 制动请求只把目标归零，由摩擦轮任务确认停稳并通过模块输出闸门撤驱
     const float target_rpm = trigger_shoot_state == MOTOR_TRIGGER_SHOOT_RUNNING ? MOTOR_TRIGGER_SHOOT_SPEED_RPM : 0.0f;
     const Shoot_Command_t command =
     {
