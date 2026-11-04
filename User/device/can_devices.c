@@ -103,7 +103,7 @@ static MOTOR_RM_Param_t can_devices_shoot_param[CAN_DEVICES_SHOOT_MOTOR_COUNT] =
         .can = BSP_CAN_2,
         .id = 0x205U,
         .module = MOTOR_M3508,
-        .reverse = false,
+        .reverse = true,
         .gear = false,
     },
     {
