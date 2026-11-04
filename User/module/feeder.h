@@ -13,7 +13,7 @@ extern "C"
 /*
  * 拨弹运行状态：
  * - FEEDER_RELAX：待机零输出，进给倍率为零或命令回到待机档时进入
- * - FEEDER_RUNNING：连发速度环或手动目标角串级控制运行
+ * - FEEDER_RUNNING：连发速度环或逐发角度速度串级控制运行
  * - FEEDER_OFFLINE：反馈超时或角度连续性丢失，零输出等待有效反馈后自动重新起控
  * - FEEDER_FAULT：初始化失败、配置非法、周期异常或控制量溢出，零输出锁存至命令回到待机档
  */
@@ -34,34 +34,38 @@ typedef enum
 } Feeder_CmdMode_t;
 
 /*
- * 拨弹进给模式，由 EmberProbe 直接写 feeder_fire_mode 切换，上电默认连发速度环
+ * 拨弹进给模式，由命令层根据拨杆顺序选择，上电默认连发速度环
  * 自动档为连发：只走速度环，摇杆倍率直接映射输出轴转速，角度环不参与
- * 模式 1 暂用于角度环调试：右拨杆下位使能串级控制，进入时捕获当前位置，不自动执行 45° 单发
+ * 单发档采用串级控制，每次只推进一齿，实际到位后才允许下一齿，当前八齿配置对应 45°
  */
 #define FEEDER_FIRE_MODE_AUTO (0U)
 #define FEEDER_FIRE_MODE_SINGLE (1U)
 
-// 进给模式开关，运行期写入 0 或 1 即切换，控制周期入口只读一次形成本周期快照
+// 本周期实际采用的进给模式，仅供观测，命令层为唯一选择来源
 extern volatile uint8_t feeder_fire_mode;
-// 模式 1 的输出轴目标角，单位度，右拨杆下位后由 EmberProbe 写入，每周期入口只读一次
+// 单发输出轴目标角，单位度，仅供观测，由模块捕获及逐齿推进
 extern volatile float feeder_angle_target_deg;
 
 /*
  * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改
  * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
  * speed_ratio 沿用命令层既有字段名，语义为连发归一化转速倍率，调用方保证有限且位于 [-1, 1]
- * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定；模式 1 忽略该字段
+ * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定；单发档用零值确认回中
+ * fire_mode 为已由命令层确认的连发或单发模式，取值为 FEEDER_FIRE_MODE_AUTO 或 FEEDER_FIRE_MODE_SINGLE
+ * single_fire 表示单发档右摇杆向上端部的持续请求，执行期间释放仅取消后续步骤
  */
 typedef struct
 {
     Feeder_CmdMode_t mode;
     float speed_ratio;
+    uint8_t fire_mode;
+    bool single_fire;
 } Feeder_Command_t;
 
 /*
  * 拨弹可调配置，初始化复制到实例，运行中通过 EmberProbe 修改实例副本
- * tooth_count 为一圈齿数，须为有限值且至少为 2，暂时保留给后续单发步距
- * feed_hz 为每秒进给齿数上限，须大于零且不超过采样频率，暂时保留给后续进给策略
+ * tooth_count 为一圈齿数，须为有限值且至少为 2，单发步距为 360 度除以齿数
+ * feed_hz 为单发重复时每秒进给齿数上限，须大于零且不超过采样频率，实际推进还须等待到位
  * direction 为角度递增方向，只接受 -1 或 +1；默认 -1 沿用参考工程正常拨弹方向
  * max_speed_rpm 为输出轴速度目标上限，单位 rpm
  * max_current_a 为转子电流上限，单位 A，范围 (0,10]
@@ -126,10 +130,11 @@ int8_t Feeder_Init(Feeder_t *feeder, float frequency_hz);
 void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback, bool received, uint64_t now_us);
 
 /**
- * @brief 校验周期配置，按命令档位推进状态机并按环路结构执行速度环或角度速度串级控制
+ * @brief 校验周期配置，按命令档位执行连发速度环或到位后逐发推进的串级控制
  *
- * 连发时按进给倍率直接映射输出轴转速目标；模式 1 仅在右拨杆下位时采用 EmberProbe 手动目标角
- * 模式 1 进入时捕获当前位置且不自动推进 45°，右拨杆离开下位后回到待机
+ * 单发使能及反馈恢复时捕获当前位置并等待摇杆回中，触发后固定目标推进一齿
+ * 到位须满足输出轴误差不超过 0.5 度、绝对转速不超过 1 rpm 并持续 20 毫秒，超时 1 秒锁存故障
+ * 松杆后完成当前一齿，持续请求在到位且满足发射间隔后推进下一齿，退出使能立即撤驱
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存

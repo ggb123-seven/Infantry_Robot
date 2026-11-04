@@ -14,9 +14,10 @@
 /*
  * feeder 为任务独占的拨弹观测实例，config 用于在线调参，控制历史由拨弹模块私有保存
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为连发归一化转速倍率
- * feeder.target_angle_deg 为手动目标角，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
+ * feeder.target_angle_deg 为模块持有的逐发目标，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
  * 角度连续性失效时角度观察量为非数值，帧超时后角度和转速均为非数值
- * 右拨杆下位为运行使能，连发时摇杆回中撤驱，模式 1 忽略摇杆并采用手动目标角，其余档位及失联撤驱
+ * 右拨杆下位为运行使能，随后左拨杆切上位选择单发，右摇杆向上端部请求逐发，连发仍按倍率运行
+ * trigger_command_context 保存命令层拨杆顺序和回中阶段，单发执行阶段由拨弹模块独占
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 表示上周期拨弹输出与摩擦轮命令均发布成功，失败后下一周期不提交拨弹命令
@@ -26,6 +27,7 @@ DR16_State_t trigger_remote;
 Feeder_Command_t feeder_command;
 static bool trigger_remote_valid;
 static bool trigger_output_published = true;
+static Cmd_Feeder_t trigger_command_context;
 
 /**
  * @brief 周期编排拨弹遥控、反馈控制及摩擦轮联动命令发布
@@ -69,7 +71,7 @@ void Task_motor_trigger(void *argument)
         Feeder_UpdateFeedback(&feeder, &feedback, received, now_us);
 
         // 命令层把遥控快照翻译成拨弹命令，发布失败时本周期不提交命令
-        Cmd_ParseFeeder(&trigger_remote, trigger_remote_valid, now_us, &feeder_command);
+        Cmd_ParseFeeder(&trigger_command_context, &trigger_remote, trigger_remote_valid, now_us, &feeder_command);
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;

@@ -1,0 +1,106 @@
+{
+  "date": "2026-11-04",
+  "test_kind": "host regression with real production sources",
+  "compiler_command": [
+    "gcc",
+    "-std=gnu11",
+    "-fgnu89-inline",
+    "-O0",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-IC:\\Users\\seven\\AppData\\Local\\Temp\\feeder_single_20261104_q37vliym",
+    "-IF:\\RM\\Infantry_Robot\\User",
+    "C:\\Users\\seven\\AppData\\Local\\Temp\\feeder_single_20261104_q37vliym\\test.c",
+    "F:\\RM\\Infantry_Robot\\User\\module\\cmd.c",
+    "F:\\RM\\Infantry_Robot\\User\\module\\feeder.c",
+    "F:\\RM\\Infantry_Robot\\User\\module\\config.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\pid.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\filter.c",
+    "F:\\RM\\Infantry_Robot\\User\\component\\user_math.c",
+    "-lm",
+    "-o",
+    "C:\\Users\\seven\\AppData\\Local\\Temp\\feeder_single_20261104_q37vliym\\regression.exe"
+  ],
+  "compiler_returncode": 0,
+  "compiler_diagnostics": "",
+  "returncode": 0,
+  "cases": [
+    "reversed_or_simultaneous_switch_order_stays_auto_and_requires_center",
+    "ordered_switches_enter_single_without_firing_until_center",
+    "upward_endpoint_95_percent_and_reverse_not_single_trigger",
+    "single_exit_requires_center_then_preserves_auto_bidirectional_ratio",
+    "right_switch_stop_and_illegal_position_clear_sequence",
+    "remote_offline_stale_future_missing_and_invalid_context_safe",
+    "held_request_cannot_accumulate_targets_before_completion",
+    "passing_target_at_speed_does_not_complete",
+    "stability_requires_continuous_angle_and_speed_conditions",
+    "short_push_finishes_current_step_and_does_not_repeat",
+    "completion_does_not_bypass_start_interval",
+    "release_and_repush_cannot_bypass_half_second_interval",
+    "blocked_step_times_out_and_fault_latches_until_relax",
+    "both_directions_cross_zero_by_one_tooth",
+    "angle_loss_recaptures_and_requires_center_before_new_step",
+    "feedback_timeout_cancels_unfinished_step",
+    "missing_command_cancels_step_without_auto_restart",
+    "config_period_and_invalid_public_state_use_output_gate",
+    "auto_bidirectional_speed_preserves_angle_independent_feedback",
+    "feedback_low32_timestamp_wrap_is_valid",
+    "both_sides_angle_window_and_inclusive_one_rpm_limit",
+    "exact_plus_minus_half_degree_predicate_is_inclusive",
+    "mode_and_target_observations_cannot_override_command_source",
+    "online_pid_changes_cannot_reset_step_timeout",
+    "real_command_to_control_chain_repeats_16_steps_and_stops"
+  ],
+  "stdout": "PASS reversed_or_simultaneous_switch_order_stays_auto_and_requires_center\nPASS ordered_switches_enter_single_without_firing_until_center\nPASS upward_endpoint_95_percent_and_reverse_not_single_trigger\nPASS single_exit_requires_center_then_preserves_auto_bidirectional_ratio\nPASS right_switch_stop_and_illegal_position_clear_sequence\nPASS remote_offline_stale_future_missing_and_invalid_context_safe\nPASS held_request_cannot_accumulate_targets_before_completion\nPASS passing_target_at_speed_does_not_complete\nPASS stability_requires_continuous_angle_and_speed_conditions\nPASS short_push_finishes_current_step_and_does_not_repeat\nPASS completion_does_not_bypass_start_interval\nPASS release_and_repush_cannot_bypass_half_second_interval\nPASS blocked_step_times_out_and_fault_latches_until_relax\nPASS both_directions_cross_zero_by_one_tooth\nPASS angle_loss_recaptures_and_requires_center_before_new_step\nPASS feedback_timeout_cancels_unfinished_step\nPASS missing_command_cancels_step_without_auto_restart\nPASS config_period_and_invalid_public_state_use_output_gate\nPASS auto_bidirectional_speed_preserves_angle_independent_feedback\nPASS feedback_low32_timestamp_wrap_is_valid\nPASS both_sides_angle_window_and_inclusive_one_rpm_limit\nPASS exact_plus_minus_half_degree_predicate_is_inclusive\nPASS mode_and_target_observations_cannot_override_command_source\nPASS online_pid_changes_cannot_reset_step_timeout\nPASS real_command_to_control_chain_repeats_16_steps_and_stops\nTOTAL 25 cases\n",
+  "stderr": "",
+  "feedback": "synthetic output-shaft angle and rpm, no motor dynamics model",
+  "stub": "only bsp/can.h replaced by BSP_CAN_t enum; real motor feedback definitions retained",
+  "boundary_case_note": "exact +/-0.5 degree predicate case overrides the public converted degree observation after feedback conversion to avoid representational rounding; other tests inject radian feedback",
+  "temporary_directory_cleanup": "TemporaryDirectory context removes test source, BSP header and executable on exit",
+  "source_sha256": {
+    "User/module/cmd.c": "35732eaa644876848389310e1aad04948bb8d1c0ffeccecc1b8c552a2d24ec3d",
+    "User/module/cmd.h": "973a09801dbc7c53cd45ccac544f5d6327343530de488e1590fde3974e53a1ab",
+    "User/module/feeder.c": "5d70dda8546bd24b15378c81308db6c9ffc9e5467dc5605c4bbd8a2c539b4eda",
+    "User/module/feeder.h": "3ab13ca25b091e5382233f12436ff02f8eace09adb8394d0dad90043ba8e0c19",
+    "User/task/motor_trigger.c": "517b0fee945f1cf282b5377d0349318e4545099e219c4dc498cdb23a6e4110da",
+    "User/task/motor_trigger.h": "2e2e86f6e9c3d0fb886d25cd248695f638240d54c5a961320cbb1f5863e2fa6c"
+  },
+  "firmware": {
+    "path": "build/Debug/Infantry_Robot.elf",
+    "sha256": "496fa06f97b9ca5f0422f9af4bdda2f6cdeea8940c7aa1120ce2104afbea7acd",
+    "size_output": "   text\t   data\t    bss\t    dec\t    hex\tfilename\n 126548\t    184\t  46952\t 173684\t  2a674\tF:\\RM\\Infantry_Robot\\build\\Debug\\Infantry_Robot.elf\n"
+  },
+  "mechanical_gates": {
+    "command": "python .auto-embedded/scripts/check.py",
+    "environment_override": "PSExecutionPolicyPreference=Bypass for this process only",
+    "returncode": 0,
+    "stdout": "== ARCH : PASS ==\n== HW : PASS ==\n== SPEC : PASS ==\n\n==> ALL PASS\n",
+    "stderr": "",
+    "arch_detail_stdout": "",
+    "arch_detail_stderr": "==> embedded-dev arch-check / PowerShell (project root: F:\\RM\\Infantry_Robot)\n\n>>> [1/7] app layer vendor / catch-all includes\n>>> [2/7] main.c-like custom top-level call count\n>>> [3/7] ISR / callback body length\n>>> [4/7] app layer extern variables\n>>> [5/7] .c file length\n>>> [6/7] .h public API count\n>>> [7/7] mega-header detection (global)\n[HINT-7] ./Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f4xx.h:1 - mega-header 含 24 个 #include（libraries/ 内，仅提示）\n[HINT-7] ./Drivers/CMSIS/DSP/DSP_Lib_TestSuite/Common/JTest/inc/jtest_systick.h:1 - mega-header 含 17 个 #include（libraries/ 内，仅提示）\n[HINT-7] ./Middlewares/Third_Party/FreeRTOS/Source/include/deprecated_definitions.h:1 - mega-header 含 57 个 #include（libraries/ 内，仅提示）\n>>> [8/8] hw_lock conflict detection (硬件资源表.md)\n[HINT-8] 未找到 硬件资源表.md / hw-resources.md，跳过 hw_lock 检测\n\n==> PASS: 0 violations\n"
+  },
+  "strict_arm_syntax": {
+    "sources": [
+      "cmd.c",
+      "feeder.c",
+      "motor_trigger.c"
+    ],
+    "additional_flags": [
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only"
+    ],
+    "returncode": 0
+  },
+  "config_unchanged": true,
+  "friction_command_and_publication_unchanged": true,
+  "limitations": [
+    "No target flash, reset, RAM write or live hardware test",
+    "Synthetic feedback does not model motor dynamics, projectile or load",
+    "Hardware resource table absent; arch-check skips hardware table conflict subcheck"
+  ],
+  "temporary_runner_removed": true,
+  "temporary_test_files_remaining": []
+}

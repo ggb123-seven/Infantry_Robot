@@ -12,6 +12,7 @@
  * - 云台两轴方向取 -1，满杆角速度 6 rad/s，加减速上限 60000 度每平方秒
  * - 平滑时间常数 4 毫秒，误差在 0.1 度每秒内且满足变化上限时直接收敛
  * - 周期合法范围 (0, 0.1] 秒，度转弧度系数保留原任务精度
+ * - 拨弹单发向上端部为右摇杆归一化值不大于 -0.95，沿用既有向上为负的通道约定
  */
 #define CMD_CHANNEL_LIMIT (660.0f)
 #define CMD_DEADZONE (0.05f)
@@ -25,6 +26,7 @@
 #define CMD_GIMBAL_SETTLE_DEG_S (0.1f)
 #define CMD_GIMBAL_MAX_PERIOD_S (0.1f)
 #define CMD_DEG_TO_RAD (0.0174532925199f)
+#define CMD_FEEDER_SINGLE_UP_RATIO (-0.95f)
 
 /**
  * @brief 将原始通道计数限幅归一化并去除中心死区
@@ -124,15 +126,17 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 /**
  * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
  *
- * 右拨杆下位为运行，右摇杆上下双向线性映射，上位和中位为待机并允许人工解除故障
+ * 右拨杆下位后观测左拨杆切上位才选择单发，启动和模式切换须先回中
  *
+ * @param[in,out] ctx 拨弹任务独占命令上下文，调用方保证非空且初始为零
  * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
  * @param[in] now_us 读取快照后的当前时间，单位微秒
  * @param[out] out 拨弹命令，调用方保证非空
  * @return 遥控快照在线且时效有效时返回 true，否则返回 false
  */
-bool Cmd_ParseFeeder(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Feeder_Command_t *out)
+bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
+                     Feeder_Command_t *out)
 {
     // 默认离线档，失效遥控和非法档位都不得沿用上一周期的速度比例
     *out = (Feeder_Command_t)
@@ -142,21 +146,111 @@ bool Cmd_ParseFeeder(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Fee
     if (!rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
         now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
     {
+        ctx->state = CMD_FEEDER_DISABLED;
         return false;
     }
 
-    // 下位运行并读取右摇杆，上位和中位撤驱但保留人工解除故障的途径
+    // 右拨杆独立决定运行使能，退出运行立即取消顺序记忆并保留待机解除故障的途径
     switch (rc->data.sw_r)
     {
         case DR16_SWITCH_DOWN:
             out->mode = FEEDER_CMD_RUN;
-            // 摇杆居中为零，推到底为 +1、推到头为 -1，双向线性映射到速度上限
-            out->speed_ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
             break;
 
         case DR16_SWITCH_UP:
         case DR16_SWITCH_MIDDLE:
             out->mode = FEEDER_CMD_RELAX;
+            ctx->state = CMD_FEEDER_DISABLED;
+            return true;
+
+        default:
+            ctx->state = CMD_FEEDER_DISABLED;
+            return false;
+    }
+
+    // 仅根据实际观测到的先后状态确认顺序，同一快照中的两个拨杆组合不能证明动作先后
+    const float ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
+    const bool centered = ratio == 0.0f;
+    const bool left_up = rc->data.sw_l == DR16_SWITCH_UP;
+    switch (ctx->state)
+    {
+        case CMD_FEEDER_DISABLED:
+            ctx->state = left_up ? CMD_FEEDER_AUTO_WAIT_CENTER : CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+            break;
+
+        case CMD_FEEDER_AUTO_WAIT_CENTER:
+            if (!left_up)
+            {
+                ctx->state = centered ? CMD_FEEDER_AUTO_ARMED : CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+            }
+            else if (centered)
+            {
+                ctx->state = CMD_FEEDER_AUTO_READY;
+            }
+            break;
+
+        case CMD_FEEDER_AUTO_WAIT_CENTER_ARMED:
+            if (left_up)
+            {
+                ctx->state = CMD_FEEDER_SINGLE_WAIT_CENTER;
+            }
+            else if (centered)
+            {
+                ctx->state = CMD_FEEDER_AUTO_ARMED;
+            }
+            break;
+
+        case CMD_FEEDER_AUTO_READY:
+            if (!left_up)
+            {
+                ctx->state = CMD_FEEDER_AUTO_ARMED;
+            }
+            break;
+
+        case CMD_FEEDER_AUTO_ARMED:
+            if (left_up)
+            {
+                ctx->state = CMD_FEEDER_SINGLE_WAIT_CENTER;
+            }
+            break;
+
+        case CMD_FEEDER_SINGLE_WAIT_CENTER:
+            if (!left_up)
+            {
+                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+            }
+            else if (centered)
+            {
+                ctx->state = CMD_FEEDER_SINGLE_READY;
+            }
+            break;
+
+        case CMD_FEEDER_SINGLE_READY:
+            if (!left_up)
+            {
+                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+            }
+            break;
+
+        default:
+            ctx->state = CMD_FEEDER_DISABLED;
+            out->mode = FEEDER_CMD_OFFLINE;
+            return false;
+    }
+
+    // 模式选择和持续请求只在命令层生成，摩擦轮使能仍由右拨杆运行档独立决定
+    switch (ctx->state)
+    {
+        case CMD_FEEDER_AUTO_READY:
+        case CMD_FEEDER_AUTO_ARMED:
+            out->speed_ratio = ratio;
+            break;
+
+        case CMD_FEEDER_SINGLE_WAIT_CENTER:
+        case CMD_FEEDER_SINGLE_READY:
+            out->fire_mode = FEEDER_FIRE_MODE_SINGLE;
+            out->speed_ratio = ratio;
+            out->single_fire = ctx->state == CMD_FEEDER_SINGLE_READY && ratio <= CMD_FEEDER_SINGLE_UP_RATIO;
             break;
 
         default:
