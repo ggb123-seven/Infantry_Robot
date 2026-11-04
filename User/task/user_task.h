@@ -125,8 +125,9 @@ typedef enum
  *   元素为 MOTOR_RM_Feedback_t，转子速度单位 rpm，源时间单位微秒
  * - msgq.trigger_feedback：CAN 任务到拨弹任务的最新反馈邮箱，元素为 MOTOR_RM_Feedback_t
  *   转速为 36:1 减速后的输出轴 rpm，源时间单位微秒
- * - msgq.shoot_command：摩擦轮连续速度命令邮箱，元素为 Shoot_Command_t，由拨弹任务按 FEEDER_RUNNING 状态发布
- *   两轮目标转速均为 8000 rpm，容量为 1，每个控制周期缺少新命令时失能
+ * - msgq.shoot_command：摩擦轮连续速度命令邮箱，元素为 Shoot_Command_t，由拨弹任务按已校验的遥控档位发布
+ *   下位两轮目标为 8000 rpm，下位回中位持续使能并保持 0 rpm，上位或遥控失效撤驱
+ *   上电即在中位不使能，容量为 1，每个控制周期缺少新命令时失能
  * - msgq.trigger_command：沿用既有句柄的拨弹遥控快照邮箱，元素改为 DR16_State_t，容量为 1
  *   DR16 任务发布，拨弹任务缓存，模块根据源时间检查 100 ms 遥控时效，不再传递速度命令
  * - msgq.shoot_output、trigger_output：两个控制任务到 CAN 任务的最新电流邮箱，元素为 Shoot_Output_t、Trigger_Output_t
