@@ -11,8 +11,8 @@ extern "C"
 #include "device/motor_rm.h"
 
 /*
- * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册两路 GM6020、两路 M3508 和一路 M2006
- * 云台索引 0、1 分别对应 ID5 yaw 和 ID6 pitch，反馈标准帧为 0x209、0x20A
+ * CAN 设备聚合参数：CAN1 注册四路 M3508 和 yaw GM6020，CAN2 注册 pitch GM6020、两路 M3508 和一路 M2006
+ * 云台索引 0、1 分别对应 CAN1 ID5 yaw 和 CAN2 ID6 pitch，反馈标准帧为 0x209、0x20A
  * 发射索引 0、1、2 分别对应摩擦轮 ID5、ID6 与拨弹 ID7，反馈为 0x205、0x206、0x207
  */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
@@ -124,11 +124,11 @@ int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_S
 int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedback);
 
 /**
- * @brief 分别写入 yaw 和 pitch 电流，统一发送一次 0x2FE 帧
+ * @brief 分别写入 yaw 和 pitch 电流，并按各自总线发送 0x2FE 帧
  *
  * @param[in] yaw_current_a yaw 转子侧电流，单位 A，传入零表示停机，非有限值按零处理
  * @param[in] pitch_current_a pitch 转子侧电流，单位 A，传入零表示停机，非有限值按零处理
- * @return 两路缓存更新且发送成功返回 CAN_DEVICES_OK，非法输入、设备不可用或发送失败返回错误码
+ * @return 两路缓存更新且各自总线发送成功返回 CAN_DEVICES_OK，非法输入、设备不可用或发送失败返回错误码
  */
 int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a);
 
