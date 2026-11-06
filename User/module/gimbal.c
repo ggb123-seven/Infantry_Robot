@@ -21,8 +21,8 @@
 /*
  * 本分支首次滑模试验的参考约束：速度 60 度每秒，加速度 180 度每平方秒
  * 参考追踪增益 5 每秒用于平滑绝对目标跳变，均为未上板试验值，不修改原默认配置
- * 滑模参数 C=5、K=10 每秒，q/p=21/27，近零过渡尺度 1 度
- * J=0.001 安培乘平方秒每度，趋近项 0.5 度每平方秒，候选电流上限 0.5 安培
+ * 滑模参数 C=5、K=10，q/p=21/27，近零过渡尺度 1 度
+ * 速度目标上限 60 度每秒，滑模面连续边界宽度 0.5 度每秒
  * 单云台任务独占配置快照和运行上下文
  */
 #define GIMBAL_SMC_MAX_SPEED_DEG_S (60.0f)
@@ -34,9 +34,8 @@ volatile SMC_t gimbal_yaw_smc_config =
     .C = 5.0f, .K = 10.0f,
     .error_eps = 1.0f,
     .q = 21.0f, .p = 27.0f,
-    .u_max = 0.5f,
-    .J = 0.001f,
-    .epsilon = 0.5f,
+    .speed_max_deg_s = GIMBAL_SMC_MAX_SPEED_DEG_S,
+    .surface_eps_deg_s = 0.5f,
 };
 SMC_t gimbal_yaw_smc;
 
@@ -85,8 +84,7 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
         return -1;
     }
     control_config = saved_config;
-    SMC_Init(&gimbal_yaw_smc, smc_config.C, smc_config.K, 0.0f, smc_config.error_eps,
-             smc_config.q, smc_config.p, smc_config.u_max, smc_config.J, smc_config.epsilon);
+    SMC_Init(&gimbal_yaw_smc, &smc_config, 0.0f);
     smc_reset = true;
     // 参数已集中校验，两轴只建立指向持久副本的 PID 实例
     if (Gimbal_InitAxis(&gimbal->yaw, &control_config.yaw, frequency_hz) != 0 ||
@@ -177,9 +175,9 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float per
         gimbal_yaw_smc.error_eps = smc_config.error_eps;
         gimbal_yaw_smc.q = smc_config.q;
         gimbal_yaw_smc.p = smc_config.p;
-        gimbal_yaw_smc.u_max = fminf(smc_config.u_max, control_config.yaw.max_current_a);
-        gimbal_yaw_smc.J = smc_config.J;
-        gimbal_yaw_smc.epsilon = smc_config.epsilon;
+        gimbal_yaw_smc.speed_max_deg_s = fminf(smc_config.speed_max_deg_s,
+                                               control_config.yaw.max_speed_rad_s * M_RAD2DEG_MULT);
+        gimbal_yaw_smc.surface_eps_deg_s = smc_config.surface_eps_deg_s;
     }
     // 两轴命令分别校验，单轴非法命令不掩盖另一轴的运行状态
     const bool yaw_valid = Gimbal_ResolveSetpoint(&gimbal->yaw, &command->yaw, mode, mode_changed, period_s);
@@ -358,6 +356,8 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
     float target_speed_rad_s = command_speed_rad_s;
+    float mechanical_min_speed_rad_s = -max_speed_rad_s;
+    float mechanical_max_speed_rad_s = max_speed_rad_s;
     const float previous_angle_integral = axis->angle_pid.i;
     bool mechanically_limited = false;
     if (angle_needed)
@@ -395,13 +395,13 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     if (config->mechanical_limit_enabled)
     {
         const float scale = M_DEG2RAD_MULT / period_s;
-        const float min_speed = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
-        const float max_speed = fmaxf(0.0f, (config->max_angle_deg - axis->mechanical_angle_deg) * scale);
+        mechanical_min_speed_rad_s = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
+        mechanical_max_speed_rad_s = fmaxf(0.0f, (config->max_angle_deg - axis->mechanical_angle_deg) * scale);
         const float requested_speed = target_speed_rad_s;
-        Clip(&target_speed_rad_s, min_speed, max_speed);
+        Clip(&target_speed_rad_s, mechanical_min_speed_rad_s, mechanical_max_speed_rad_s);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // yaw 角度模式直接产生安培电流，其他路径继续使用原速度环
+    // yaw 角度模式由滑模外环生成速度目标，随后统一进入现有速度环
     const float previous_speed_integral = axis->speed_pid.i;
     if (use_smc)
     {
@@ -414,24 +414,27 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         }
         else
         {
-            const float max_speed = fminf(GIMBAL_SMC_MAX_SPEED_DEG_S, max_speed_rad_s * M_RAD2DEG_MULT);
+            const float max_speed = gimbal_yaw_smc.speed_max_deg_s;
             SMC_AdvanceReference(&gimbal_yaw_smc, axis->target_angle_deg, target_speed_rad_s * M_RAD2DEG_MULT,
                                   max_speed, GIMBAL_SMC_MAX_ACCEL_DEG_S2, GIMBAL_SMC_REFERENCE_GAIN, period_s);
         }
         axis->target_angle_deg = gimbal_yaw_smc.target;
         axis->target_speed_rad_s = gimbal_yaw_smc.target_dot * M_DEG2RAD_MULT;
-        if (!SMC_Tick(&gimbal_yaw_smc, axis->angle_deg, axis->speed_rad_s * M_RAD2DEG_MULT,
-                      gimbal_yaw_smc.target_dot, gimbal_yaw_smc.target_ddot))
+        if (!SMC_Tick(&gimbal_yaw_smc, axis->angle_deg, axis->speed_rad_s * M_RAD2DEG_MULT))
         {
             return false;
         }
-        axis->output_current_a = gimbal_yaw_smc.u;
+        const float requested_speed_rad_s = gimbal_yaw_smc.speed_target_deg_s * M_DEG2RAD_MULT;
+        target_speed_rad_s = requested_speed_rad_s;
+        Clip(&target_speed_rad_s, mechanical_min_speed_rad_s, mechanical_max_speed_rad_s);
+        mechanically_limited = mechanically_limited || requested_speed_rad_s != target_speed_rad_s;
     }
-    else
+    axis->target_speed_rad_s = target_speed_rad_s;
+    const float current_a = PID_Calc(&axis->speed_pid, axis->target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
+    axis->output_current_a = AbsClip(current_a, config->max_current_a);
+    if (mechanically_limited && use_smc)
     {
-        axis->target_speed_rad_s = target_speed_rad_s;
-        const float current_a = PID_Calc(&axis->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
-        axis->output_current_a = AbsClip(current_a, config->max_current_a);
+        axis->speed_pid.i = previous_speed_integral;
     }
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
@@ -439,10 +442,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
          (axis->mechanical_angle_deg <= config->min_angle_deg && axis->output_current_a < 0.0f)))
     {
         axis->output_current_a = 0.0f;
-        if (!use_smc)
-        {
-            axis->speed_pid.i = previous_speed_integral;
-        }
+        axis->speed_pid.i = previous_speed_integral;
         mechanically_limited = true;
     }
     if (mechanically_limited && !use_smc)

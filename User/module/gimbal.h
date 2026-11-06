@@ -125,7 +125,7 @@ typedef struct
  * 云台控制模式，由命令统一指定两轴：
  * - GIMBAL_MODE_RELAX：两轴零电流，同时解除故障锁存
  * - GIMBAL_MODE_SPEED：只运行速度环，用于单独整定速度环参数
- * - GIMBAL_MODE_ANGLE：yaw 使用滑模直接输出电流，pitch 使用角度与速度串级控制
+ * - GIMBAL_MODE_ANGLE：yaw 使用滑模角度外环和速度 PID 内环，pitch 保持原串级 PID
  */
 typedef enum
 {
@@ -317,11 +317,11 @@ typedef struct
 } Gimbal_Output_t;
 
 /*
- * 单云台实例的滑模调参与观测，复用原有结构体，不改变字段布局
- * gimbal_yaw_smc_config 只允许修改 C、K、error_eps、q、p、u_max、J、epsilon 参数字段
- * Control 每周期复制参数并校验，运行计算仅使用 gimbal_yaw_smc，后者只供观测
- * target、target_dot、target_ddot 为内部参考角度、速度和加速度，单位度、度每秒、度每平方秒
- * u 为滑模候选电流，单位安培，机械边界与输出闸门处理后的实际值观察 gimbal.yaw.output_current_a
+ * yaw 角度模式由滑模外环生成速度目标，再由现有速度 PID 输出电流；pitch 保持原 PID 控制
+ * 在线调参只修改 C、K、error_eps、q、p、speed_max_deg_s、surface_eps_deg_s 参数字段
+ * Control 每周期复制并校验参数，运行计算只读取 gimbal_yaw_smc，后者供状态观测
+ * target、target_dot、target_ddot 分别为内部参考角度、速度和加速度，单位 deg、deg/s、deg/s²
+ * speed_target_deg_s 为滑模输出速度目标，单位 deg/s；最终电流观察 gimbal.yaw.output_current_a
  */
 extern volatile SMC_t gimbal_yaw_smc_config;
 extern SMC_t gimbal_yaw_smc;
