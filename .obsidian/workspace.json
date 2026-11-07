@@ -4,20 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "f35a408bfb6ea399",
+        "id": "3944525c263e09b0",
         "type": "tabs",
         "children": [
           {
-            "id": "06eb9e2028014246",
+            "id": "29f0400ad7a5697c",
             "type": "leaf",
             "state": {
-              "type": "bases",
+              "type": "markdown",
               "state": {
-                "file": "未命名.base",
-                "viewName": "表格"
+                "file": "2026-11-06.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-table",
-              "title": "未命名"
+              "icon": "lucide-file",
+              "title": "2026-11-06"
             }
           }
         ]
@@ -185,8 +186,15 @@
       "bases:新建数据库": false
     }
   },
-  "active": "06eb9e2028014246",
+  "active": "29f0400ad7a5697c",
   "lastOpenFiles": [
+    "2026-11-05.md",
+    "2026-11-06.md",
+    "未命名 1.md",
+    "未命名.canvas",
+    "docs/workflows/2026-07/11_reflection_feature_cmsis_rtos_v2.md",
+    "未命名 1.base",
+    "未命名.md",
     "未命名.base",
     "2026-10-29.md"
   ]
