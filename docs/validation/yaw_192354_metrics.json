@@ -1,0 +1,351 @@
+{
+  "source": "data/emberprobe-live-20261107-192354.csv",
+  "sha256": "bcde4158da6321e47196b48cdd9e98c1f71d46540919b4a8a115c9413035558b",
+  "rows": 85942,
+  "duration_s": 690.6531090736389,
+  "sample_dt_median_s": 0.0075838565826416016,
+  "max_gap_s": 16.531329870224,
+  "remote_command_missing_rows": 78472,
+  "remote_available_from_s": 630.3355729579926,
+  "parameters": {
+    "gimbal.config.yaw.enabled": [
+      1.0
+    ],
+    "gimbal.config.yaw.reversed": [
+      0.0
+    ],
+    "gimbal.config.yaw.mechanical_limit_enabled": [
+      0.0
+    ],
+    "gimbal.config.yaw.zero_encoder_deg": [
+      97.07520294189453
+    ],
+    "gimbal.config.yaw.min_angle_deg": [
+      0.0
+    ],
+    "gimbal.config.yaw.max_angle_deg": [
+      360.0
+    ],
+    "gimbal.config.yaw.max_speed_rad_s": [
+      33.51032257080078
+    ],
+    "gimbal.config.yaw.max_current_a": [
+      0.5
+    ],
+    "gimbal.config.yaw.angle_pid.k": [
+      1.0
+    ],
+    "gimbal.config.yaw.angle_pid.p": [
+      15.0
+    ],
+    "gimbal.config.yaw.angle_pid.i": [
+      0.0
+    ],
+    "gimbal.config.yaw.angle_pid.d": [
+      0.0
+    ],
+    "gimbal.config.yaw.angle_pid.i_limit": [
+      1.0
+    ],
+    "gimbal.config.yaw.angle_pid.out_limit": [
+      33.51032257080078
+    ],
+    "gimbal.config.yaw.angle_pid.d_cutoff_freq": [
+      0.0
+    ],
+    "gimbal.config.yaw.angle_pid.range": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.k": [
+      1.0
+    ],
+    "gimbal.config.yaw.speed_pid.p": [
+      0.05999999865889549
+    ],
+    "gimbal.config.yaw.speed_pid.i": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.d": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.i_limit": [
+      2.8248586654663086
+    ],
+    "gimbal.config.yaw.speed_pid.out_limit": [
+      0.5
+    ],
+    "gimbal.config.yaw.speed_pid.d_cutoff_freq": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.range": [
+      0.0
+    ]
+  },
+  "windows": [
+    {
+      "relative_start_s": 36.00741100311279,
+      "relative_end_s": 44.99889898300171,
+      "start_cst": "2026-11-07T19:12:58.644928+08:00",
+      "end_cst": "2026-11-07T19:13:07.636416+08:00",
+      "rows": 1171,
+      "stats": {
+        "target_angle_deg": {
+          "min": -0.2141674906015396,
+          "max": -0.2141674906015396,
+          "mean": -0.2141674906015396
+        },
+        "angle_deg": {
+          "min": -0.24409322440624237,
+          "max": -0.13995665311813354,
+          "mean": -0.19646314599644313
+        },
+        "encoder_deg": {
+          "min": 65.302734375,
+          "max": 65.3466796875,
+          "mean": 65.30344740739753
+        },
+        "target_speed_rad_s": {
+          "min": -0.019428353756666183,
+          "max": 0.007834536954760551,
+          "mean": -0.004634510826742567
+        },
+        "speed_rad_s": {
+          "min": -0.039506517350673676,
+          "max": 0.03312992304563522,
+          "mean": 0.0003893999459154754
+        },
+        "motor_speed_rad_s": {
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0
+        },
+        "output_current_a": {
+          "min": -0.0030287529807537794,
+          "max": 0.0021358709782361984,
+          "mean": -0.00029831138170108637
+        }
+      },
+      "remote_valid_rows": 0,
+      "remote_nonzero_rows": 0,
+      "current_equation_abs_residual_quantiles_50_95_99_max": [
+        1.3969838632242604e-11,
+        8.847564456244961e-11,
+        0.000413133301772169,
+        0.0029855479579418897
+      ]
+    },
+    {
+      "relative_start_s": 98.1015191078186,
+      "relative_end_s": 111.9447410106659,
+      "start_cst": "2026-11-07T19:14:00.739036+08:00",
+      "end_cst": "2026-11-07T19:14:14.582258+08:00",
+      "rows": 1798,
+      "stats": {
+        "target_angle_deg": {
+          "min": -197.602783203125,
+          "max": -197.602783203125,
+          "mean": -197.602783203125
+        },
+        "angle_deg": {
+          "min": -206.9996337890625,
+          "max": -206.8696746826172,
+          "mean": -206.94187885662075
+        },
+        "encoder_deg": {
+          "min": 218.58399963378906,
+          "max": 218.62794494628906,
+          "mean": 218.60157287054517
+        },
+        "target_speed_rad_s": {
+          "min": 2.42606520652771,
+          "max": 2.460089921951294,
+          "mean": 2.4449693997524204
+        },
+        "speed_rad_s": {
+          "min": -0.036959514021873474,
+          "max": 0.034468863159418106,
+          "mean": -0.0004348441666191303
+        },
+        "motor_speed_rad_s": {
+          "min": -0.10471975803375244,
+          "max": 0.0,
+          "mean": -5.8242357082176e-05
+        },
+        "output_current_a": {
+          "min": 0.1441553831100464,
+          "max": 0.1491474062204361,
+          "mean": 0.14672081843764417
+        }
+      },
+      "remote_valid_rows": 0,
+      "remote_nonzero_rows": 0,
+      "current_equation_abs_residual_quantiles_50_95_99_max": [
+        4.91738319507995e-09,
+        1.4270655805670438e-08,
+        5.568603668361445e-05,
+        0.0024691134039312446
+      ]
+    },
+    {
+      "relative_start_s": 430.00534892082214,
+      "relative_end_s": 528.9948790073395,
+      "start_cst": "2026-11-07T19:19:32.642866+08:00",
+      "end_cst": "2026-11-07T19:21:11.632396+08:00",
+      "rows": 12862,
+      "stats": {
+        "target_angle_deg": {
+          "min": 23.02605628967285,
+          "max": 23.02605628967285,
+          "mean": 23.02605628967285
+        },
+        "angle_deg": {
+          "min": 30.51789665222168,
+          "max": 31.42035675048828,
+          "mean": 30.920694536711228
+        },
+        "encoder_deg": {
+          "min": 37.3974609375,
+          "max": 37.4853515625,
+          "mean": 37.435304063083116
+        },
+        "target_speed_rad_s": {
+          "min": -2.197622299194336,
+          "max": -1.9613590240478516,
+          "mean": -2.0668112931179605
+        },
+        "speed_rad_s": {
+          "min": -0.04683965444564819,
+          "max": 0.04502645134925842,
+          "mean": 0.00014762058426057406
+        },
+        "motor_speed_rad_s": {
+          "min": -0.10471975803375244,
+          "max": 0.0,
+          "mean": -7.327614852307355e-05
+        },
+        "output_current_a": {
+          "min": -0.1332678198814392,
+          "max": -0.11566837877035141,
+          "mean": -0.12401488819105261
+        }
+      },
+      "remote_valid_rows": 0,
+      "remote_nonzero_rows": 0,
+      "current_equation_abs_residual_quantiles_50_95_99_max": [
+        4.321336746770932e-09,
+        4.227709583938114e-05,
+        0.0014836486259475479,
+        0.0038012829795479597
+      ]
+    },
+    {
+      "relative_start_s": 630.3443989753723,
+      "relative_end_s": 679.8960289955139,
+      "start_cst": "2026-11-07T19:22:52.981916+08:00",
+      "end_cst": "2026-11-07T19:23:42.533546+08:00",
+      "rows": 6114,
+      "stats": {
+        "target_angle_deg": {
+          "min": 23.02605628967285,
+          "max": 23.02605628967285,
+          "mean": 23.02605628967285
+        },
+        "angle_deg": {
+          "min": 25.941490173339844,
+          "max": 26.273448944091797,
+          "mean": 26.097278314202995
+        },
+        "encoder_deg": {
+          "min": 34.1455078125,
+          "max": 34.1455078125,
+          "mean": 34.1455078125
+        },
+        "target_speed_rad_s": {
+          "min": -0.8501650094985962,
+          "max": -0.7632588148117065,
+          "mean": -0.8040444125800028
+        },
+        "speed_rad_s": {
+          "min": -0.041613731533288956,
+          "max": 0.035820309072732925,
+          "mean": -8.39623781505844e-05
+        },
+        "motor_speed_rad_s": {
+          "min": -0.10471975803375244,
+          "max": 0.0,
+          "mean": -5.1383590791831424e-05
+        },
+        "output_current_a": {
+          "min": -0.05299297347664833,
+          "max": -0.044211626052856445,
+          "mean": -0.04823900848544225
+        }
+      },
+      "remote_valid_rows": 6114,
+      "remote_nonzero_rows": 0,
+      "current_equation_abs_residual_quantiles_50_95_99_max": [
+        1.3969838619232178e-09,
+        4.014548193663428e-05,
+        0.0014228081334382292,
+        0.0035606134682893767
+      ]
+    },
+    {
+      "relative_start_s": 683.0076861381531,
+      "relative_end_s": 690.6531090736389,
+      "start_cst": "2026-11-07T19:23:45.645203+08:00",
+      "end_cst": "2026-11-07T19:23:53.290626+08:00",
+      "rows": 964,
+      "stats": {
+        "target_angle_deg": {
+          "min": 22.134437561035156,
+          "max": 22.134437561035156,
+          "mean": 22.134437561035156
+        },
+        "angle_deg": {
+          "min": 28.870960235595703,
+          "max": 29.013954162597656,
+          "mean": 28.93212644489969
+        },
+        "encoder_deg": {
+          "min": 36.3427734375,
+          "max": 36.4306640625,
+          "mean": 36.38927158973029
+        },
+        "target_speed_rad_s": {
+          "min": -1.8010532855987549,
+          "max": -1.763617753982544,
+          "mean": -1.7796311445255992
+        },
+        "speed_rad_s": {
+          "min": -0.03321603685617447,
+          "max": 0.036896299570798874,
+          "mean": -0.0005680431780798184
+        },
+        "motor_speed_rad_s": {
+          "min": -0.10471975803375244,
+          "max": 0.0,
+          "mean": -0.00010863045439185938
+        },
+        "output_current_a": {
+          "min": -0.1093769297003746,
+          "max": -0.10414384305477142,
+          "mean": -0.10675224292389585
+        }
+      },
+      "remote_valid_rows": 964,
+      "remote_nonzero_rows": 0,
+      "current_equation_abs_residual_quantiles_50_95_99_max": [
+        2.761371437065563e-09,
+        8.708797394341157e-09,
+        0.0010962658850476124,
+        0.0027105703949928256
+      ]
+    }
+  ],
+  "step_at_424s": {
+    "target_deg": 23.02605628967285,
+    "peak_deg": 32.68744659423828,
+    "peak_time_s": 424.53936791419983
+  }
+}
