@@ -119,10 +119,10 @@ const Chassis_Config_t chassis_config =
  * - 姿态角采用当前 INS 坐标，yaw 使用累计 Yaw，pitch 使用 Pitch，速度环反馈为对应的大地系欧拉角速度
  * - yaw 未确认线束或机械行程，关闭机械限位，原 [0°, 360°] 数值保留但不再夹住惯性角目标
  * - 速度上限依据 GM6020 使用说明 20231013 的 320 rpm 空载转速换算，约 33.51 rad/s
- * - 电流上限 0.5 A，低于手册额定电流 1.62 A，为当前调试阶段的软件保护
+ * - 两轴最终电流上限按用户指定设为 1 A，低于手册额定电流 1.62 A，为当前调试阶段的软件保护
  * - 两轴速度环 Kp=0.06；yaw 的 Ki 暂设为 0 用于跳动对照，pitch 保留 Ki=0.177
  * - 两轴角度环 Kp=15、Kd=0；yaw 的 Ki 暂设为 0，pitch 保留 Ki=0.005，积分限幅为 1.0 rad·s
- * - 两轴速度积分限幅保留 0.5/0.177，约 2.825 rad；速度和电流上限一致，参数副本独立保存
+ * - 两轴速度积分限幅与 PID 输出限幅沿用各自配置，最终电流另按 1 A 限幅，参数副本独立保存
  * - pitch 水平零点 118.08016° 取自用户实测，沿用当前 reversed=false 的编码器方向
  * - pitch 编码器机械范围按用户指定设为水平零点两侧各 60°，即 [-60°, 60°]
  * - 两轴均启用并独立输出电流，默认命令为 RELAX，上电保持零电流
@@ -141,7 +141,7 @@ const Gimbal_Config_t gimbal_config =
         .min_angle_deg = 0.0f,
         .max_angle_deg = 360.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
-        .max_current_a = 0.5f,
+        .max_current_a = 1.0f,
         .angle_pid =
         {
             .k = 1.0f,
@@ -174,7 +174,7 @@ const Gimbal_Config_t gimbal_config =
         .min_angle_deg = -60.0f,
         .max_angle_deg = 60.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
-        .max_current_a = 0.5f,
+        .max_current_a = 1.0f,
         .angle_pid =
         {
             .k = 1.0f,
