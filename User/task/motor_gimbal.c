@@ -34,6 +34,13 @@ Gimbal_Command_t gimbal_command =
 {
     .mode = GIMBAL_MODE_RELAX,
 };
+volatile bool gimbal_debug_override_enabled = false;
+volatile bool gimbal_debug_speed_loop_enabled = false;
+volatile bool gimbal_debug_angle_loop_enabled = false;
+volatile float gimbal_debug_yaw_target_speed_rad_s = 0.0f;
+volatile float gimbal_debug_pitch_target_speed_rad_s = 0.0f;
+volatile float gimbal_debug_yaw_target_angle_deg = 0.0f;
+volatile float gimbal_debug_pitch_target_angle_deg = 0.0f;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
@@ -51,6 +58,7 @@ static Cmd_Gimbal_t remote_command;
 static Gimbal_ChassisState_t chassis_state_cache;
 
 static void MotorGimbal_ApplyDR16Input(float period_s);
+static void MotorGimbal_ApplyDebugCommand(void);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 static void MotorGimbal_UpdateSineTest(float period_s);
 #endif
@@ -115,10 +123,20 @@ void Task_motor_gimbal(void *argument)
                 chassis_state_cache = GIMBAL_CHASSIS_OFFLINE;
             }
 
-            // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
+            // 遥控输入先决定是否允许使能，手动调试和正弦测试都保留失联停机
             MotorGimbal_ApplyDR16Input(period_s);
+            // 调试只替换运行命令，反馈校验、状态机和输出安全闸门仍由云台模块负责
+            MotorGimbal_ApplyDebugCommand();
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
-            MotorGimbal_UpdateSineTest(period_s);
+            // 手动调试期间复位正弦阶段，避免两种目标来源互相覆盖
+            if (!gimbal_debug_override_enabled)
+            {
+                MotorGimbal_UpdateSineTest(period_s);
+            }
+            else
+            {
+                sine_state = MOTOR_GIMBAL_SINE_IDLE;
+            }
 #endif
             // 按底盘在线及小陀螺状态执行两轴闭环与 yaw 悬空保护，再导出两轴电流
             Gimbal_Control(&gimbal, &gimbal_command, chassis_state_cache, period_s);
@@ -174,6 +192,51 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     const uint64_t now_us = BSP_TIME_Get();
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+}
+
+/**
+ * @brief 根据调试全局变量生成速度环或角度串级命令
+ *
+ * 角度环必须依赖速度内环，调试器只打开角度环时保持待机
+ *
+ * @return 无返回值
+ */
+static void MotorGimbal_ApplyDebugCommand(void)
+{
+    // 遥控命令已完成在线及拨杆顺序检查，只在获准运行时采纳调试请求
+    if (!gimbal_debug_override_enabled || gimbal_command.mode == GIMBAL_MODE_RELAX)
+    {
+        return;
+    }
+
+    // 统一选择模块已有的有限模式，速度内环关闭时不接受角度外环请求
+    Gimbal_Mode_t mode = GIMBAL_MODE_RELAX;
+    if (gimbal_debug_speed_loop_enabled)
+    {
+        mode = gimbal_debug_angle_loop_enabled ? GIMBAL_MODE_ANGLE : GIMBAL_MODE_SPEED;
+    }
+    switch (mode)
+    {
+        case GIMBAL_MODE_SPEED:
+            gimbal_command.mode = GIMBAL_MODE_SPEED;
+            gimbal_command.yaw.rate_rad_s = gimbal_debug_yaw_target_speed_rad_s;
+            gimbal_command.pitch.rate_rad_s = gimbal_debug_pitch_target_speed_rad_s;
+            break;
+
+        case GIMBAL_MODE_ANGLE:
+            gimbal_command.mode = GIMBAL_MODE_ANGLE;
+            gimbal_command.yaw.source = GIMBAL_TARGET_ABSOLUTE;
+            gimbal_command.pitch.source = GIMBAL_TARGET_ABSOLUTE;
+            gimbal_command.yaw.angle_deg = gimbal_debug_yaw_target_angle_deg;
+            gimbal_command.pitch.angle_deg = gimbal_debug_pitch_target_angle_deg;
+            gimbal_command.yaw.rate_rad_s = gimbal_command.pitch.rate_rad_s = 0.0f;
+            break;
+
+        case GIMBAL_MODE_RELAX:
+        default:
+            gimbal_command.mode = GIMBAL_MODE_RELAX;
+            break;
+    }
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
