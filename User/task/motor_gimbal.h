@@ -30,25 +30,6 @@ extern "C"
  */
 extern Gimbal_t gimbal;
 extern Gimbal_Command_t gimbal_command;
-
-/*
- * 云台闭环调试变量，调试覆盖开启后由云台任务每周期生成命令：
- * - gimbal_debug_override_enabled：true 时覆盖遥控目标，仍须右拨杆先回中再拨上，失联立即停机
- * - gimbal_debug_speed_loop_enabled：使能速度内环，目标值使用 rad/s
- * - gimbal_debug_angle_loop_enabled：使能角度外环，必须同时使能速度内环，目标值使用度
- * - 两轴目标变量均为调试器可写的全局变量，yaw 采用 INS 累计角，pitch 采用 INS 俯仰角
- * - 速度目标只在单速度环模式使用，角度串级模式前馈固定为零，手动调试期间屏蔽正弦测试
- * - 两个环都关闭或只打开角度环时输出 RELAX，避免外环没有内环承接
- * - 默认全部关闭且目标为零，切换模式前先关闭两环并设置目标，角度起控首周期捕获当前姿态
- */
-extern volatile bool gimbal_debug_override_enabled;
-extern volatile bool gimbal_debug_speed_loop_enabled;
-extern volatile bool gimbal_debug_angle_loop_enabled;
-extern volatile float gimbal_debug_yaw_target_speed_rad_s;
-extern volatile float gimbal_debug_pitch_target_speed_rad_s;
-extern volatile float gimbal_debug_yaw_target_angle_deg;
-extern volatile float gimbal_debug_pitch_target_angle_deg;
-
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 extern volatile bool gimbal_sine_test_enabled;
 extern volatile bool gimbal_sine_feedforward_enabled;
