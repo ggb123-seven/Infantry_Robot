@@ -34,6 +34,7 @@ Gimbal_Command_t gimbal_command =
 {
     .mode = GIMBAL_MODE_RELAX,
 };
+volatile bool gimbal_debug_enabled = false;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
@@ -50,7 +51,7 @@ static Cmd_Gimbal_t remote_command;
 // 底盘状态仅由本任务消费，零初始化对应离线，在线未自旋与在线小陀螺独立表示
 static Gimbal_ChassisState_t chassis_state_cache;
 
-static void MotorGimbal_ApplyDR16Input(float period_s);
+static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 static void MotorGimbal_UpdateSineTest(float period_s);
 #endif
@@ -115,13 +116,23 @@ void Task_motor_gimbal(void *argument)
                 chassis_state_cache = GIMBAL_CHASSIS_OFFLINE;
             }
 
-            // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
-            MotorGimbal_ApplyDR16Input(period_s);
+            // 每周期固定调试来源，遥控解析继续提供运行许可和失联停机
+            const bool debug_enabled = gimbal_debug_enabled;
+            MotorGimbal_ApplyDR16Input(period_s, debug_enabled);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
-            MotorGimbal_UpdateSineTest(period_s);
+            // 手动命令不被正弦覆盖，恢复遥控时正弦测试重新捕获当前中心
+            if (debug_enabled)
+            {
+                sine_state = MOTOR_GIMBAL_SINE_IDLE;
+            }
+            else
+            {
+                MotorGimbal_UpdateSineTest(period_s);
+            }
 #endif
-            // 按底盘在线及小陀螺状态执行两轴闭环与 yaw 悬空保护，再导出两轴电流
-            Gimbal_Control(&gimbal, &gimbal_command, chassis_state_cache, period_s);
+            // 从调试可写命令读取本周期快照，模块统一校验并执行闭环与保护后导出电流
+            const Gimbal_Command_t command = *(const volatile Gimbal_Command_t *)&gimbal_command;
+            Gimbal_Control(&gimbal, &command, chassis_state_cache, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
         }
 
@@ -150,12 +161,13 @@ void Task_motor_gimbal(void *argument)
 }
 
 /**
- * @brief 消费独立遥控邮箱并将右拨杆和右摇杆转换为云台角度命令
+ * @brief 消费独立遥控邮箱并在遥控目标与调试命令之间路由，保留遥控停机许可
  *
  * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
+ * @param[in] debug_enabled 本周期调试来源开关，开启时只用遥控解析结果决定是否强制待机
  * @return 无返回值
  */
-static void MotorGimbal_ApplyDR16Input(float period_s)
+static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled)
 {
     // 邮箱只更新缓存，不改写源时间，读取错误立即撤销缓存
     DR16_State_t received;
@@ -172,8 +184,21 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
 
     // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
     const uint64_t now_us = BSP_TIME_Get();
+    Gimbal_Command_t parsed_command;
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
-        now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+        now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &parsed_command);
+
+    // 遥控模式更新完整目标，调试模式只在遥控禁止运行时撤销使能及速度请求
+    if (!debug_enabled)
+    {
+        gimbal_command = parsed_command;
+    }
+    else if (parsed_command.mode == GIMBAL_MODE_RELAX)
+    {
+        gimbal_command.mode = GIMBAL_MODE_RELAX;
+        gimbal_command.yaw.rate_rad_s = 0.0f;
+        gimbal_command.pitch.rate_rad_s = 0.0f;
+    }
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
