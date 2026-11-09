@@ -1,0 +1,596 @@
+{
+  "captures": {
+    "pitch_trend": {
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794229495242.8267,
+        "size": 1954100,
+        "sha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-09T13:05:07.406Z",
+        "target": "stm32f4x.cfg"
+      },
+      "count": 60,
+      "from": "2026-11-09T13:05:46.563Z",
+      "to": "2026-11-09T13:06:02.384Z"
+    },
+    "pitch_current_trend": {
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794229495242.8267,
+        "size": 1954100,
+        "sha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-09T13:05:07.406Z",
+        "target": "stm32f4x.cfg"
+      },
+      "count": 30,
+      "from": "2026-11-09T13:07:57.161Z",
+      "to": "2026-11-09T13:08:07.848Z"
+    },
+    "pitch_current_stationary": {
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794229495242.8267,
+        "size": 1954100,
+        "sha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-09T13:05:07.406Z",
+        "target": "stm32f4x.cfg"
+      },
+      "count": 30,
+      "from": "2026-11-09T13:08:31.096Z",
+      "to": "2026-11-09T13:08:41.001Z"
+    }
+  },
+  "motorRead": {
+    "source": "active-sampling",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794229495242.8267,
+      "size": 1954100,
+      "sha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+      "flashedSha256": "944d29ec7a6794ce5ecc1c69025f92b78ef43f6cb5535101aa84ac87609b9ca8",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-09T13:05:07.406Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794229636780,
+    "values": {
+      "can_managers[1]->motor_count": {
+        "requestedName": "can_managers[1]->motor_count",
+        "value": 4,
+        "valueText": "\"\\x04\"",
+        "type": "u8",
+        "address": "0x200024DC"
+      },
+      "can_managers[1]->motors[0]->param": {
+        "requestedName": "can_managers[1]->motors[0]->param",
+        "tree": {
+          "kind": "class",
+          "typeName": "",
+          "members": [
+            {
+              "name": "can",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "",
+              "address": 536880400,
+              "value": 1,
+              "valueText": null,
+              "enumText": "BSP_CAN_2(1)"
+            },
+            {
+              "name": "id",
+              "kind": "scalar",
+              "type": "u16",
+              "typeName": "short unsigned int",
+              "address": 536880402,
+              "value": 522,
+              "valueText": null
+            },
+            {
+              "name": "module",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "",
+              "address": 536880404,
+              "value": 2,
+              "valueText": null,
+              "enumText": "MOTOR_GM6020(2)"
+            },
+            {
+              "name": "reverse",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "_Bool",
+              "address": 536880405,
+              "value": 0,
+              "valueText": null
+            },
+            {
+              "name": "gear",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "_Bool",
+              "address": 536880406,
+              "value": 0,
+              "valueText": null
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20005C68"
+      },
+      "can_managers[1]->motors[0]->feedback": {
+        "requestedName": "can_managers[1]->motors[0]->feedback",
+        "tree": {
+          "kind": "class",
+          "typeName": "",
+          "members": [
+            {
+              "name": "rotor_abs_angle",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880408,
+              "value": 3.8035054206848145,
+              "valueText": null
+            },
+            {
+              "name": "rotor_single_angle",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880412,
+              "value": 3.8035054206848145,
+              "valueText": null
+            },
+            {
+              "name": "rotor_total_angle",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880416,
+              "value": 3.8035054206848145,
+              "valueText": null
+            },
+            {
+              "name": "rotor_speed",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880420,
+              "value": 0,
+              "valueText": null
+            },
+            {
+              "name": "torque_current",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880424,
+              "value": 0.0538330078125,
+              "valueText": null
+            },
+            {
+              "name": "temp",
+              "kind": "scalar",
+              "type": "f32",
+              "typeName": "float",
+              "address": 536880428,
+              "value": 22,
+              "valueText": null
+            },
+            {
+              "name": "angle_valid",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "_Bool",
+              "address": 536880432,
+              "value": 1,
+              "valueText": null
+            },
+            {
+              "name": "angle_lost_count",
+              "kind": "scalar",
+              "type": "u32",
+              "typeName": "long unsigned int",
+              "address": 536880436,
+              "value": 0,
+              "valueText": null
+            },
+            {
+              "name": "last_update_time",
+              "kind": "scalar",
+              "type": "u32",
+              "typeName": "long unsigned int",
+              "address": 536880440,
+              "value": 129529412,
+              "valueText": null
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20005C68"
+      },
+      "can_managers[1]->motors[0]->motor.raw_feedback": {
+        "requestedName": "can_managers[1]->motors[0]->motor.raw_feedback",
+        "tree": {
+          "kind": "class",
+          "typeName": "",
+          "members": [
+            {
+              "name": "raw_angle",
+              "kind": "scalar",
+              "type": "u16",
+              "typeName": "short unsigned int",
+              "address": 536880466,
+              "value": 4958,
+              "valueText": null
+            },
+            {
+              "name": "raw_speed",
+              "kind": "scalar",
+              "type": "i16",
+              "typeName": "short int",
+              "address": 536880468,
+              "value": 0,
+              "valueText": null
+            },
+            {
+              "name": "raw_current",
+              "kind": "scalar",
+              "type": "i16",
+              "typeName": "short int",
+              "address": 536880470,
+              "value": 321,
+              "valueText": null
+            },
+            {
+              "name": "raw_temp",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "unsigned char",
+              "address": 536880472,
+              "value": 22,
+              "valueText": null
+            },
+            {
+              "name": "raw_error_code",
+              "kind": "scalar",
+              "type": "u8",
+              "typeName": "unsigned char",
+              "address": 536880473,
+              "value": 0,
+              "valueText": null
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20005C68"
+      },
+      "gimbal.pitch": {
+        "requestedName": "gimbal.pitch",
+        "tree": {
+          "name": "pitch",
+          "kind": "struct",
+          "typeName": "Gimbal_Axis_t",
+          "byteSize": 36,
+          "offset": 232,
+          "members": [
+            {
+              "name": "state",
+              "offset": 232,
+              "value": 1,
+              "valueText": null,
+              "enumText": "GIMBAL_AXIS_RUNNING(1)",
+              "type": "u8",
+              "typeName": "Gimbal_AxisState_t"
+            },
+            {
+              "name": "encoder_deg",
+              "offset": 236,
+              "value": 217.9248046875,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "mechanical_angle_deg",
+              "offset": 240,
+              "value": -21.005874633789062,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "motor_speed_rad_s",
+              "offset": 244,
+              "value": 0,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "angle_deg",
+              "offset": 248,
+              "value": -22.520978927612305,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "speed_rad_s",
+              "offset": 252,
+              "value": 0.010471182875335217,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "target_angle_deg",
+              "offset": 256,
+              "value": -21.334640502929688,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "target_speed_rad_s",
+              "offset": 260,
+              "value": 0.31058281660079956,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "output_current_a",
+              "offset": 264,
+              "value": 0.05333752930164337,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x200066EC"
+      },
+      "gimbal_command": {
+        "requestedName": "gimbal_command",
+        "tree": {
+          "kind": "struct",
+          "typeName": "Gimbal_Command_t",
+          "byteSize": 28,
+          "offset": 0,
+          "members": [
+            {
+              "name": "mode",
+              "offset": 0,
+              "value": 2,
+              "valueText": null,
+              "enumText": "GIMBAL_MODE_ANGLE(2)",
+              "type": "u8",
+              "typeName": "Gimbal_Mode_t"
+            },
+            {
+              "name": "yaw",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisCommand_t",
+              "byteSize": 12,
+              "offset": 4,
+              "members": [
+                {
+                  "name": "source",
+                  "offset": 4,
+                  "value": 0,
+                  "valueText": null,
+                  "enumText": "GIMBAL_TARGET_INCREMENT(0)",
+                  "type": "u8",
+                  "typeName": "Gimbal_TargetSource_t"
+                },
+                {
+                  "name": "rate_rad_s",
+                  "offset": 8,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_deg",
+                  "offset": 12,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                }
+              ]
+            },
+            {
+              "name": "pitch",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisCommand_t",
+              "byteSize": 12,
+              "offset": 16,
+              "members": [
+                {
+                  "name": "source",
+                  "offset": 16,
+                  "value": 0,
+                  "valueText": null,
+                  "enumText": "GIMBAL_TARGET_INCREMENT(0)",
+                  "type": "u8",
+                  "typeName": "Gimbal_TargetSource_t"
+                },
+                {
+                  "name": "rate_rad_s",
+                  "offset": 20,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_deg",
+                  "offset": 24,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20006714"
+      },
+      "gimbal_internal.pitch.speed_pid.i": {
+        "requestedName": "gimbal_internal.pitch.speed_pid.i",
+        "value": -0.7197019457817078,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000608C"
+      },
+      "gm6020_output": {
+        "requestedName": "gm6020_output",
+        "tree": {
+          "kind": "array",
+          "typeName": "int16_t[][]",
+          "byteSize": 8,
+          "offset": 0,
+          "elementType": {
+            "kind": "array",
+            "typeName": "int16_t[]",
+            "watchType": "",
+            "byteSize": 4,
+            "compositeLayout": {
+              "kind": "array",
+              "typeName": "int16_t[]",
+              "watchType": "",
+              "byteSize": 4,
+              "elementType": {
+                "typeName": "int16_t",
+                "watchType": "i16",
+                "byteSize": 2,
+                "kind": "scalar"
+              },
+              "dimensions": [
+                2
+              ],
+              "totalElements": 2
+            }
+          },
+          "dimensions": [
+            2
+          ],
+          "elements": [
+            {
+              "index": 0,
+              "kind": "array",
+              "typeName": "int16_t[]",
+              "byteSize": 4,
+              "offset": 0,
+              "elementType": {
+                "typeName": "int16_t",
+                "watchType": "i16",
+                "byteSize": 2,
+                "kind": "scalar"
+              },
+              "dimensions": [
+                2
+              ],
+              "elements": [
+                {
+                  "index": 0,
+                  "offset": 0,
+                  "value": -800,
+                  "valueText": null,
+                  "type": "i16",
+                  "typeName": "int16_t"
+                },
+                {
+                  "index": 1,
+                  "offset": 2,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "i16",
+                  "typeName": "int16_t"
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "kind": "array",
+              "typeName": "int16_t[]",
+              "byteSize": 4,
+              "offset": 4,
+              "elementType": {
+                "typeName": "int16_t",
+                "watchType": "i16",
+                "byteSize": 2,
+                "kind": "scalar"
+              },
+              "dimensions": [
+                2
+              ],
+              "elements": [
+                {
+                  "index": 0,
+                  "offset": 4,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "i16",
+                  "typeName": "int16_t"
+                },
+                {
+                  "index": 1,
+                  "offset": 6,
+                  "value": 285,
+                  "valueText": null,
+                  "type": "i16",
+                  "typeName": "int16_t"
+                }
+              ]
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20005C70"
+      }
+    }
+  }
+}
