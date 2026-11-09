@@ -11,7 +11,7 @@
 // 右拨杆下位时两只摩擦轮的转子目标转速，单位 rpm，中位制动目标为零
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
-// 撤驱、运行与零速制动请求互斥，上电撤驱；实际停稳撤驱由摩擦轮任务按反馈确认
+// 撤驱、运行与零速制动请求互斥，上电撤驱；实际撤驱由摩擦轮任务按 3 秒计时确认
 typedef enum
 {
     MOTOR_TRIGGER_SHOOT_DISABLED = 0,
@@ -94,7 +94,7 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
-        // 下位回中位持续请求零速制动，停稳后由摩擦轮任务撤驱，拨弹仍待机
+        // 下位回中位持续请求零速制动，摩擦轮任务从首次请求计时 3 秒后撤驱，拨弹仍待机
         const Shoot_Command_t shoot_command =
             MotorTrigger_ParseShootCommand(feeder_command.mode, trigger_remote.data.sw_r);
         const bool shoot_command_published = osMessageQueueReset(task_runtime.msgq.shoot_command) == osOK &&
@@ -120,7 +120,7 @@ void Task_motor_trigger(void *argument)
  * @brief 将已校验的拨杆命令映射为双摩擦轮运行、零速制动或撤驱请求
  *
  * 下位进入运行，下位回中位请求零速制动；上位和离线清除运行记忆
- * 停稳撤驱由摩擦轮任务消费已校验反馈确认，反馈异常和故障继续由模块处理
+ * 摩擦轮任务从首次零速请求计时 3 秒后撤驱，反馈异常和故障继续由模块处理
  *
  * @param[in] feeder_mode 命令解析器输出的拨弹档位，离线档包含遥控失效和非法输入
  * @param[in] right_switch 同一遥控快照的右拨杆位置，仅在有效待机档区分中位与上位
@@ -158,7 +158,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
             break;
     }
 
-    // 制动请求只把目标归零，由摩擦轮任务确认停稳并通过模块输出闸门撤驱
+    // 制动请求只把目标归零，由摩擦轮任务计时 3 秒并通过模块输出闸门撤驱
     const float target_rpm = trigger_shoot_state == MOTOR_TRIGGER_SHOOT_RUNNING ? MOTOR_TRIGGER_SHOOT_SPEED_RPM : 0.0f;
     const Shoot_Command_t command =
     {
