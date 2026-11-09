@@ -146,6 +146,14 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 底盘独占一份云台反馈，创建失败时由统一清理路径回收
+    task_runtime.init_status = TASK_INIT_CHASSIS_YAW_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.chassis_yaw_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.chassis_yaw_feedback == NULL)
+    {
+        return false;
+    }
+
     // 三路电机反馈与两个模块的命令、输出各用独立邮箱，先于消费者任务完成创建
     task_runtime.init_status = TASK_INIT_SHOOT_FRIC1_FEEDBACK_MAILBOX_FAILED;
     task_runtime.msgq.shoot_fric1_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
@@ -388,6 +396,14 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.shoot_fric1_feedback = NULL;
+    }
+    if (task_runtime.msgq.chassis_yaw_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.chassis_yaw_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.chassis_yaw_feedback = NULL;
     }
     if (task_runtime.msgq.chassis_gimbal != NULL)
     {

@@ -8,7 +8,7 @@
 /*
  * 遥控映射参数，沿用现有底盘与云台参数：
  * - 满量程 660 计数，中心死区 5%，帧龄上限使用 DR16 的 100 毫秒协议约定
- * - 底盘轮速尺度 100 rpm，左拨杆下位叠加 +0.30 的归一化自旋
+ * - 底盘轮速尺度 100 rpm，左拨杆中位跟随云台，上位待机，下位进入车体自旋
  * - 云台两轴方向取 -1，满杆角速度 6 rad/s，加减速上限 60000 度每平方秒
  * - 平滑时间常数 4 毫秒，误差在 0.1 度每秒内且满足变化上限时直接收敛
  * - 周期合法范围 (0, 0.1] 秒，度转弧度系数保留原任务精度
@@ -102,20 +102,27 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
         return false;
     }
 
-    // 两个运动档都允许平移，下位另叠加自旋，中位及非法拨杆保持零输出
+    // 中位请求云台坐标跟随，上位待机，下位沿用车体坐标自旋
     const float lateral = Cmd_NormalizeChannel(rc->data.ch_l_x, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
     const float forward = Cmd_NormalizeChannel(rc->data.ch_l_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
     switch (rc->data.sw_l)
     {
         case DR16_SWITCH_UP:
+            break;
+
+        case DR16_SWITCH_MIDDLE:
+            out->mode = CHASSIS_MODE_FOLLOW_GIMBAL;
+            out->move.vx = -forward;
+            out->move.vy = lateral;
+            break;
+
         case DR16_SWITCH_DOWN:
             out->mode = CHASSIS_MODE_INDEPENDENT;
             out->move.vx = -forward;
             out->move.vy = lateral;
-            out->move.wz = rc->data.sw_l == DR16_SWITCH_DOWN ? CMD_CHASSIS_SPIN_WZ : 0.0f;
+            out->move.wz = CMD_CHASSIS_SPIN_WZ;
             break;
 
-        case DR16_SWITCH_MIDDLE:
         case DR16_SWITCH_ERROR:
         default:
             break;

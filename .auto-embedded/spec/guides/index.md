@@ -21,3 +21,4 @@
 - [坑/gotcha] 分析云台装车响应须先核对采样中的实际增益与输出限幅：双环关闭积分后的长期静态残差不能只归因于惯量，需区分机械阻力和驱动执行；软件电流命令不能当作实际电流，缺失遥控列不能按零命令处理。
 - [约定] 云台 EmberProbe 手动调环只启用 gimbal_debug_enabled 并复用 gimbal_command；遥控先中再上提供运行许可，回中或失联清 mode 与速度，恢复后须重新写 mode。固定角度用 source=1、angle_deg 与零 rate_rad_s，最后写 mode=2；mode=1 为速度环。手动调试屏蔽正弦，PID 继续写 gimbal.config，详见 docs/validation/gimbal_emberprobe_command_20261108.md
 - [坑/gotcha] pitch 追踪先核对命令来源：gimbal_debug_enabled=false 且 source=INCREMENT 时，手写 angle_deg 不是固定角度命令。2026-11-09 只读实测捕获 RUNNING 下约 16 秒停滞，速度积分状态到 -1，但 Ki=0.177 仅提供约 -0.177 A，总电流约 -0.423 A；机械角 +21.45 度时负电流为回程，不被 +20 度最终限位阻断。CAN2 0x20A 反馈电流与发送缓存有响应，用户操作期间电机有实际运动。需分离重力、摩擦、积分上限与目标来源，禁止直接归因失联或盲目放宽限流；证据见 docs/validation/pitch_tracking_20261109.md
+- [可复用模式] 底盘跟随云台：复用 MOTOR_RM_Feedback_t 建立独立 chassis_yaw_feedback 最新值邮箱，CAN 任务分发同一有效 yaw 帧给云台和底盘；左拨杆中位进入跟随、上位待机、下位车体自旋。底盘模块用相对零点最短角差旋转平移坐标，比例增益 0.5、转向限幅 ±0.3、反馈超时 90 ms，失效本周期 RELAX。首版软件证据见 docs/validation/chassis_gimbal_follow_20261109.md，转向符号和增益仍需低速上板确认。

@@ -99,6 +99,7 @@ typedef enum
     TASK_INIT_TRIGGER_OUTPUT_MAILBOX_FAILED,
     TASK_INIT_SHOOT_THREAD_FAILED,
     TASK_INIT_TRIGGER_THREAD_FAILED,
+    TASK_INIT_CHASSIS_YAW_FEEDBACK_MAILBOX_FAILED,
 } Task_InitStatus_t;
 
 /*
@@ -121,6 +122,8 @@ typedef enum
  * - msgq.gimbal_imu：长度为 1 的同帧惯性反馈邮箱，元素为 Gimbal_ImuFeedback_t，由 INS 任务写入、云台任务读取
  * - msgq.chassis_gimbal：长度为 1 的底盘运行状态邮箱，由底盘任务写入、云台任务读取
  *   元素为 Gimbal_ChassisState_t，区分四轮离线、在线未自旋和在线小陀螺
+ * - msgq.chassis_yaw_feedback：底盘独占的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t
+ *   CAN 任务同时分发到云台和底盘，源时间为微秒，底盘不与云台争抢同一邮箱
  * - msgq.shoot_fric1_feedback、shoot_fric2_feedback：CAN 任务到摩擦轮任务的独立最新反馈邮箱
  *   元素为 MOTOR_RM_Feedback_t，转子速度单位 rpm，源时间单位微秒
  * - msgq.trigger_feedback：CAN 任务到拨弹任务的最新反馈邮箱，元素为 MOTOR_RM_Feedback_t
@@ -158,6 +161,7 @@ typedef struct
         osMessageQueueId_t gimbal_output;
         osMessageQueueId_t gimbal_imu;
         osMessageQueueId_t chassis_gimbal;
+        osMessageQueueId_t chassis_yaw_feedback;
         osMessageQueueId_t shoot_fric1_feedback;
         osMessageQueueId_t shoot_fric2_feedback;
         osMessageQueueId_t trigger_feedback;

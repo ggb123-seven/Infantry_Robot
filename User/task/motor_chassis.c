@@ -24,6 +24,9 @@ FaultDetect_Snapshot_t fault_detect_snapshot;
 static CANDevices_Snapshot_t can_feedback_cache;
 static DR16_State_t dr16_state_cache;
 static bool dr16_state_cache_valid;
+// yaw 缓存由底盘任务独占，源时间不因重复读取而刷新
+static MOTOR_RM_Feedback_t yaw_feedback_cache;
+static bool yaw_feedback_received;
 
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
@@ -64,11 +67,29 @@ void Task_motor_chassis(void *argument)
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
         Chassis_UpdateFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL);
 
+        // 独立消费 yaw 最新帧，空邮箱沿用源时间，队列错误撤销缓存
+        MOTOR_RM_Feedback_t yaw_feedback;
+        const osStatus_t yaw_status = osMessageQueueGet(task_runtime.msgq.chassis_yaw_feedback,
+                                                        &yaw_feedback, NULL, 0U);
+        if (yaw_status == osOK)
+        {
+            yaw_feedback_cache = yaw_feedback;
+            yaw_feedback_received = true;
+        }
+        else if (yaw_status != osErrorResource)
+        {
+            yaw_feedback_received = false;
+        }
+
         // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
         Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
+
+        // 模块用已标定车头零点转换跟随命令，失效反馈在模块入口阻断跟随
+        Chassis_ResolveGimbalFollow(&chassis_command, yaw_feedback_received ? &yaw_feedback_cache : NULL,
+                                     remote_time_us, gimbal_config.yaw.zero_encoder_deg, gimbal_config.yaw.reversed);
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =

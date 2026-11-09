@@ -7,6 +7,14 @@
 // 控制周期上限取自底盘重构方案，超过 100 ms 时禁止追赶计算
 #define CHASSIS_MAX_PERIOD_S (0.1F)
 
+/*
+ * 跟随参数沿用参考工程比例增益 0.5，旋转请求限制为既有小陀螺幅度 0.3
+ * 反馈时效取云台电机反馈上限 90 毫秒，角度为弧度，比例输出为归一化转向
+ */
+#define CHASSIS_FOLLOW_GAIN (0.5F)
+#define CHASSIS_FOLLOW_MAX_WZ (0.3F)
+#define CHASSIS_FOLLOW_TIMEOUT_US (90000U)
+
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
@@ -84,6 +92,47 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
 }
 
 /**
+ * @brief 解析跟随命令，反馈边界与输入约束见头文件
+ *
+ * @param[in,out] command 本周期遥控命令
+ * @param[in] feedback 最近 yaw 反馈，没有缓存时传 NULL
+ * @param[in] now_us 单调微秒时间
+ * @param[in] zero_deg 调用方保证为已标定的方向修正后编码器零点，单位度
+ * @param[in] reversed 编码器方向修正开关
+ * @return 无返回值
+ */
+void Chassis_ResolveGimbalFollow(Chassis_Command_t *command, const MOTOR_RM_Feedback_t *feedback,
+                                 uint64_t now_us, float zero_deg, bool reversed)
+{
+    // 仅跟随模式需要云台反馈，其他模式保留原始运动命令
+    if (command->mode != CHASSIS_MODE_FOLLOW_GIMBAL)
+    {
+        return;
+    }
+
+    // 最新帧可能尚未到达或已经超时，帧龄用低位无符号差处理时间戳回绕
+    const uint32_t age_us = feedback != NULL ? (uint32_t)now_us - feedback->last_update_time : UINT32_MAX;
+    if (feedback == NULL || age_us > CHASSIS_FOLLOW_TIMEOUT_US ||
+        !feedback->angle_valid || feedback->angle_lost_count != 0U ||
+        !(feedback->rotor_single_angle >= 0.0F && feedback->rotor_single_angle < M_2PI))
+    {
+        command->mode = CHASSIS_MODE_RELAX;
+        return;
+    }
+
+    // 在最短半圈内计算云台相对车头角度，并将云台坐标下的平移转到车体坐标
+    const float angle = reversed ? -feedback->rotor_single_angle : feedback->rotor_single_angle;
+    const float relative = remainderf(angle - zero_deg * M_DEG2RAD_MULT, M_2PI);
+    const float cosine = cosf(relative);
+    const float sine = sinf(relative);
+    const float vx = command->move.vx;
+    const float vy = command->move.vy;
+    command->move.vx = cosine * vx - sine * vy;
+    command->move.vy = sine * vx + cosine * vy;
+    command->move.wz = AbsClip(CHASSIS_FOLLOW_GAIN * relative, CHASSIS_FOLLOW_MAX_WZ);
+}
+
+/**
  * @brief 推进底盘模式和每轮状态机并计算电流
  *
  * @param[in,out] chassis 底盘实例
@@ -108,21 +157,31 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         Chassis_ApplyPidConfig(chassis, &snapshot);
     }
 
-    // 默认整组待机，只有合法独立命令和有效周期才能请求运动学计算
+    // 默认整组待机，只有合法运动命令和有效周期才能请求运动学计算
     Chassis_Mode_t next_mode = CHASSIS_MODE_RELAX;
     float requested_speed[CHASSIS_WHEEL_COUNT] =
     {
         0,
     };
-    if (chassis->config_valid && command != NULL &&
-        command->mode == CHASSIS_MODE_INDEPENDENT && isfinite(period_s) &&
+    if (chassis->config_valid && command != NULL && isfinite(period_s) &&
         period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S)
     {
         const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
-        if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
-            Mixer_Apply(&chassis->mixer, &command->move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
+        switch (command->mode)
         {
-            next_mode = CHASSIS_MODE_INDEPENDENT;
+            case CHASSIS_MODE_INDEPENDENT:
+            case CHASSIS_MODE_FOLLOW_GIMBAL:
+                if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
+                    Mixer_Apply(&chassis->mixer, &command->move, requested_speed,
+                                CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
+                {
+                    next_mode = command->mode;
+                }
+                break;
+
+            case CHASSIS_MODE_RELAX:
+            default:
+                break;
         }
     }
 
@@ -134,8 +193,8 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         {
             wheel->state = CHASSIS_WHEEL_RELAX;
         }
-        wheel->requested_speed_rpm = next_mode == CHASSIS_MODE_INDEPENDENT ? requested_speed[i] : 0.0F;
-        Chassis_ControlWheel(wheel, &snapshot, next_mode == CHASSIS_MODE_INDEPENDENT, period_s);
+        wheel->requested_speed_rpm = next_mode != CHASSIS_MODE_RELAX ? requested_speed[i] : 0.0F;
+        Chassis_ControlWheel(wheel, &snapshot, next_mode != CHASSIS_MODE_RELAX, period_s);
     }
     chassis->mode = next_mode;
 }
@@ -152,7 +211,8 @@ void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output)
     // 数值与限幅已在计算出口处理，最终只按运行状态决定是否向通信任务输出
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
-        output->current_a[i] = chassis->mode == CHASSIS_MODE_INDEPENDENT &&
+        output->current_a[i] = (chassis->mode == CHASSIS_MODE_INDEPENDENT ||
+            chassis->mode == CHASSIS_MODE_FOLLOW_GIMBAL) &&
             chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING ? chassis->wheel[i].output_current_a : 0.0F;
     }
 }

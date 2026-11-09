@@ -140,8 +140,20 @@ static bool CANTask_PublishSnapshot(void)
             CANDevices_UpdateShootFeedback(index - CAN_DEVICES_GIMBAL_MOTOR_COUNT, &feedback);
 
         // 各路仅发布新帧，单路无新帧或邮箱失败仍继续分发其他路
-        if (status != CAN_DEVICES_OK || osMessageQueueReset(queues[index]) != osOK ||
+        if (status != CAN_DEVICES_OK)
+        {
+            success = false;
+            continue;
+        }
+        if (osMessageQueueReset(queues[index]) != osOK ||
             osMessageQueuePut(queues[index], &feedback, 0U, 0U) != osOK)
+        {
+            success = false;
+        }
+        // 同一有效源帧另投底盘独占邮箱，云台邮箱发布失败不阻止底盘接收
+        if (index == CAN_DEVICES_GIMBAL_YAW &&
+            (osMessageQueueReset(task_runtime.msgq.chassis_yaw_feedback) != osOK ||
+             osMessageQueuePut(task_runtime.msgq.chassis_yaw_feedback, &feedback, 0U, 0U) != osOK))
         {
             success = false;
         }
