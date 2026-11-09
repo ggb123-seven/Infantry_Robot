@@ -16,6 +16,13 @@
 
 ## 底盘当前进度
 
+### 2026-11-09 底盘每轮电流边界改为 10 A
+
+- 用户要求将底盘 M3508 电流限幅设为参考工程 20 A 的一半，chassis_config.max_current_a 和 wheel_speed_pid.out_limit 均由 4 A 改为 10 A，集中说明同步更新
+- RAM 可调 config、Control 入口快照、PID 持久参数引用及 DumpOutput 闸门保持原实现；未调整速度、斜坡或 PID 增益
+- config.c ARM 严格检查、Debug 构建、格式及 ARCH/HW/SPEC 门禁通过；未新增或删除防御性检查，无临时测试文件
+- 本次未烧录、未写目标 RAM，10 A 为新固件默认值，真实电流与整车响应待上板验证；详见 docs/validation/chassis_current_limit_20261109.md
+
 ### 2026-11-09 摩擦轮回中后定时 3 秒撤驱
 
 - 用户确认取消下方正负 1 rpm、连续 20 ms 的停稳判据，改为下位回中位开始计时，0 rpm 闭环制动满 3 秒后关闭速度环

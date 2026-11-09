@@ -84,11 +84,11 @@ volatile float shoot_speed_feedforward_gain_a_per_rpm = 30000.0f * 20.0f / 16384
 const float chassis_yaw_rad_s_per_rpm = 0.03369824953f;
 
 /*
- * 底盘默认配置，沿用底盘重构方案确认的原参数：
+ * 底盘默认配置，电流边界按用户要求设为参考工程 20 A 的一半：
  * - X 型全向轮，最大输出轴转速 300 rpm，目标斜坡 200 rpm/s，换向放行阈值 10 rpm
- * - 速度反馈二阶低通 45 Hz，电流滤波 -1 表示直通，最终转子侧电流限幅 4 A
- * - 四轮共用原 ID4 速度 PID：k=1、p=0.16、i=0、d=0，积分限幅 20 rpm·s
- * - PID 输出限幅 4 A，微分滤波 20 Hz，range=0 表示线性速度误差
+ * - 速度反馈二阶低通 45 Hz，电流滤波 -1 表示直通，最终转子侧电流限幅 10 A
+ * - 四轮共用速度 PID，增益以参数表为准，输入为输出轴 rpm，积分限幅 20 rpm·s
+ * - PID 输出限幅 10 A，微分滤波 20 Hz，range=0 表示线性速度误差
  * - 布局及反馈、电流滤波截止频率仅初始化时生效，其他参数可在实例配置中在线调整
  */
 const Chassis_Config_t chassis_config =
@@ -99,7 +99,7 @@ const Chassis_Config_t chassis_config =
     .reverse_release_speed_rpm = 10.0F,
     .speed_filter_cutoff_hz = 45.0F,
     .current_filter_cutoff_hz = -1.0F,
-    .max_current_a = 4.0F,
+    .max_current_a = 10.0F,
     .wheel_speed_pid =
     {
         .k = 1.0F,
@@ -107,7 +107,7 @@ const Chassis_Config_t chassis_config =
         .i = 0.0F,
         .d = 0.0F,
         .i_limit = 20.0F,
-        .out_limit = 4.0F,
+        .out_limit = 10.0F,
         .d_cutoff_freq = 20.0F,
         .range = 0.0F,
     },
