@@ -8,6 +8,9 @@
 #define SHOOT_TIMEOUT_US (100000U)
 #define SHOOT_MAX_PERIOD_S (0.1f)
 
+// 按用户确认，每次使能内变更目标均从当前平滑目标用一秒线性过渡，失能不经过斜坡
+#define SHOOT_RAMP_DURATION_S (1.0f)
+
 // 前馈系数集中在 module/config.c 定义，本文件只通过 shoot.h 的外部声明读取
 
 static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz);
@@ -115,10 +118,10 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
 }
 
 /**
- * @brief 推进双轮状态机并执行两个独立的速度闭环
+ * @brief 推进双轮状态机，经一秒目标斜坡执行两个独立速度闭环
  *
  * @param[in,out] shoot 双摩擦轮实例
- * @param[in] command 双轮连续速度命令，空指针按失能处理
+ * @param[in] command 双轮连续速度命令，使能内变更目标经一秒过渡，失能或空指针立即撤驱
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
@@ -134,12 +137,14 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
         period_s > 0.0f && period_s <= SHOOT_MAX_PERIOD_S &&
         (!enabled || (isfinite(command->target_speed_rpm[0]) && isfinite(command->target_speed_rpm[1])));
     const Shoot_State_t previous_state = shoot->state;
+    const bool was_active = previous_state == SHOOT_RUNNING || previous_state == SHOOT_RAMPING;
 
     // 两轮共用唯一状态，单轮离线撤驱整对摩擦轮，故障须先失能解除
     switch (shoot->state)
     {
     case SHOOT_RELAX:
     case SHOOT_RUNNING:
+    case SHOOT_RAMPING:
     case SHOOT_OFFLINE:
         shoot->state = valid ? SHOOT_RELAX : SHOOT_FAULT;
         if (valid && enabled)
@@ -162,6 +167,8 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
     if (shoot->state != SHOOT_RUNNING)
     {
         memset(shoot->target_speed_rpm, 0, sizeof(shoot->target_speed_rpm));
+        memset(shoot->ramp_target_rpm, 0, sizeof(shoot->ramp_target_rpm));
+        memset(shoot->ramp_rate_rpm_s, 0, sizeof(shoot->ramp_rate_rpm_s));
         if (shoot->initialized)
         {
             for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
@@ -176,10 +183,11 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
     const bool pid_changed = memcmp(&shoot->applied_speed_pid, &snapshot.speed_pid,
                                     sizeof(shoot->applied_speed_pid)) != 0;
     shoot->applied_speed_pid = snapshot.speed_pid;
+    bool ramping = false;
     for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
     {
         KPID_t *pid = &shoot->speed_pid[index];
-        if (pid_changed || previous_state != SHOOT_RUNNING)
+        if (pid_changed || !was_active)
         {
             LowPassFilter2p_Init(&pid->dfilter, shoot->frequency_hz, snapshot.speed_pid.d_cutoff_freq);
             PID_Reset(pid);
@@ -187,9 +195,19 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
                 shoot->applied_speed_pid.k * shoot->feedback[index].rotor_speed);
         }
 
-        // 限幅后的目标保留上一周期历史，参考公式直接对目标作一阶差分，不除以控制周期
+        // 终点变更时独立重算各轮的一秒变化率，重复命令及参数同步不重新开始斜坡
         const float previous_target_rpm = shoot->target_speed_rpm[index];
-        shoot->target_speed_rpm[index] = AbsClip(command->target_speed_rpm[index], snapshot.max_speed_rpm);
+        const float requested_rpm = AbsClip(command->target_speed_rpm[index], snapshot.max_speed_rpm);
+        if (requested_rpm != shoot->ramp_target_rpm[index] || !was_active)
+        {
+            shoot->ramp_target_rpm[index] = requested_rpm;
+            shoot->ramp_rate_rpm_s[index] = fabsf(requested_rpm - previous_target_rpm) / SHOOT_RAMP_DURATION_S;
+        }
+        shoot->target_speed_rpm[index] = RampTo(previous_target_rpm, shoot->ramp_target_rpm[index],
+            shoot->ramp_rate_rpm_s[index] * period_s);
+        ramping = ramping || shoot->target_speed_rpm[index] != shoot->ramp_target_rpm[index];
+
+        // 前馈只使用斜坡后的逐周期目标差分，保持既有公式不除以控制周期
         const float feedforward_a = (shoot->target_speed_rpm[index] - previous_target_rpm) * feedforward_gain;
         const float current_a = PID_Calc(pid, shoot->target_speed_rpm[index],
             shoot->feedback[index].rotor_speed, 0.0f, period_s) + feedforward_a;
@@ -200,6 +218,12 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
             shoot->state = SHOOT_FAULT;
         }
         shoot->current_a[index] = AbsClip(current_a, snapshot.max_current_a);
+    }
+
+    // 过渡和恒速共用连续的速度环历史，计算故障优先于正常阶段完成
+    if (shoot->state != SHOOT_FAULT)
+    {
+        shoot->state = ramping ? SHOOT_RAMPING : SHOOT_RUNNING;
     }
 }
 
@@ -212,8 +236,9 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
  */
 void Shoot_DumpOutput(const Shoot_t *shoot, Shoot_Output_t *output)
 {
+    const bool active = shoot->state == SHOOT_RUNNING || shoot->state == SHOOT_RAMPING;
     for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
     {
-        output->current_a[index] = shoot->state == SHOOT_RUNNING ? shoot->current_a[index] : 0.0f;
+        output->current_a[index] = active ? shoot->current_a[index] : 0.0f;
     }
 }

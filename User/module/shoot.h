@@ -14,13 +14,14 @@ extern "C"
 // 双轮共用的一阶目标差分前馈系数，单位 A/rpm，有限且非负，写入 0 关闭前馈
 extern volatile float shoot_speed_feedforward_gain_a_per_rpm;
 
-// 双轮状态：待机、速度闭环、任一路反馈离线、故障锁存；故障恢复须先失能
+// 双轮状态：待机、恒速闭环、任一路反馈离线、故障锁存、一秒目标过渡；故障恢复须先失能
 typedef enum
 {
     SHOOT_RELAX = 0,
     SHOOT_RUNNING,
     SHOOT_OFFLINE,
     SHOOT_FAULT,
+    SHOOT_RAMPING,
 } Shoot_State_t;
 
 /*
@@ -61,7 +62,9 @@ typedef struct
  * state 为唯一业务状态，任一路反馈离线时两轮一起撤驱
  * feedback[0~1] 为最近有效反馈，速度为转子 rpm，feedback_valid 为各轮反馈时效标志
  * feedback_time_us[0~1] 为完整微秒源时间，UINT64_MAX 表示尚无反馈，超时上限为 100 ms
- * target_speed_rpm[0~1] 为限幅后的转子目标 rpm，覆盖前作为差分历史，非运行时清零
+ * target_speed_rpm[0~1] 为斜坡后的转子目标 rpm，覆盖前作为差分历史，撤驱时清零
+ * ramp_target_rpm[0~1] 为各轮限幅后的斜坡终点 rpm，终点变更后从当前目标开始一秒过渡
+ * ramp_rate_rpm_s[0~1] 为各轮本次过渡的非负变化率，单位 rpm/s，重复命令不重置斜坡
  * current_a[0~1] 为叠加前馈后的候选转子电流 A，非运行时由 DumpOutput 输出零
  * speed_pid[0~1] 保存两个独立速度控制器的积分、微分与滤波历史
  */
@@ -79,6 +82,8 @@ typedef struct
     float target_speed_rpm[SHOOT_MOTOR_COUNT];
     float current_a[SHOOT_MOTOR_COUNT];
     KPID_t speed_pid[SHOOT_MOTOR_COUNT];
+    float ramp_target_rpm[SHOOT_MOTOR_COUNT];
+    float ramp_rate_rpm_s[SHOOT_MOTOR_COUNT];
 } Shoot_t;
 
 /**
@@ -104,10 +109,10 @@ void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
                           const MOTOR_RM_Feedback_t *fric2, uint64_t now_us);
 
 /**
- * @brief 推进双轮状态机并执行两个独立的速度闭环
+ * @brief 推进双轮状态机，经一秒目标斜坡执行两个独立速度闭环
  *
  * @param[in,out] shoot 双摩擦轮实例
- * @param[in] command 双轮连续速度命令，空指针按失能处理
+ * @param[in] command 双轮连续速度命令，使能内变更目标经一秒过渡，失能或空指针立即撤驱
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
