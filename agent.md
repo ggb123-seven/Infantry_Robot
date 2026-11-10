@@ -16,6 +16,17 @@
 
 ## 底盘当前进度
 
+### 2026-11-10 四轮前馈多速度验证与调试入口
+
+- 本节是当前最新状态，下方同日正向 30 rpm 整定记录保留为历史阶段
+- 源码仅修改 User/task/motor_chassis.c、motor_chassis.h，新增 volatile 标量 chassis_debug_speed_enabled 和 chassis_debug_speed_rpm，复位均为零，无新增结构体；仅遥控解析为自旋档时接管纯旋转，停止、跟随和失联仍由原命令与模块链处理
+- Debug 构建、ARM 严格检查、31 组主机回归、格式和 ARCH/HW/SPEC 通过；实现提交 256754f。EmberProbe program/verify/reset 成功，固件 SHA-256 为 6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59
+- 架空实测双向 10/20/30/40/60/100/150 rpm 及零速，共 1760 个样本，固件全部 match。前馈系数、P=0.20、I=D=0、10 A 限流保持原值，没有修改 config.c 或 RAM config
+- 双向 20/30 rpm 已测点最大平均误差分别为 0.556/0.321 rpm；左后轮在双向 40/60/100/150 rpm 的最大平均超速分别约 1.29/2.70/6.32/11.07 rpm，固定系数不适合全速度范围通用
+- 右前轮双向 10 rpm 原始速度标准差约 4.3 rpm；零速标准差 5.66 rpm、范围约 -8.64～+8.28 rpm、电流指令峰值 1.64 A。零目标前馈为零，需独立排查低速闭环，不能仅按平均速度判断平稳
+- 结束后已通过 EmberProbe 写入并独立读回 enabled=0、speed_rpm=0，系数未改；遥控仍在下位，四轮恢复正常遥控 +30 rpm 目标，调试关闭不等同于停机
+- 详细误差表、CSV、JSON 和图见 docs/validation/chassis_feedforward_multispeed_20261110.md；后续先处理右前轮低速波动，再比较摩擦项和速度项或分段前馈。大于 150 rpm、低于 10 rpm 的非零点、落地负载及实物遥控停机时延未验收
+
 ### 2026-11-10 四轮速度前馈架空整定
 
 - 用户要求直接调试前馈，按已说明的模块修改方案接入四轮独立速度前馈，源码仅修改 User/module/chassis.c、chassis.h，所有既有结构体与 config.c 保持原样

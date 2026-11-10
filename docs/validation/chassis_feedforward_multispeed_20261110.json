@@ -1,0 +1,2326 @@
+{
+  "date": "2026-11-10",
+  "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+  "sourceCommit": "256754f",
+  "feedforward_gain_a_per_rpm": [
+    0.0137,
+    0.0231,
+    0.0097,
+    0.0092
+  ],
+  "pid": {
+    "p": 0.2,
+    "i": 0,
+    "d": 0
+  },
+  "max_current_a": 10,
+  "requested_interval_ms": 100,
+  "order_rpm": [
+    10,
+    20,
+    30,
+    60,
+    100,
+    150,
+    -10,
+    -20,
+    -30,
+    -60,
+    -100,
+    -150,
+    40,
+    -40,
+    0
+  ],
+  "total_samples": 1760,
+  "all_sample_current_peak_a": 1.7108162641525269,
+  "flash": {
+    "code": 0,
+    "verified": true,
+    "probe": "cmsis-dap.cfg",
+    "probeSerial": "332107146640",
+    "target": "stm32f4x.cfg",
+    "target_uid": "001D0035374E500820363355",
+    "mode": "full",
+    "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+    "lines": [
+      "Programming Finished",
+      "Verified OK",
+      "Resetting Target"
+    ]
+  },
+  "initial": {
+    "source": "temporary-probe",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794288440297.6223,
+      "size": 1957280,
+      "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-10T05:30:44.685Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794288656034,
+    "values": {
+      "chassis_debug_speed_enabled": {
+        "requestedName": "chassis_debug_speed_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u32",
+        "address": "0x20006580"
+      },
+      "chassis_debug_speed_rpm": {
+        "requestedName": "chassis_debug_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006584"
+      },
+      "chassis.mode": {
+        "requestedName": "chassis.mode",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200062F8"
+      },
+      "chassis.config_valid": {
+        "requestedName": "chassis.config_valid",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200062D5"
+      },
+      "chassis_speed_feedforward_gain_a_per_rpm": {
+        "requestedName": "chassis_speed_feedforward_gain_a_per_rpm",
+        "tree": {
+          "kind": "array",
+          "typeName": "float[]",
+          "byteSize": 16,
+          "offset": 0,
+          "elementType": {
+            "typeName": "float",
+            "watchType": "f32",
+            "byteSize": 4,
+            "kind": "scalar"
+          },
+          "dimensions": [
+            4
+          ],
+          "elements": [
+            {
+              "index": 0,
+              "offset": 0,
+              "value": 0.013700000010430813,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 1,
+              "offset": 4,
+              "value": 0.023099999874830246,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 2,
+              "offset": 8,
+              "value": 0.009700000286102295,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 3,
+              "offset": 12,
+              "value": 0.009200000204145908,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20000060"
+      },
+      "chassis.wheel[0].target_speed_rpm": {
+        "requestedName": "chassis.wheel[0].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000630C"
+      },
+      "chassis.wheel[1].target_speed_rpm": {
+        "requestedName": "chassis.wheel[1].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200063A0"
+      },
+      "chassis.wheel[2].target_speed_rpm": {
+        "requestedName": "chassis.wheel[2].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006434"
+      },
+      "chassis.wheel[3].target_speed_rpm": {
+        "requestedName": "chassis.wheel[3].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064C8"
+      }
+    }
+  },
+  "writes": [
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 0,
+          "previousText": null,
+          "written": 10,
+          "writtenText": null,
+          "readBack": 10,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_enabled",
+          "resolvedName": "chassis_debug_speed_enabled",
+          "address": "0x20006580",
+          "type": "u32",
+          "previous": 0,
+          "previousText": null,
+          "written": 1,
+          "writtenText": null,
+          "readBack": 1,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 10,
+          "previousText": null,
+          "written": 20,
+          "writtenText": null,
+          "readBack": 20,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 20,
+          "previousText": null,
+          "written": 30,
+          "writtenText": null,
+          "readBack": 30,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 30,
+          "previousText": null,
+          "written": 60,
+          "writtenText": null,
+          "readBack": 60,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 60,
+          "previousText": null,
+          "written": 100,
+          "writtenText": null,
+          "readBack": 100,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 100,
+          "previousText": null,
+          "written": 150,
+          "writtenText": null,
+          "readBack": 150,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 150,
+          "previousText": null,
+          "written": -10,
+          "writtenText": null,
+          "readBack": -10,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -10,
+          "previousText": null,
+          "written": -20,
+          "writtenText": null,
+          "readBack": -20,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -20,
+          "previousText": null,
+          "written": -30,
+          "writtenText": null,
+          "readBack": -30,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -30,
+          "previousText": null,
+          "written": -60,
+          "writtenText": null,
+          "readBack": -60,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -60,
+          "previousText": null,
+          "written": -100,
+          "writtenText": null,
+          "readBack": -100,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -100,
+          "previousText": null,
+          "written": -150,
+          "writtenText": null,
+          "readBack": -150,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -150,
+          "previousText": null,
+          "written": 40,
+          "writtenText": null,
+          "readBack": 40,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": 40,
+          "previousText": null,
+          "written": -40,
+          "writtenText": null,
+          "readBack": -40,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_rpm",
+          "resolvedName": "chassis_debug_speed_rpm",
+          "address": "0x20006584",
+          "type": "f32",
+          "previous": -40,
+          "previousText": null,
+          "written": 0,
+          "writtenText": null,
+          "readBack": 0,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794288440297.6223,
+        "size": 1957280,
+        "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_debug_speed_enabled",
+          "resolvedName": "chassis_debug_speed_enabled",
+          "address": "0x20006580",
+          "type": "u32",
+          "previous": 1,
+          "previousText": null,
+          "written": 0,
+          "writtenText": null,
+          "readBack": 0,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:30:44.685Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    }
+  ],
+  "final": {
+    "source": "temporary-probe",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794288440297.6223,
+      "size": 1957280,
+      "sha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "flashedSha256": "6649a5a25caf3901f78247042908612d4d35042e375f90fdae8a41e36b939e59",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-10T05:30:44.685Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794288975422,
+    "values": {
+      "chassis_debug_speed_enabled": {
+        "requestedName": "chassis_debug_speed_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u32",
+        "address": "0x20006580"
+      },
+      "chassis_debug_speed_rpm": {
+        "requestedName": "chassis_debug_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006584"
+      },
+      "chassis.mode": {
+        "requestedName": "chassis.mode",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200062F8"
+      },
+      "chassis.config_valid": {
+        "requestedName": "chassis.config_valid",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200062D5"
+      },
+      "chassis.wheel[0].state": {
+        "requestedName": "chassis.wheel[0].state",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200062FC"
+      },
+      "chassis.wheel[0].requested_speed_rpm": {
+        "requestedName": "chassis.wheel[0].requested_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006308"
+      },
+      "chassis.wheel[0].target_speed_rpm": {
+        "requestedName": "chassis.wheel[0].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000630C"
+      },
+      "chassis.wheel[0].measured_speed_rpm": {
+        "requestedName": "chassis.wheel[0].measured_speed_rpm",
+        "value": 28.432748794555664,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006300"
+      },
+      "chassis.wheel[0].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[0].filtered_speed_rpm",
+        "value": 29.611860275268555,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006304"
+      },
+      "chassis.wheel[0].output_current_a": {
+        "requestedName": "chassis.wheel[0].output_current_a",
+        "value": 0.4886283278465271,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006310"
+      },
+      "chassis.wheel[1].state": {
+        "requestedName": "chassis.wheel[1].state",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006390"
+      },
+      "chassis.wheel[1].requested_speed_rpm": {
+        "requestedName": "chassis.wheel[1].requested_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000639C"
+      },
+      "chassis.wheel[1].target_speed_rpm": {
+        "requestedName": "chassis.wheel[1].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200063A0"
+      },
+      "chassis.wheel[1].measured_speed_rpm": {
+        "requestedName": "chassis.wheel[1].measured_speed_rpm",
+        "value": 31.140628814697266,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006394"
+      },
+      "chassis.wheel[1].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[1].filtered_speed_rpm",
+        "value": 31.123943328857422,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006398"
+      },
+      "chassis.wheel[1].output_current_a": {
+        "requestedName": "chassis.wheel[1].output_current_a",
+        "value": 0.46821171045303345,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200063A4"
+      },
+      "chassis.wheel[2].state": {
+        "requestedName": "chassis.wheel[2].state",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006424"
+      },
+      "chassis.wheel[2].requested_speed_rpm": {
+        "requestedName": "chassis.wheel[2].requested_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006430"
+      },
+      "chassis.wheel[2].target_speed_rpm": {
+        "requestedName": "chassis.wheel[2].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006434"
+      },
+      "chassis.wheel[2].measured_speed_rpm": {
+        "requestedName": "chassis.wheel[2].measured_speed_rpm",
+        "value": 29.7346134185791,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006428"
+      },
+      "chassis.wheel[2].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[2].filtered_speed_rpm",
+        "value": 30.535673141479492,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000642C"
+      },
+      "chassis.wheel[2].output_current_a": {
+        "requestedName": "chassis.wheel[2].output_current_a",
+        "value": 0.18386578559875488,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006438"
+      },
+      "chassis.wheel[3].state": {
+        "requestedName": "chassis.wheel[3].state",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200064B8"
+      },
+      "chassis.wheel[3].requested_speed_rpm": {
+        "requestedName": "chassis.wheel[3].requested_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064C4"
+      },
+      "chassis.wheel[3].target_speed_rpm": {
+        "requestedName": "chassis.wheel[3].target_speed_rpm",
+        "value": 30.000001907348633,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064C8"
+      },
+      "chassis.wheel[3].measured_speed_rpm": {
+        "requestedName": "chassis.wheel[3].measured_speed_rpm",
+        "value": 31.036479949951172,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064BC"
+      },
+      "chassis.wheel[3].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[3].filtered_speed_rpm",
+        "value": 30.67281150817871,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064C0"
+      },
+      "chassis.wheel[3].output_current_a": {
+        "requestedName": "chassis.wheel[3].output_current_a",
+        "value": 0.1414380967617035,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200064CC"
+      },
+      "chassis_speed_feedforward_gain_a_per_rpm": {
+        "requestedName": "chassis_speed_feedforward_gain_a_per_rpm",
+        "tree": {
+          "kind": "array",
+          "typeName": "float[]",
+          "byteSize": 16,
+          "offset": 0,
+          "elementType": {
+            "typeName": "float",
+            "watchType": "f32",
+            "byteSize": 4,
+            "kind": "scalar"
+          },
+          "dimensions": [
+            4
+          ],
+          "elements": [
+            {
+              "index": 0,
+              "offset": 0,
+              "value": 0.013700000010430813,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 1,
+              "offset": 4,
+              "value": 0.023099999874830246,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 2,
+              "offset": 8,
+              "value": 0.009700000286102295,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "index": 3,
+              "offset": 12,
+              "value": 0.009200000204145908,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20000060"
+      },
+      "chassis.config.wheel_speed_pid.p": {
+        "requestedName": "chassis.config.wheel_speed_pid.p",
+        "value": 0.20000000298023224,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200062B8"
+      },
+      "chassis.config.max_current_a": {
+        "requestedName": "chassis.config.max_current_a",
+        "value": 10,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200062B0"
+      }
+    }
+  },
+  "metrics": [
+    {
+      "speed_rpm": 10,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.936,
+      "cadence_mean_ms": 100.38655462184875,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 103,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 9.311464614868164,
+          "error_rpm": -0.688535385131836,
+          "relative_error_pct": -6.88535385131836,
+          "std_rpm": 0.8182080910086481,
+          "rmse_rpm": 1.0693668485466818,
+          "mae_rpm": 0.9700446128845215,
+          "min_rpm": 8.019493103027344,
+          "max_rpm": 11.404343605041504,
+          "filtered_mean_rpm": 9.34748655319214,
+          "filtered_error_rpm": -0.6525134468078608,
+          "mean_current_a": 0.2670701900869608,
+          "current_peak_a": 0.5245835781097412,
+          "all_sample_current_peak_a": 0.5531524419784546
+        },
+        {
+          "index": 1,
+          "mean_rpm": 9.110977263450623,
+          "error_rpm": -0.8890227365493775,
+          "relative_error_pct": -8.890227365493775,
+          "std_rpm": 1.111812789057072,
+          "rmse_rpm": 1.4235480687397282,
+          "mae_rpm": 1.2716236162185668,
+          "min_rpm": 7.290448188781738,
+          "max_rpm": 12.081314086914062,
+          "filtered_mean_rpm": 9.139354343414306,
+          "filtered_error_rpm": -0.8606456565856941,
+          "mean_current_a": 0.4058851350098848,
+          "current_peak_a": 0.6283457279205322,
+          "all_sample_current_peak_a": 0.6283457279205322
+        },
+        {
+          "index": 2,
+          "mean_rpm": 9.584856390953064,
+          "error_rpm": -0.41514360904693604,
+          "relative_error_pct": -4.15143609046936,
+          "std_rpm": 1.5259167858048917,
+          "rmse_rpm": 1.5813811220998093,
+          "mae_rpm": 1.3189307069778442,
+          "min_rpm": 6.9259257316589355,
+          "max_rpm": 13.487329483032227,
+          "filtered_mean_rpm": 9.283300647735595,
+          "filtered_error_rpm": -0.7166993522644045,
+          "mean_current_a": 0.2425311690196395,
+          "current_peak_a": 0.4531781077384949,
+          "all_sample_current_peak_a": 0.4531781077384949
+        },
+        {
+          "index": 3,
+          "mean_rpm": 9.556215356588364,
+          "error_rpm": -0.44378464341163637,
+          "relative_error_pct": -4.437846434116364,
+          "std_rpm": 4.361613220702025,
+          "rmse_rpm": 4.384132148639075,
+          "mae_rpm": 3.8301559126377107,
+          "min_rpm": 1.8226120471954346,
+          "max_rpm": 17.184627532958984,
+          "filtered_mean_rpm": 9.724644961357116,
+          "filtered_error_rpm": -0.2753550386428838,
+          "mean_current_a": 0.15216242048889397,
+          "current_peak_a": 1.6863441467285156,
+          "all_sample_current_peak_a": 1.6863441467285156
+        }
+      ]
+    },
+    {
+      "speed_rpm": 20,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.94,
+      "cadence_mean_ms": 100.4201680672269,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 102,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 19.69410448074341,
+          "error_rpm": -0.3058955192565918,
+          "relative_error_pct": -1.529477596282959,
+          "std_rpm": 0.8985158643228758,
+          "rmse_rpm": 0.949159010461969,
+          "mae_rpm": 0.808078556060791,
+          "min_rpm": 18.17404556274414,
+          "max_rpm": 21.87134552001953,
+          "filtered_mean_rpm": 19.65205982208252,
+          "filtered_error_rpm": -0.34794017791747933,
+          "mean_current_a": 0.3462470638751984,
+          "current_peak_a": 0.5166597366333008,
+          "all_sample_current_peak_a": 0.5166597366333008
+        },
+        {
+          "index": 1,
+          "mean_rpm": 19.460289306640625,
+          "error_rpm": -0.539710693359375,
+          "relative_error_pct": -2.6985534667968754,
+          "std_rpm": 1.2058059340518175,
+          "rmse_rpm": 1.3210812174582733,
+          "mae_rpm": 1.0865051651000976,
+          "min_rpm": 16.872180938720703,
+          "max_rpm": 22.287940979003906,
+          "filtered_mean_rpm": 19.53824769973755,
+          "filtered_error_rpm": -0.4617523002624502,
+          "mean_current_a": 0.5560793122649192,
+          "current_peak_a": 0.6930974125862122,
+          "all_sample_current_peak_a": 0.7326276302337646
+        },
+        {
+          "index": 2,
+          "mean_rpm": 19.706602306365966,
+          "error_rpm": -0.29339769363403323,
+          "relative_error_pct": -1.4669884681701661,
+          "std_rpm": 1.3514998057570111,
+          "rmse_rpm": 1.3829800908151237,
+          "mae_rpm": 1.1651099967956542,
+          "min_rpm": 17.08047866821289,
+          "max_rpm": 23.17321014404297,
+          "filtered_mean_rpm": 19.633729820251464,
+          "filtered_error_rpm": -0.36627017974853615,
+          "mean_current_a": 0.26741643153131006,
+          "current_peak_a": 0.46805816888809204,
+          "all_sample_current_peak_a": 0.46805816888809204
+        },
+        {
+          "index": 3,
+          "mean_rpm": 19.89979923248291,
+          "error_rpm": -0.10020076751708984,
+          "relative_error_pct": -0.5010038375854492,
+          "std_rpm": 0.8921958435393708,
+          "rmse_rpm": 0.8978048880686398,
+          "mae_rpm": 0.7257867813110351,
+          "min_rpm": 17.288776397705078,
+          "max_rpm": 21.454748153686523,
+          "filtered_mean_rpm": 19.707014694213868,
+          "filtered_error_rpm": -0.29298530578613224,
+          "mean_current_a": 0.23905940294265748,
+          "current_peak_a": 0.461696982383728,
+          "all_sample_current_peak_a": 0.4651569128036499
+        }
+      ]
+    },
+    {
+      "speed_rpm": 30,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.947,
+      "cadence_mean_ms": 100.45378151260505,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 105,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 29.956972484588622,
+          "error_rpm": -0.043027515411376956,
+          "relative_error_pct": -0.1434250513712565,
+          "std_rpm": 0.9349928080020685,
+          "rmse_rpm": 0.9359823278770111,
+          "mae_rpm": 0.7692424583435059,
+          "min_rpm": 27.96407699584961,
+          "max_rpm": 32.234195709228516,
+          "filtered_mean_rpm": 30.01203561782837,
+          "filtered_error_rpm": 0.012035617828370704,
+          "mean_current_a": 0.4100103893876076,
+          "current_peak_a": 0.5262347459793091,
+          "all_sample_current_peak_a": 0.5262347459793091
+        },
+        {
+          "index": 1,
+          "mean_rpm": 29.956451740264892,
+          "error_rpm": -0.043548259735107425,
+          "relative_error_pct": -0.14516086578369142,
+          "std_rpm": 1.1221960108168452,
+          "rmse_rpm": 1.1230406660576442,
+          "mae_rpm": 0.9691895866394042,
+          "min_rpm": 27.75577735900879,
+          "max_rpm": 32.5466423034668,
+          "filtered_mean_rpm": 30.10876049041748,
+          "filtered_error_rpm": 0.10876049041748104,
+          "mean_current_a": 0.6730527281761169,
+          "current_peak_a": 0.7725936770439148,
+          "all_sample_current_peak_a": 0.7897045016288757
+        },
+        {
+          "index": 2,
+          "mean_rpm": 29.936142597198486,
+          "error_rpm": -0.06385740280151367,
+          "relative_error_pct": -0.21285800933837892,
+          "std_rpm": 0.837500366713529,
+          "rmse_rpm": 0.8399313258462563,
+          "mae_rpm": 0.6591449546813964,
+          "min_rpm": 27.651628494262695,
+          "max_rpm": 31.921749114990234,
+          "filtered_mean_rpm": 29.973076267242433,
+          "filtered_error_rpm": -0.026923732757566654,
+          "mean_current_a": 0.2967617577314377,
+          "current_peak_a": 0.5402641296386719,
+          "all_sample_current_peak_a": 0.5402641296386719
+        },
+        {
+          "index": 3,
+          "mean_rpm": 29.827827281951905,
+          "error_rpm": -0.1721727180480957,
+          "relative_error_pct": -0.573909060160319,
+          "std_rpm": 1.2005274040005183,
+          "rmse_rpm": 1.2128105757274268,
+          "mae_rpm": 1.0198412132263184,
+          "min_rpm": 27.130882263183594,
+          "max_rpm": 31.921749114990234,
+          "filtered_mean_rpm": 30.01503931045532,
+          "filtered_error_rpm": 0.015039310455321697,
+          "mean_current_a": 0.27375835061073306,
+          "current_peak_a": 0.4987989068031311,
+          "all_sample_current_peak_a": 0.4987989068031311
+        }
+      ]
+    },
+    {
+      "speed_rpm": 60,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.953,
+      "cadence_mean_ms": 100.57142857142857,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 102,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 61.139260635375976,
+          "error_rpm": 1.1392606353759767,
+          "relative_error_pct": 1.8987677256266278,
+          "std_rpm": 0.5993903856075167,
+          "rmse_rpm": 1.2873164450421664,
+          "mae_rpm": 1.14591064453125,
+          "min_rpm": 59.781673431396484,
+          "max_rpm": 62.85408020019531,
+          "filtered_mean_rpm": 61.193411407470705,
+          "filtered_error_rpm": 1.1934114074707054,
+          "mean_current_a": 0.584575032889843,
+          "current_peak_a": 0.7167021632194519,
+          "all_sample_current_peak_a": 0.7167021632194519
+        },
+        {
+          "index": 1,
+          "mean_rpm": 62.370825881958005,
+          "error_rpm": 2.370825881958008,
+          "relative_error_pct": 3.9513764699300133,
+          "std_rpm": 0.8618652570956752,
+          "rmse_rpm": 2.5226230562552465,
+          "mae_rpm": 2.370825881958008,
+          "min_rpm": 60.77109146118164,
+          "max_rpm": 64.15594482421875,
+          "filtered_mean_rpm": 62.374523124694825,
+          "filtered_error_rpm": 2.374523124694825,
+          "mean_current_a": 0.9113248229026795,
+          "current_peak_a": 1.0568594932556152,
+          "all_sample_current_peak_a": 1.0786101818084717
+        },
+        {
+          "index": 2,
+          "mean_rpm": 61.119472427368166,
+          "error_rpm": 1.119472427368164,
+          "relative_error_pct": 1.8657873789469401,
+          "std_rpm": 1.089012330150179,
+          "rmse_rpm": 1.5617830741997085,
+          "mae_rpm": 1.2749392700195312,
+          "min_rpm": 58.948482513427734,
+          "max_rpm": 63.37482452392578,
+          "filtered_mean_rpm": 61.21029712677002,
+          "filtered_error_rpm": 1.2102971267700227,
+          "mean_current_a": 0.3387735724449158,
+          "current_peak_a": 0.647010862827301,
+          "all_sample_current_peak_a": 0.647010862827301
+        },
+        {
+          "index": 3,
+          "mean_rpm": 60.98303691864014,
+          "error_rpm": 0.9830369186401368,
+          "relative_error_pct": 1.6383948644002282,
+          "std_rpm": 1.7626513399167314,
+          "rmse_rpm": 2.018242138475893,
+          "mae_rpm": 1.7076826095581055,
+          "min_rpm": 57.073795318603516,
+          "max_rpm": 65.56195831298828,
+          "filtered_mean_rpm": 60.724930915832516,
+          "filtered_error_rpm": 0.7249309158325161,
+          "mean_current_a": 0.4060621720552444,
+          "current_peak_a": 0.8031085729598999,
+          "all_sample_current_peak_a": 0.8031085729598999
+        }
+      ]
+    },
+    {
+      "speed_rpm": 100,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.951,
+      "cadence_mean_ms": 100.4873949579832,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 108,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 103.18223625183106,
+          "error_rpm": 3.1822362518310547,
+          "relative_error_pct": 3.1822362518310547,
+          "std_rpm": 0.7716274396111853,
+          "rmse_rpm": 3.2744520866900273,
+          "mae_rpm": 3.1822362518310547,
+          "min_rpm": 101.5455322265625,
+          "max_rpm": 104.93038177490234,
+          "filtered_mean_rpm": 103.41937896728516,
+          "filtered_error_rpm": 3.419378967285155,
+          "mean_current_a": 0.6846459287405015,
+          "current_peak_a": 0.8611376881599426,
+          "all_sample_current_peak_a": 0.8611376881599426
+        },
+        {
+          "index": 1,
+          "mean_rpm": 106.13851135253907,
+          "error_rpm": 6.138511352539062,
+          "relative_error_pct": 6.138511352539062,
+          "std_rpm": 0.992646276125883,
+          "rmse_rpm": 6.218252829755118,
+          "mae_rpm": 6.138511352539062,
+          "min_rpm": 103.4722900390625,
+          "max_rpm": 108.83597564697266,
+          "filtered_mean_rpm": 106.19482627868652,
+          "filtered_error_rpm": 6.19482627868652,
+          "mean_current_a": 1.070066454410553,
+          "current_peak_a": 1.3206231594085693,
+          "all_sample_current_peak_a": 1.3206231594085693
+        },
+        {
+          "index": 2,
+          "mean_rpm": 102.74064239501953,
+          "error_rpm": 2.740642395019531,
+          "relative_error_pct": 2.740642395019531,
+          "std_rpm": 1.6457958954477447,
+          "rmse_rpm": 3.19683669693199,
+          "mae_rpm": 2.8613389587402343,
+          "min_rpm": 98.4731216430664,
+          "max_rpm": 105.5552749633789,
+          "filtered_mean_rpm": 102.76481353759766,
+          "filtered_error_rpm": 2.764813537597661,
+          "mean_current_a": 0.41379318565130235,
+          "current_peak_a": 1.1293139457702637,
+          "all_sample_current_peak_a": 1.1293139457702637
+        },
+        {
+          "index": 3,
+          "mean_rpm": 102.4459009552002,
+          "error_rpm": 2.4459009552001953,
+          "relative_error_pct": 2.4459009552001953,
+          "std_rpm": 0.620335348764208,
+          "rmse_rpm": 2.523340529452107,
+          "mae_rpm": 2.4459009552001953,
+          "min_rpm": 101.07685852050781,
+          "max_rpm": 103.732666015625,
+          "filtered_mean_rpm": 102.38639022827148,
+          "filtered_error_rpm": 2.3863902282714804,
+          "mean_current_a": 0.442699698805809,
+          "current_peak_a": 0.6538394689559937,
+          "all_sample_current_peak_a": 0.6538394689559937
+        }
+      ]
+    },
+    {
+      "speed_rpm": 150,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.947,
+      "cadence_mean_ms": 100.45378151260505,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 107,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 156.17806381225586,
+          "error_rpm": 6.17806381225586,
+          "relative_error_pct": 4.118709208170573,
+          "std_rpm": 0.7713822436939218,
+          "rmse_rpm": 6.226034294331479,
+          "mae_rpm": 6.17806381225586,
+          "min_rpm": 154.50543212890625,
+          "max_rpm": 157.89027404785156,
+          "filtered_mean_rpm": 156.22686401367187,
+          "filtered_error_rpm": 6.226864013671872,
+          "mean_current_a": 0.8100426161289215,
+          "current_peak_a": 0.9239636659622192,
+          "all_sample_current_peak_a": 0.9239636659622192
+        },
+        {
+          "index": 1,
+          "mean_rpm": 160.94549575805664,
+          "error_rpm": 10.94549575805664,
+          "relative_error_pct": 7.29699717203776,
+          "std_rpm": 0.607738994955294,
+          "rmse_rpm": 10.962354859957106,
+          "mae_rpm": 10.94549575805664,
+          "min_rpm": 159.712890625,
+          "max_rpm": 162.2124786376953,
+          "filtered_mean_rpm": 160.97576232910157,
+          "filtered_error_rpm": 10.97576232910157,
+          "mean_current_a": 1.26897709608078,
+          "current_peak_a": 1.397867202758789,
+          "all_sample_current_peak_a": 1.4207096099853516
+        },
+        {
+          "index": 2,
+          "mean_rpm": 155.34226654052733,
+          "error_rpm": 5.342266540527344,
+          "relative_error_pct": 3.5615110270182293,
+          "std_rpm": 1.2110951381885746,
+          "rmse_rpm": 5.477824679905519,
+          "mae_rpm": 5.343809204101563,
+          "min_rpm": 149.92286682128906,
+          "max_rpm": 158.61932373046875,
+          "filtered_mean_rpm": 155.51038864135742,
+          "filtered_error_rpm": 5.510388641357423,
+          "mean_current_a": 0.3544474422931671,
+          "current_peak_a": 1.1035046577453613,
+          "all_sample_current_peak_a": 1.1035046577453613
+        },
+        {
+          "index": 3,
+          "mean_rpm": 154.42575317382813,
+          "error_rpm": 4.425753173828125,
+          "relative_error_pct": 2.9505021158854166,
+          "std_rpm": 1.376552576647939,
+          "rmse_rpm": 4.634888148804219,
+          "mae_rpm": 4.425753173828125,
+          "min_rpm": 152.00584411621094,
+          "max_rpm": 156.90086364746094,
+          "filtered_mean_rpm": 154.39395431518554,
+          "filtered_error_rpm": 4.393954315185539,
+          "mean_current_a": 0.5029208827018737,
+          "current_peak_a": 0.633164644241333,
+          "all_sample_current_peak_a": 0.6379406452178955
+        }
+      ]
+    },
+    {
+      "speed_rpm": -10,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.953,
+      "cadence_mean_ms": 100.4873949579832,
+      "cadence_min_ms": 97,
+      "cadence_max_ms": 104,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -9.367705173492432,
+          "error_rpm": 0.6322948265075684,
+          "relative_error_pct": 6.322948265075684,
+          "std_rpm": 0.8448904454957774,
+          "rmse_rpm": 1.055289823943304,
+          "mae_rpm": 0.9242189979553223,
+          "min_rpm": -11.352269172668457,
+          "max_rpm": -7.863269329071045,
+          "filtered_mean_rpm": -9.40308789730072,
+          "filtered_error_rpm": 0.5969121026992799,
+          "mean_current_a": -0.2545568758249283,
+          "current_peak_a": 0.5735355615615845,
+          "all_sample_current_peak_a": 0.5735355615615845
+        },
+        {
+          "index": 1,
+          "mean_rpm": -9.22606219291687,
+          "error_rpm": 0.7739378070831299,
+          "relative_error_pct": 7.7393780708312985,
+          "std_rpm": 1.0804213123530249,
+          "rmse_rpm": 1.329018412746519,
+          "mae_rpm": 1.1907742404937744,
+          "min_rpm": -11.664716720581055,
+          "max_rpm": -7.654970645904541,
+          "filtered_mean_rpm": -9.18279359817505,
+          "filtered_error_rpm": 0.8172064018249507,
+          "mean_current_a": -0.3951720549166203,
+          "current_peak_a": 0.626760721206665,
+          "all_sample_current_peak_a": 0.626760721206665
+        },
+        {
+          "index": 2,
+          "mean_rpm": -9.311464591026306,
+          "error_rpm": 0.6885354089736938,
+          "relative_error_pct": 6.885354089736937,
+          "std_rpm": 1.4354982538685317,
+          "rmse_rpm": 1.5920855021857885,
+          "mae_rpm": 1.3581871843338014,
+          "min_rpm": -12.758284568786621,
+          "max_rpm": -6.978000640869141,
+          "filtered_mean_rpm": -9.289458904266358,
+          "filtered_error_rpm": 0.7105410957336424,
+          "mean_current_a": -0.23721511088311673,
+          "current_peak_a": 0.48090675473213196,
+          "all_sample_current_peak_a": 0.4858331084251404
+        },
+        {
+          "index": 3,
+          "mean_rpm": -9.233873373270034,
+          "error_rpm": 0.7661266267299652,
+          "relative_error_pct": 7.661266267299652,
+          "std_rpm": 4.29331800729866,
+          "rmse_rpm": 4.36113855775984,
+          "mae_rpm": 3.70693953871727,
+          "min_rpm": -17.028404235839844,
+          "max_rpm": -1.4580895900726318,
+          "filtered_mean_rpm": -9.519644314050675,
+          "filtered_error_rpm": 0.4803556859493252,
+          "mean_current_a": -0.19680763311684132,
+          "current_peak_a": 1.6934397220611572,
+          "all_sample_current_peak_a": 1.7108162641525269
+        }
+      ]
+    },
+    {
+      "speed_rpm": -20,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.933,
+      "cadence_mean_ms": 100.3109243697479,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 102,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -19.61911682128906,
+          "error_rpm": 0.3808831787109375,
+          "relative_error_pct": 1.9044158935546875,
+          "std_rpm": 0.8138774887505575,
+          "rmse_rpm": 0.8985925453284496,
+          "mae_rpm": 0.7642301177978515,
+          "min_rpm": -21.610971450805664,
+          "max_rpm": -17.44500160217285,
+          "filtered_mean_rpm": -19.648342342376708,
+          "filtered_error_rpm": 0.35165765762329215,
+          "mean_current_a": -0.3466822130978107,
+          "current_peak_a": 0.48716604709625244,
+          "all_sample_current_peak_a": 0.48716604709625244
+        },
+        {
+          "index": 1,
+          "mean_rpm": -19.613909339904787,
+          "error_rpm": 0.38609066009521487,
+          "relative_error_pct": 1.9304533004760742,
+          "std_rpm": 1.24754066983994,
+          "rmse_rpm": 1.305918726689163,
+          "mae_rpm": 1.1222362518310547,
+          "min_rpm": -22.60038948059082,
+          "max_rpm": -16.92425537109375,
+          "filtered_mean_rpm": -19.61879150390625,
+          "filtered_error_rpm": 0.3812084960937483,
+          "mean_current_a": -0.5388642054796219,
+          "current_peak_a": 0.6634747982025146,
+          "all_sample_current_peak_a": 0.7052350044250488
+        },
+        {
+          "index": 2,
+          "mean_rpm": -19.4436252784729,
+          "error_rpm": 0.5563747215270997,
+          "relative_error_pct": 2.781873607635498,
+          "std_rpm": 1.2741328748443013,
+          "rmse_rpm": 1.3903119842371212,
+          "mae_rpm": 1.1965024375915527,
+          "min_rpm": -21.923419952392578,
+          "max_rpm": -17.028404235839844,
+          "filtered_mean_rpm": -19.620854778289797,
+          "filtered_error_rpm": 0.3791452217102034,
+          "mean_current_a": -0.26850319653749466,
+          "current_peak_a": 0.46939560770988464,
+          "all_sample_current_peak_a": 0.5067456960678101
+        },
+        {
+          "index": 3,
+          "mean_rpm": -19.50507328033447,
+          "error_rpm": 0.49492671966552737,
+          "relative_error_pct": 2.4746335983276366,
+          "std_rpm": 1.0276876955095038,
+          "rmse_rpm": 1.1406552754187016,
+          "mae_rpm": 0.9050181579589843,
+          "min_rpm": -21.29852294921875,
+          "max_rpm": -17.028404235839844,
+          "filtered_mean_rpm": -19.500903663635253,
+          "filtered_error_rpm": 0.4990963363647474,
+          "mean_current_a": -0.28501399405300615,
+          "current_peak_a": 0.5142608284950256,
+          "all_sample_current_peak_a": 0.5142608284950256
+        }
+      ]
+    },
+    {
+      "speed_rpm": -30,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.959,
+      "cadence_mean_ms": 100.57142857142857,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 108,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -30.100177612304687,
+          "error_rpm": -0.1001776123046875,
+          "relative_error_pct": -0.3339253743489583,
+          "std_rpm": 0.8687252812378958,
+          "rmse_rpm": 0.8744822286753059,
+          "mae_rpm": 0.7067723846435547,
+          "min_rpm": -32.077972412109375,
+          "max_rpm": -28.224449157714844,
+          "filtered_mean_rpm": -30.101857433319093,
+          "filtered_error_rpm": -0.10185743331909336,
+          "mean_current_a": -0.3931689649820328,
+          "current_peak_a": 0.4910140633583069,
+          "all_sample_current_peak_a": 0.4910140633583069
+        },
+        {
+          "index": 1,
+          "mean_rpm": -30.204326858520506,
+          "error_rpm": -0.2043268585205078,
+          "relative_error_pct": -0.6810895284016927,
+          "std_rpm": 1.0482916326844882,
+          "rmse_rpm": 1.0680191066966778,
+          "mae_rpm": 0.9285100936889649,
+          "min_rpm": -32.18212127685547,
+          "max_rpm": -28.224449157714844,
+          "filtered_mean_rpm": -30.241088104248046,
+          "filtered_error_rpm": -0.24108810424804616,
+          "mean_current_a": -0.6439349734783173,
+          "current_peak_a": 0.7327522039413452,
+          "all_sample_current_peak_a": 0.7327522039413452
+        },
+        {
+          "index": 2,
+          "mean_rpm": -29.925727710723876,
+          "error_rpm": 0.07427228927612305,
+          "relative_error_pct": 0.24757429758707683,
+          "std_rpm": 0.833130675861801,
+          "rmse_rpm": 0.836434752994074,
+          "mae_rpm": 0.6704009819030762,
+          "min_rpm": -31.713449478149414,
+          "max_rpm": -27.912002563476562,
+          "filtered_mean_rpm": -29.901818332672118,
+          "filtered_error_rpm": 0.09818166732788214,
+          "mean_current_a": -0.3121548169851303,
+          "current_peak_a": 0.6205654144287109,
+          "all_sample_current_peak_a": 0.6205654144287109
+        },
+        {
+          "index": 3,
+          "mean_rpm": -29.679414672851564,
+          "error_rpm": 0.3205853271484375,
+          "relative_error_pct": 1.0686177571614583,
+          "std_rpm": 1.1287304137244245,
+          "rmse_rpm": 1.1733743217104167,
+          "mae_rpm": 0.9334780883789062,
+          "min_rpm": -32.077972412109375,
+          "max_rpm": -27.0267333984375,
+          "filtered_mean_rpm": -29.760957565307617,
+          "filtered_error_rpm": 0.23904243469238295,
+          "mean_current_a": -0.32941193476319314,
+          "current_peak_a": 0.5126409530639648,
+          "all_sample_current_peak_a": 0.5126409530639648
+        }
+      ]
+    },
+    {
+      "speed_rpm": -60,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.957,
+      "cadence_mean_ms": 100.52941176470588,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 108,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -61.36578556060791,
+          "error_rpm": -1.3657855606079101,
+          "relative_error_pct": -2.27630926767985,
+          "std_rpm": 0.7346099016139108,
+          "rmse_rpm": 1.550813304403294,
+          "mae_rpm": 1.3828505325317382,
+          "min_rpm": -63.21860122680664,
+          "max_rpm": -59.52130126953125,
+          "filtered_mean_rpm": -61.35479167938232,
+          "filtered_error_rpm": -1.3547916793823234,
+          "mean_current_a": -0.5518012273311615,
+          "current_peak_a": 0.6844443082809448,
+          "all_sample_current_peak_a": 0.6844443082809448
+        },
+        {
+          "index": 1,
+          "mean_rpm": -62.69681301116943,
+          "error_rpm": -2.6968130111694335,
+          "relative_error_pct": -4.494688351949057,
+          "std_rpm": 0.8696609500312094,
+          "rmse_rpm": 2.833568524885526,
+          "mae_rpm": 2.6968130111694335,
+          "min_rpm": -64.52046966552734,
+          "max_rpm": -61.135616302490234,
+          "filtered_mean_rpm": -62.74955577850342,
+          "filtered_error_rpm": -2.749555778503421,
+          "mean_current_a": -0.8365768450498581,
+          "current_peak_a": 0.9568618535995483,
+          "all_sample_current_peak_a": 0.9568618535995483
+        },
+        {
+          "index": 2,
+          "mean_rpm": -61.34808036804199,
+          "error_rpm": -1.3480803680419922,
+          "relative_error_pct": -2.2468006134033205,
+          "std_rpm": 1.121206053593348,
+          "rmse_rpm": 1.7534034599357338,
+          "mae_rpm": 1.464209671020508,
+          "min_rpm": -63.68727111816406,
+          "max_rpm": -58.89640808105469,
+          "filtered_mean_rpm": -61.39754974365234,
+          "filtered_error_rpm": -1.3975497436523412,
+          "mean_current_a": -0.3015540760755539,
+          "current_peak_a": 0.7519562244415283,
+          "all_sample_current_peak_a": 0.7519562244415283
+        },
+        {
+          "index": 3,
+          "mean_rpm": -60.65080078125,
+          "error_rpm": -0.65080078125,
+          "relative_error_pct": -1.0846679687499998,
+          "std_rpm": 1.5337846528911572,
+          "rmse_rpm": 1.6661443569871301,
+          "mae_rpm": 1.450395050048828,
+          "min_rpm": -63.21860122680664,
+          "max_rpm": -57.54246520996094,
+          "filtered_mean_rpm": -60.52836086273194,
+          "filtered_error_rpm": -0.5283608627319367,
+          "mean_current_a": -0.4483914956450462,
+          "current_peak_a": 0.7392871379852295,
+          "all_sample_current_peak_a": 0.7392871379852295
+        }
+      ]
+    },
+    {
+      "speed_rpm": -100,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.957,
+      "cadence_mean_ms": 100.52941176470588,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 113,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -102.74428520202636,
+          "error_rpm": -2.7442852020263673,
+          "relative_error_pct": -2.7442852020263673,
+          "std_rpm": 0.6535306819425746,
+          "rmse_rpm": 2.821028823372995,
+          "mae_rpm": 2.7442852020263673,
+          "min_rpm": -104.30548095703125,
+          "max_rpm": -101.3893051147461,
+          "filtered_mean_rpm": -102.78803596496581,
+          "filtered_error_rpm": -2.7880359649658146,
+          "mean_current_a": -0.8136448007822037,
+          "current_peak_a": 0.9904681444168091,
+          "all_sample_current_peak_a": 0.9904681444168091
+        },
+        {
+          "index": 1,
+          "mean_rpm": -106.3238956451416,
+          "error_rpm": -6.323895645141602,
+          "relative_error_pct": -6.323895645141602,
+          "std_rpm": 0.8591564046451262,
+          "rmse_rpm": 6.38199074413961,
+          "mae_rpm": 6.323895645141602,
+          "min_rpm": -108.88805389404297,
+          "max_rpm": -104.40962982177734,
+          "filtered_mean_rpm": -106.31888824462891,
+          "filtered_error_rpm": -6.3188882446289085,
+          "mean_current_a": -1.0460230326652527,
+          "current_peak_a": 1.2549949884414673,
+          "all_sample_current_peak_a": 1.2549949884414673
+        },
+        {
+          "index": 2,
+          "mean_rpm": -103.65350814819335,
+          "error_rpm": -3.6535081481933593,
+          "relative_error_pct": -3.6535081481933593,
+          "std_rpm": 0.9233076258074777,
+          "rmse_rpm": 3.76837083642116,
+          "mae_rpm": 3.6535081481933593,
+          "min_rpm": -106.49261474609375,
+          "max_rpm": -101.49345397949219,
+          "filtered_mean_rpm": -103.69158576965332,
+          "filtered_error_rpm": -3.691585769653315,
+          "mean_current_a": -0.23060232609510423,
+          "current_peak_a": 0.49421265721321106,
+          "all_sample_current_peak_a": 0.49421265721321106
+        },
+        {
+          "index": 3,
+          "mean_rpm": -101.82568870544434,
+          "error_rpm": -1.825688705444336,
+          "relative_error_pct": -1.8256887054443358,
+          "std_rpm": 0.7553072165742484,
+          "rmse_rpm": 1.975760167782556,
+          "mae_rpm": 1.8333133697509765,
+          "min_rpm": -103.42021179199219,
+          "max_rpm": -99.61876678466797,
+          "filtered_mean_rpm": -101.84922088623047,
+          "filtered_error_rpm": -1.8492208862304693,
+          "mean_current_a": -0.5504477068781852,
+          "current_peak_a": 0.7531970143318176,
+          "all_sample_current_peak_a": 0.7531970143318176
+        }
+      ]
+    },
+    {
+      "speed_rpm": -150,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.937,
+      "cadence_mean_ms": 100.3781512605042,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 102,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -155.59899490356446,
+          "error_rpm": -5.598994903564453,
+          "relative_error_pct": -3.7326632690429684,
+          "std_rpm": 0.6970619568067955,
+          "rmse_rpm": 5.642219359593177,
+          "mae_rpm": 5.598994903564453,
+          "min_rpm": -156.95294189453125,
+          "max_rpm": -154.08883666992188,
+          "filtered_mean_rpm": -155.58832885742189,
+          "filtered_error_rpm": -5.588328857421885,
+          "mean_current_a": -0.9375539660453797,
+          "current_peak_a": 1.0994092226028442,
+          "all_sample_current_peak_a": 1.0994092226028442
+        },
+        {
+          "index": 1,
+          "mean_rpm": -161.07099670410156,
+          "error_rpm": -11.070996704101562,
+          "relative_error_pct": -7.380664469401041,
+          "std_rpm": 0.6152166115819784,
+          "rmse_rpm": 11.088077358198493,
+          "mae_rpm": 11.070996704101562,
+          "min_rpm": -162.73321533203125,
+          "max_rpm": -159.55667114257812,
+          "filtered_mean_rpm": -161.07189010620118,
+          "filtered_error_rpm": -11.071890106201181,
+          "mean_current_a": -1.2511718988418579,
+          "current_peak_a": 1.4370946884155273,
+          "all_sample_current_peak_a": 1.4370946884155273
+        },
+        {
+          "index": 2,
+          "mean_rpm": -155.83385131835936,
+          "error_rpm": -5.833851318359375,
+          "relative_error_pct": -3.8892342122395833,
+          "std_rpm": 0.9643938196670669,
+          "rmse_rpm": 5.9130260141602164,
+          "mae_rpm": 5.833851318359375,
+          "min_rpm": -157.8382110595703,
+          "max_rpm": -152.1620635986328,
+          "filtered_mean_rpm": -156.00794357299804,
+          "filtered_error_rpm": -6.007943572998045,
+          "mean_current_a": -0.25391902565956115,
+          "current_peak_a": 0.6946911811828613,
+          "all_sample_current_peak_a": 0.8472668528556824
+        },
+        {
+          "index": 3,
+          "mean_rpm": -153.6493193054199,
+          "error_rpm": -3.649319305419922,
+          "relative_error_pct": -2.4328795369466145,
+          "std_rpm": 1.4101044357314267,
+          "rmse_rpm": 3.912278864367926,
+          "mae_rpm": 3.649319305419922,
+          "min_rpm": -157.36953735351562,
+          "max_rpm": -150.7560577392578,
+          "filtered_mean_rpm": -153.89048980712892,
+          "filtered_error_rpm": -3.8904898071289153,
+          "mean_current_a": -0.6018323487043381,
+          "current_peak_a": 0.8734264969825745,
+          "all_sample_current_peak_a": 0.8734264969825745
+        }
+      ]
+    },
+    {
+      "speed_rpm": 40,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.945,
+      "cadence_mean_ms": 100.54621848739495,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 116,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 40.370336380004886,
+          "error_rpm": 0.37033638000488284,
+          "relative_error_pct": 0.9258409500122071,
+          "std_rpm": 1.050465715041852,
+          "rmse_rpm": 1.1138344817940906,
+          "mae_rpm": 0.914775390625,
+          "min_rpm": 38.01448059082031,
+          "max_rpm": 42.5970458984375,
+          "filtered_mean_rpm": 40.27625560760498,
+          "filtered_error_rpm": 0.27625560760498047,
+          "mean_current_a": 0.49283899694681166,
+          "current_peak_a": 0.6261661648750305,
+          "all_sample_current_peak_a": 0.9765967130661011
+        },
+        {
+          "index": 1,
+          "mean_rpm": 41.117607269287106,
+          "error_rpm": 1.1176072692871093,
+          "relative_error_pct": 2.7940181732177733,
+          "std_rpm": 1.0834550070865518,
+          "rmse_rpm": 1.556573403583753,
+          "mae_rpm": 1.3430264282226563,
+          "min_rpm": 38.326927185058594,
+          "max_rpm": 43.117794036865234,
+          "filtered_mean_rpm": 41.25872592926025,
+          "filtered_error_rpm": 1.258725929260251,
+          "mean_current_a": 0.6731481200456619,
+          "current_peak_a": 0.8345125913619995,
+          "all_sample_current_peak_a": 1.1199392080307007
+        },
+        {
+          "index": 2,
+          "mean_rpm": 40.147456665039066,
+          "error_rpm": 0.1474566650390625,
+          "relative_error_pct": 0.36864166259765624,
+          "std_rpm": 1.4128821289586777,
+          "rmse_rpm": 1.4205560102985197,
+          "mae_rpm": 1.1772595977783202,
+          "min_rpm": 36.34809112548828,
+          "max_rpm": 42.5970458984375,
+          "filtered_mean_rpm": 40.1188724899292,
+          "filtered_error_rpm": 0.11887248992920263,
+          "mean_current_a": 0.3650397439301014,
+          "current_peak_a": 0.7413676381111145,
+          "all_sample_current_peak_a": 0.9508078694343567
+        },
+        {
+          "index": 3,
+          "mean_rpm": 40.315657958984374,
+          "error_rpm": 0.315657958984375,
+          "relative_error_pct": 0.7891448974609374,
+          "std_rpm": 1.416271024128133,
+          "rmse_rpm": 1.4510215576810472,
+          "mae_rpm": 1.3010498046875,
+          "min_rpm": 37.233360290527344,
+          "max_rpm": 42.90949630737305,
+          "filtered_mean_rpm": 40.283325119018556,
+          "filtered_error_rpm": 0.2833251190185564,
+          "mean_current_a": 0.314671049118042,
+          "current_peak_a": 0.4343818426132202,
+          "all_sample_current_peak_a": 1.1492490768432617
+        }
+      ]
+    },
+    {
+      "speed_rpm": -40,
+      "count": 120,
+      "discard_count": 20,
+      "steady_count": 100,
+      "steady_duration_s": 9.947,
+      "cadence_mean_ms": 100.46218487394958,
+      "cadence_min_ms": 98,
+      "cadence_max_ms": 104,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": -40.38595836639404,
+          "error_rpm": -0.38595836639404296,
+          "relative_error_pct": -0.9648959159851074,
+          "std_rpm": 0.8520662958789356,
+          "rmse_rpm": 0.9354041015317434,
+          "mae_rpm": 0.7463209152221679,
+          "min_rpm": -42.54497146606445,
+          "max_rpm": -38.483150482177734,
+          "filtered_mean_rpm": -40.28856616973877,
+          "filtered_error_rpm": -0.2885661697387718,
+          "mean_current_a": -0.49148149162530896,
+          "current_peak_a": 0.6130962371826172,
+          "all_sample_current_peak_a": 0.9540760517120361
+        },
+        {
+          "index": 1,
+          "mean_rpm": -41.28945339202881,
+          "error_rpm": -1.2894533920288085,
+          "relative_error_pct": -3.223633480072021,
+          "std_rpm": 0.9502698421321707,
+          "rmse_rpm": 1.6017811408180898,
+          "mae_rpm": 1.4000132369995117,
+          "min_rpm": -44.055137634277344,
+          "max_rpm": -38.79560089111328,
+          "filtered_mean_rpm": -41.211721153259276,
+          "filtered_error_rpm": -1.2117211532592762,
+          "mean_current_a": -0.680925824046135,
+          "current_peak_a": 0.791027307510376,
+          "all_sample_current_peak_a": 1.0308232307434082
+        },
+        {
+          "index": 2,
+          "mean_rpm": -40.819740257263184,
+          "error_rpm": -0.8197402572631836,
+          "relative_error_pct": -2.049350643157959,
+          "std_rpm": 1.400771942623442,
+          "rmse_rpm": 1.6230021948903712,
+          "mae_rpm": 1.3564882278442383,
+          "min_rpm": -43.74269104003906,
+          "max_rpm": -38.06655502319336,
+          "filtered_mean_rpm": -40.652662925720215,
+          "filtered_error_rpm": -0.6526629257202146,
+          "mean_current_a": -0.25642537847161295,
+          "current_peak_a": 0.5229525566101074,
+          "all_sample_current_peak_a": 0.8193867206573486
+        },
+        {
+          "index": 3,
+          "mean_rpm": -39.92926418304443,
+          "error_rpm": 0.07073581695556641,
+          "relative_error_pct": 0.17683954238891603,
+          "std_rpm": 1.5439380359815098,
+          "rmse_rpm": 1.545557574065364,
+          "mae_rpm": 1.3625258255004882,
+          "min_rpm": -42.961570739746094,
+          "max_rpm": -37.28543472290039,
+          "filtered_mean_rpm": -40.08789878845215,
+          "filtered_error_rpm": -0.08789878845215071,
+          "mean_current_a": -0.34901029244065285,
+          "current_peak_a": 0.5043746829032898,
+          "all_sample_current_peak_a": 0.7272239923477173
+        }
+      ]
+    },
+    {
+      "speed_rpm": 0,
+      "count": 80,
+      "discard_count": 20,
+      "steady_count": 60,
+      "steady_duration_s": 5.925,
+      "cadence_mean_ms": 100.41772151898734,
+      "cadence_min_ms": 99,
+      "cadence_max_ms": 102,
+      "firmwareConsistency": "match",
+      "steady_valid": true,
+      "wheels": [
+        {
+          "index": 0,
+          "mean_rpm": 0,
+          "error_rpm": 0,
+          "relative_error_pct": null,
+          "std_rpm": 0,
+          "rmse_rpm": 0,
+          "mae_rpm": 0,
+          "min_rpm": 0,
+          "max_rpm": 0,
+          "filtered_mean_rpm": 0,
+          "filtered_error_rpm": 0,
+          "mean_current_a": 0,
+          "current_peak_a": 0,
+          "all_sample_current_peak_a": 0
+        },
+        {
+          "index": 1,
+          "mean_rpm": 0,
+          "error_rpm": 0,
+          "relative_error_pct": null,
+          "std_rpm": 0,
+          "rmse_rpm": 0,
+          "mae_rpm": 0,
+          "min_rpm": 0,
+          "max_rpm": 0,
+          "filtered_mean_rpm": -8.356726271406526e-9,
+          "filtered_error_rpm": -8.356726271406526e-9,
+          "mean_current_a": 1.6713452542813052e-9,
+          "current_peak_a": 1.0028071528722649e-7,
+          "all_sample_current_peak_a": 0.00026732278638519347
+        },
+        {
+          "index": 2,
+          "mean_rpm": 0,
+          "error_rpm": 0,
+          "relative_error_pct": null,
+          "std_rpm": 0,
+          "rmse_rpm": 0,
+          "mae_rpm": 0,
+          "min_rpm": 0,
+          "max_rpm": 0,
+          "filtered_mean_rpm": 0,
+          "filtered_error_rpm": 0,
+          "mean_current_a": 0,
+          "current_peak_a": 0,
+          "all_sample_current_peak_a": 0
+        },
+        {
+          "index": 3,
+          "mean_rpm": 0.05467837154865265,
+          "error_rpm": 0.05467837154865265,
+          "relative_error_pct": null,
+          "std_rpm": 5.662521810189176,
+          "rmse_rpm": 5.662785796335874,
+          "mae_rpm": 5.079880155126253,
+          "min_rpm": -8.644388198852539,
+          "max_rpm": 8.279866218566895,
+          "filtered_mean_rpm": -0.1274200474222501,
+          "filtered_error_rpm": -0.1274200474222501,
+          "mean_current_a": 0.002645509410649538,
+          "current_peak_a": 1.6380506753921509,
+          "all_sample_current_peak_a": 1.6380506753921509
+        }
+      ]
+    }
+  ]
+}
