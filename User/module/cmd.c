@@ -24,6 +24,28 @@
 #define CMD_GIMBAL_DECEL_DEG_S2 (60000.0f)
 #define CMD_GIMBAL_SMOOTH_TIME_S (0.004f)
 #define CMD_GIMBAL_SETTLE_DEG_S (0.1f)
+
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
+/*
+ * yaw 正弦测试振幅为 30 度，相位角速度为 6 rad/s
+ * 相位按 2π 回绕，度数换算为弧度后生成速度前馈
+ */
+#define CMD_GIMBAL_SINE_AMPLITUDE_DEG (30.0f)
+#define CMD_GIMBAL_SINE_OMEGA_RAD_S (6.0f)
+#define CMD_GIMBAL_SINE_TWO_PI (6.28318530718f)
+#define CMD_GIMBAL_SINE_DEG_TO_RAD (0.0174532925199f)
+
+// 正弦轨迹在待机时捕获中心，运行时逐周期推进相位
+typedef enum
+{
+    CMD_GIMBAL_SINE_IDLE = 0,
+    CMD_GIMBAL_SINE_RUNNING,
+} Cmd_GimbalSineState_t;
+
+static Cmd_GimbalSineState_t gimbal_sine_state;
+static float gimbal_sine_phase_rad;
+static float gimbal_sine_center_deg;
+#endif
 #define CMD_GIMBAL_MAX_PERIOD_S (0.1f)
 #define CMD_DEG_TO_RAD (0.0174532925199f)
 
@@ -229,6 +251,97 @@ void Cmd_ResetGimbal(Cmd_Gimbal_t *ctx)
         .state = CMD_GIMBAL_INACTIVE,
     };
 }
+
+/**
+ * @brief 根据遥控环路开关选择两轴共用模式
+ *
+ * @param[in,out] command 已解析的遥控命令，调用方保证非空
+ * @param[in] speed_enabled 速度环使能
+ * @param[in] angle_enabled 角度环使能
+ * @return 无返回值
+ */
+void Cmd_SelectGimbalLoops(Gimbal_Command_t *command, bool speed_enabled, bool angle_enabled)
+{
+    // 失联及故障产生的待机命令不受环路开关覆盖
+    if (command->mode == GIMBAL_MODE_ANGLE)
+    {
+        if (!speed_enabled)
+        {
+            command->mode = GIMBAL_MODE_RELAX;
+        }
+        else if (!angle_enabled)
+        {
+            command->mode = GIMBAL_MODE_SPEED;
+        }
+    }
+}
+
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
+/**
+ * @brief 根据云台状态生成正弦角度目标与速度前馈
+ *
+ * @param[in] gimbal 云台实例，调用方保证非空
+ * @param[in,out] command 本周期命令，调用方保证非空
+ * @param[in] period_s 实际控制间隔，单位秒
+ * @param[in] debug_enabled 手动调试开关
+ * @param[in] enabled 正弦测试开关
+ * @param[in] feedforward_enabled 速度前馈开关
+ * @return 无返回值
+ */
+void Cmd_UpdateGimbalSineTest(const Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s,
+                              bool debug_enabled, bool enabled, bool feedforward_enabled)
+{
+    // 手动调试独占命令，重新进入遥控时捕获新的轨迹中心
+    if (debug_enabled)
+    {
+        gimbal_sine_state = CMD_GIMBAL_SINE_IDLE;
+        return;
+    }
+
+    const bool active = enabled && command->mode == GIMBAL_MODE_ANGLE &&
+                        gimbal->yaw.state == GIMBAL_AXIS_RUNNING && gimbal->imu_state == GIMBAL_IMU_READY &&
+                        isfinite(gimbal->yaw.angle_deg) && isfinite(period_s) && period_s > 0.0f;
+
+    // 依据轨迹运行状态捕获中心、推进相位或退出测试
+    switch (gimbal_sine_state)
+    {
+        case CMD_GIMBAL_SINE_IDLE:
+            if (!active)
+            {
+                return;
+            }
+            gimbal_sine_phase_rad = 0.0f;
+            gimbal_sine_center_deg = gimbal->yaw.angle_deg;
+            gimbal_sine_state = CMD_GIMBAL_SINE_RUNNING;
+            break;
+
+        case CMD_GIMBAL_SINE_RUNNING:
+            if (!active)
+            {
+                command->yaw.rate_rad_s = 0.0f;
+                gimbal_sine_phase_rad = 0.0f;
+                gimbal_sine_state = CMD_GIMBAL_SINE_IDLE;
+                return;
+            }
+            gimbal_sine_phase_rad = fmodf(gimbal_sine_phase_rad + CMD_GIMBAL_SINE_OMEGA_RAD_S * period_s,
+                                          CMD_GIMBAL_SINE_TWO_PI);
+            break;
+
+        default:
+            command->yaw.rate_rad_s = 0.0f;
+            gimbal_sine_phase_rad = 0.0f;
+            gimbal_sine_state = CMD_GIMBAL_SINE_IDLE;
+            return;
+    }
+
+    // 同一相位生成绝对角度与可选速度前馈
+    command->yaw.source = GIMBAL_TARGET_ABSOLUTE;
+    command->yaw.angle_deg = gimbal_sine_center_deg + CMD_GIMBAL_SINE_AMPLITUDE_DEG * sinf(gimbal_sine_phase_rad);
+    command->yaw.rate_rad_s = feedforward_enabled ?
+        CMD_GIMBAL_SINE_AMPLITUDE_DEG * CMD_GIMBAL_SINE_DEG_TO_RAD * CMD_GIMBAL_SINE_OMEGA_RAD_S *
+        cosf(gimbal_sine_phase_rad) : 0.0f;
+}
+#endif
 
 /**
  * @brief 解析在线遥控的云台平滑速度，异常输入撤销运行请求

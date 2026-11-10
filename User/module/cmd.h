@@ -93,6 +93,32 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
                      float period_s, bool gimbal_fault, Gimbal_Command_t *out);
 
 /**
+ * @brief 根据遥控环路开关选择两轴共用模式
+ *
+ * @param[in,out] command 已解析的遥控命令，调用方保证非空
+ * @param[in] speed_enabled 速度环使能
+ * @param[in] angle_enabled 角度环使能
+ * @return 无返回值
+ */
+void Cmd_SelectGimbalLoops(Gimbal_Command_t *command, bool speed_enabled, bool angle_enabled);
+
+#if MOTOR_GIMBAL_ENABLE_SINE_TEST
+/**
+ * @brief 根据云台状态生成正弦角度目标与速度前馈
+ *
+ * @param[in] gimbal 云台实例，调用方保证非空
+ * @param[in,out] command 本周期命令，调用方保证非空
+ * @param[in] period_s 实际控制间隔，单位秒
+ * @param[in] debug_enabled 手动调试开关
+ * @param[in] enabled 正弦测试开关
+ * @param[in] feedforward_enabled 速度前馈开关
+ * @return 无返回值
+ */
+void Cmd_UpdateGimbalSineTest(const Gimbal_t *gimbal, Gimbal_Command_t *command, float period_s,
+                              bool debug_enabled, bool enabled, bool feedforward_enabled);
+#endif
+
+/**
  * @brief 撤销遥控运行阶段与速度历史，恢复后重新捕获姿态
  *
  * @param[out] ctx 云台命令上下文，调用方保证非空

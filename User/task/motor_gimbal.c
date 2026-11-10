@@ -1,6 +1,5 @@
 #include "task/motor_gimbal.h"
 
-#include <math.h>
 #include <stddef.h>
 
 #include "bsp/time.h"
@@ -8,25 +7,6 @@
 #include "device/dr16.h"
 #include "module/config.h"
 #include "task/user_task.h"
-
-#if MOTOR_GIMBAL_ENABLE_SINE_TEST
-/*
- * yaw 正弦跟随测试参数，角度单位为度，相位角速度单位为 rad/s：
- * - 中心取启动测试时的当前姿态，振幅 30°，前馈峰值为 π rad/s
- * - 2π 用于相位归一化，避免长时间累计相位导致浮点分辨率下降
- */
-#define MOTOR_GIMBAL_SINE_AMPLITUDE_DEG (30.0f)
-#define MOTOR_GIMBAL_SINE_OMEGA_RAD_S (6.0f)
-#define MOTOR_GIMBAL_TWO_PI (6.28318530718f)
-#define MOTOR_GIMBAL_DEG_TO_RAD (0.0174532925199f)
-
-// 正弦测试待机时相位归零，yaw 进入角度闭环后才开始推进，异常状态回到待机
-typedef enum
-{
-    MOTOR_GIMBAL_SINE_IDLE = 0,
-    MOTOR_GIMBAL_SINE_RUNNING,
-} MotorGimbal_SineState_t;
-#endif
 
 // 调试观测与命令入口，声明及使用方式见 motor_gimbal.h
 Gimbal_t gimbal;
@@ -41,9 +21,6 @@ volatile bool gimbal_remote_angle_loop_enabled = true;
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
 
-static MotorGimbal_SineState_t sine_state;
-static float sine_phase_rad;
-static float sine_center_deg;
 #endif
 
 // 遥控缓存及输入状态仅由云台任务访问，不与 ISR 共享
@@ -53,10 +30,6 @@ static Cmd_Gimbal_t remote_command;
 // 底盘状态仅由本任务消费，零初始化对应离线，在线未自旋与在线小陀螺独立表示
 static Gimbal_ChassisState_t chassis_state_cache;
 
-static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled);
-#if MOTOR_GIMBAL_ENABLE_SINE_TEST
-static void MotorGimbal_UpdateSineTest(float period_s);
-#endif
 static bool MotorGimbal_ReadFeedback(osMessageQueueId_t queue, MOTOR_RM_Feedback_t *feedback);
 static bool MotorGimbal_PublishOutput(const Gimbal_Output_t *output);
 
@@ -120,17 +93,35 @@ void Task_motor_gimbal(void *argument)
 
             // 每周期固定命令来源，遥控来源检查在线许可，手动来源沿用独立调试路径
             const bool debug_enabled = gimbal_debug_enabled;
-            MotorGimbal_ApplyDR16Input(period_s, debug_enabled);
+            if (!debug_enabled)
+            {
+                // 接收最新遥控帧并保留源时间，读取失败时撤销缓存
+                DR16_State_t received;
+                const osStatus_t status = osMessageQueueGet(task_runtime.msgq.dr16_gimbal_state, &received, NULL, 0U);
+                if (status == osOK)
+                {
+                    remote_cache = received;
+                    remote_cache_valid = true;
+                }
+                else if (status != osErrorResource)
+                {
+                    remote_cache_valid = false;
+                }
+
+                // 根据遥控快照和环路开关生成本周期命令
+                const uint64_t now_us = BSP_TIME_Get();
+                Gimbal_Command_t parsed_command;
+                remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
+                    now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &parsed_command);
+                const bool speed_enabled = gimbal_remote_speed_loop_enabled;
+                const bool angle_enabled = gimbal_remote_angle_loop_enabled;
+                Cmd_SelectGimbalLoops(&parsed_command, speed_enabled, angle_enabled);
+                gimbal_command = parsed_command;
+            }
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
-            // 手动命令不被正弦覆盖，恢复遥控时正弦测试重新捕获当前中心
-            if (debug_enabled)
-            {
-                sine_state = MOTOR_GIMBAL_SINE_IDLE;
-            }
-            else
-            {
-                MotorGimbal_UpdateSineTest(period_s);
-            }
+            // 由云台模块生成遥控测试轨迹，手动调试时重置轨迹状态
+            Cmd_UpdateGimbalSineTest(&gimbal, &gimbal_command, period_s, debug_enabled,
+                                     gimbal_sine_test_enabled, gimbal_sine_feedforward_enabled);
 #endif
             // 从调试可写命令读取本周期快照，模块统一校验并执行闭环与保护后导出电流
             const Gimbal_Command_t command = *(const volatile Gimbal_Command_t *)&gimbal_command;
@@ -161,116 +152,6 @@ void Task_motor_gimbal(void *argument)
         osDelayUntil(tick);
     }
 }
-
-/**
- * @brief 根据调试开关保留调试命令或解析遥控命令
- *
- * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
- * @param[in] debug_enabled 调试模式开关，开启时跳过遥控读取和解析
- * @return 无返回值
- */
-static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled)
-{
-    // 调试模式直接保留 EmberProbe 写入的命令，不让遥控离线或待机状态覆盖它
-    if (debug_enabled)
-    {
-        return;
-    }
-
-    // 邮箱只更新缓存，不改写源时间，读取错误立即撤销缓存
-    DR16_State_t received;
-    const osStatus_t status = osMessageQueueGet(task_runtime.msgq.dr16_gimbal_state, &received, NULL, 0U);
-    if (status == osOK)
-    {
-        remote_cache = received;
-        remote_cache_valid = true;
-    }
-    else if (status != osErrorResource)
-    {
-        remote_cache_valid = false;
-    }
-
-    // 读取快照后再采时间，由命令层统一检查帧龄和在线运行许可
-    const uint64_t now_us = BSP_TIME_Get();
-    Gimbal_Command_t parsed_command;
-    remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
-        now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &parsed_command);
-
-    // 两个开关各读取一次，关闭速度内环时一并撤销外环，失联命令始终保持待机
-    const bool speed_enabled = gimbal_remote_speed_loop_enabled;
-    const bool angle_enabled = gimbal_remote_angle_loop_enabled;
-    if (parsed_command.mode == GIMBAL_MODE_ANGLE)
-    {
-        if (!speed_enabled)
-        {
-            parsed_command.mode = GIMBAL_MODE_RELAX;
-        }
-        else if (!angle_enabled)
-        {
-            parsed_command.mode = GIMBAL_MODE_SPEED;
-        }
-    }
-
-    // 遥控模式统一采用本周期完成校验和闭环选择的命令
-    gimbal_command = parsed_command;
-}
-
-#if MOTOR_GIMBAL_ENABLE_SINE_TEST
-/**
- * @brief yaw 处于角度闭环时生成正弦目标及其解析角速度前馈
- *
- * 测试只改写 yaw 命令；退出时恢复增量来源，沿用模块最后限幅目标并清零前馈
- *
- * @param[in] period_s 实际控制间隔，单位 s
- * @return 无返回值
- */
-static void MotorGimbal_UpdateSineTest(float period_s)
-{
-    const bool active = gimbal_sine_test_enabled && gimbal_command.mode == GIMBAL_MODE_ANGLE &&
-                        gimbal.yaw.state == GIMBAL_AXIS_RUNNING && gimbal.imu_state == GIMBAL_IMU_READY &&
-                        isfinite(gimbal.yaw.angle_deg) && isfinite(period_s) && period_s > 0.0f;
-
-    // 测试状态机：待机时相位归零，首次运行从中心开始，之后按实际周期推进
-    switch (sine_state)
-    {
-        case MOTOR_GIMBAL_SINE_IDLE:
-            if (!active)
-            {
-                return;
-            }
-            sine_phase_rad = 0.0f;
-            sine_center_deg = gimbal.yaw.angle_deg;
-            sine_state = MOTOR_GIMBAL_SINE_RUNNING;
-            break;
-
-        case MOTOR_GIMBAL_SINE_RUNNING:
-            if (!active)
-            {
-                // 退出测试时撤销前馈，增量来源由本周期命令层恢复
-                gimbal_command.yaw.rate_rad_s = 0.0f;
-                sine_phase_rad = 0.0f;
-                sine_state = MOTOR_GIMBAL_SINE_IDLE;
-                return;
-            }
-            sine_phase_rad = fmodf(sine_phase_rad + MOTOR_GIMBAL_SINE_OMEGA_RAD_S * period_s, MOTOR_GIMBAL_TWO_PI);
-            break;
-
-        default:
-            gimbal_command.yaw.rate_rad_s = 0.0f;
-            sine_phase_rad = 0.0f;
-            sine_state = MOTOR_GIMBAL_SINE_IDLE;
-            return;
-    }
-
-    // 角度与前馈来自同一相位，前馈开关不重置轨迹以便连续对比
-    gimbal_command.yaw.source = GIMBAL_TARGET_ABSOLUTE;
-    gimbal_command.yaw.angle_deg = sine_center_deg + MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * sinf(sine_phase_rad);
-    gimbal_command.yaw.rate_rad_s = gimbal_sine_feedforward_enabled ?
-        MOTOR_GIMBAL_SINE_AMPLITUDE_DEG * MOTOR_GIMBAL_DEG_TO_RAD * MOTOR_GIMBAL_SINE_OMEGA_RAD_S *
-        cosf(sine_phase_rad) : 0.0f;
-}
-
-#endif
 
 /**
  * @brief 从容量为 1 的反馈邮箱取得一帧新反馈

@@ -12,6 +12,11 @@ extern "C"
 #include "component/pid.h"
 #include "device/motor_rm.h"
 
+// 置零时编译移除正弦测试及其调试变量
+#ifndef MOTOR_GIMBAL_ENABLE_SINE_TEST
+#define MOTOR_GIMBAL_ENABLE_SINE_TEST (1)
+#endif
+
 /*
  * INS 任务发布的同帧惯性反馈，不改变当前 INS 安装坐标
  * - angle_deg：依次为 Roll、Pitch、累计 Yaw，单位度
@@ -254,6 +259,7 @@ void Gimbal_UpdateFeedback(Gimbal_t *gimbal, const MOTOR_RM_Feedback_t *yaw_moto
  */
 void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command,
                     Gimbal_ChassisState_t chassis_state, float period_s);
+
 
 /**
  * @brief 查询任一轴或共用惯性源是否存在锁存故障

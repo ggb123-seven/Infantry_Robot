@@ -9,11 +9,6 @@ extern "C"
 
 #include "module/gimbal.h"
 
-// 置零时编译移除正弦测试及其调试变量，默认保留现有调试能力
-#ifndef MOTOR_GIMBAL_ENABLE_SINE_TEST
-#define MOTOR_GIMBAL_ENABLE_SINE_TEST (1)
-#endif
-
 /*
  * 云台调试入口由云台任务串行消费，volatile 仅保证调试器可见性，不提供多字段原子快照
  * - gimbal：观察两轴状态，在线修改 gimbal.config；imu_state=2 表示惯性反馈就绪
