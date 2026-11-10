@@ -12,7 +12,7 @@
  * 时长由用户确认，单位微秒；只按实际经过时间撤驱，不再判断两轮转速是否稳定
  * 重复零速命令、反馈波动和空命令邮箱不重置计时，上位失能或新非零目标取消本轮制动
  */
-#define MOTOR_SHOOT_BRAKE_DURATION_US (3000000ULL)
+#define MOTOR_SHOOT_BRAKE_DURATION_US (1000000ULL)
 
 // 空闲、定时制动和已撤驱互斥，撤驱后持续零目标不再重新开启速度环
 typedef enum
