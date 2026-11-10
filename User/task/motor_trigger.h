@@ -9,9 +9,12 @@ extern "C"
 #include "module/feeder.h"
 
 /*
- * 拨弹调试入口：feeder 连发走速度环、单发走逐齿到位串级，config 可调，运行使能由遥控命令生成
+ * 拨弹调试入口：feeder.config 可调，遥控命令生成运行状态，环路可由下方两个使能量在线选择
  * feeder.config 为可写副本，max_speed_rpm 为输出轴转速上限，feed_hz 限制五连发组内的启动频率
- * feeder.config.position_pid 为角度外环参数，输入弧度、输出 rad/s；speed_pid 为速度内环参数，输入 rpm、输出 A
+ * feeder_angle_loop_enabled 默认 true，feeder_speed_loop_enabled 默认 false
+ * 单发和五连发在角度环开、速度环关时由角度 PID 直接输出 A；两环同开时恢复位置 rad/s 到速度 rpm 再到电流 A 的串级
+ * 角度 PID 参数的输出单位随模式变化，独立角度模式有效限幅为 min(out_limit, max_current_a)，串级限幅仍按 rad/s 配置
+ * speed_pid 输入 rpm、输出 A；连续进给要求速度环使能，速度环关闭时连续档撤驱
  * feeder_remote_fire_mode 为可写遥控模式：0 持续连发、1 单发、2 五连发，默认 2，切换后须回中备弹
  * feeder_fire_mode 仅观测本周期采用的模式，不能作为调试写入接口
  * 右拨杆上位安全、中位备弹、下位开火，与左拨杆及右摇杆解耦
@@ -20,7 +23,7 @@ extern "C"
  * 到位为输出轴误差不超过 0.5 度且绝对转速不超过 1 rpm 持续 20 毫秒，执行超过 1 秒锁存故障
  * feeder.state 为唯一运行状态，0 待机、1 运行、2 反馈离线、3 故障锁存，仅运行状态输出电流
  * feeder.target_angle_deg 为本周期采用的角度目标，measured_angle_deg 为输出轴单圈角度，两者单位均为度
- * feeder.target_speed_rpm 为速度内环目标，串级时来自角度外环输出，纯速度环时来自命令倍率映射
+ * feeder.target_speed_rpm 为速度内环目标，单角度环固定为零，串级与纯速度环分别来自外环换算和命令倍率
  * feeder.measured_speed_rpm 为实测输出轴转速，单位 rpm
  * feeder.output_current_a 为限幅后的候选电流，非运行状态由输出闸门归零
  * 角度不连续或超时超过 10 ms 时角度观察量为非数值，帧超时转速为非数值，单发恢复后捕获当前位置并等待回中

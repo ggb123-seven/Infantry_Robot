@@ -16,8 +16,11 @@ volatile uint8_t feeder_remote_fire_mode = FEEDER_FIRE_MODE_BURST;
 
 /*
  * feeder 为任务独占的拨弹观测实例，config 用于在线调参，控制历史由拨弹模块私有保存
+ * feeder_angle_loop_enabled 与 feeder_speed_loop_enabled 由调试器在线选择环路，复位默认只开启角度环
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为连发归一化转速倍率
- * feeder.target_angle_deg 为模块持有的逐发目标，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
+ * feeder.target_angle_deg 为模块持有的逐发目标；单角度环直接输出 A，target_speed_rpm 固定为零
+ * 串级模式下 target_speed_rpm 为角度环换算的速度目标，纯速度环模式下由命令倍率生成
+ * feeder.measured_speed_rpm 为输出轴实测转速，单位 rpm
  * 角度连续性失效时角度观察量为非数值，帧超时后角度和转速均为非数值
  * 右拨杆上位安全、中位备弹、下位开火，右摇杆仅控制云台
  * trigger_command_context 保存命令层模式选择和回中阶段，单发执行阶段由拨弹模块独占
