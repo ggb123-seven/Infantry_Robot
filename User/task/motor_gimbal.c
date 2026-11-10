@@ -161,14 +161,20 @@ void Task_motor_gimbal(void *argument)
 }
 
 /**
- * @brief 消费独立遥控邮箱并在遥控目标与调试命令之间路由，保留遥控停机许可
+ * @brief 根据调试开关保留调试命令或解析遥控命令
  *
  * @param[in] period_s 实际控制间隔，单位秒，合法范围为 (0, 0.1]
- * @param[in] debug_enabled 本周期调试来源开关，开启时只用遥控解析结果决定是否强制待机
+ * @param[in] debug_enabled 调试模式开关，开启时跳过遥控读取和解析
  * @return 无返回值
  */
 static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled)
 {
+    // 调试模式直接保留 EmberProbe 写入的命令，不让遥控离线或待机状态覆盖它
+    if (debug_enabled)
+    {
+        return;
+    }
+
     // 邮箱只更新缓存，不改写源时间，读取错误立即撤销缓存
     DR16_State_t received;
     const osStatus_t status = osMessageQueueGet(task_runtime.msgq.dr16_gimbal_state, &received, NULL, 0U);
@@ -188,17 +194,8 @@ static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled)
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &parsed_command);
 
-    // 遥控模式更新完整目标，调试模式只在遥控禁止运行时撤销使能及速度请求
-    if (!debug_enabled)
-    {
-        gimbal_command = parsed_command;
-    }
-    else if (parsed_command.mode == GIMBAL_MODE_RELAX)
-    {
-        gimbal_command.mode = GIMBAL_MODE_RELAX;
-        gimbal_command.yaw.rate_rad_s = 0.0f;
-        gimbal_command.pitch.rate_rad_s = 0.0f;
-    }
+    // 遥控模式统一采用本周期完成校验的命令
+    gimbal_command = parsed_command;
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST

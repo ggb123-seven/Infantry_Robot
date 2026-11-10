@@ -18,15 +18,15 @@ extern "C"
  * 云台调试入口，均由云台任务串行消费，volatile 只保证调试器可见性，不提供多字段原子快照：
  * - gimbal：云台实例，可直接观察两轴状态，并修改 gimbal.config 在线调参或改零点
  *   imu_state 为 2 时惯性反馈就绪，angle_deg/speed_rad_s 为惯性量，mechanical_angle_deg 为编码器机械角
- * - gimbal_command：正常模式由遥控每周期更新，调试模式由 EmberProbe 写入模式、来源及两轴目标
- *   右拨杆中位为 RELAX，上位为 ANGLE，下位或非法位置为 RELAX
- *   上电、遥控离线超过 100 毫秒、输入异常或锁存故障后，须先右拨杆回中，再拨上重新使能
- *   单轴电机反馈超时只停止该轴，保持上位时有效反馈恢复即可自动起控，目标重置为当前姿态
- *   首次进入 ANGLE 时捕获当前姿态，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
- *   两轴满杆目标角速度均为 6 rad/s，中心死区 5%，方向参数在 module/cmd.c 中集中定义
- * - gimbal_debug_enabled：默认 false，置 true 后保留 gimbal_command，不再用遥控目标覆盖
- *   调试时仍须右拨杆先回中再拨上，待机、失联、锁存故障或发布失败会将 mode 清为 RELAX
- *   拨上后再写 mode：0 为停机、1 为速度内环、2 为角度与速度串级，两轴共用此模式
+ * - gimbal_command：遥控模式由遥控每周期更新，调试模式由 EmberProbe 写入模式、来源及两轴目标
+ *   遥控模式右拨杆中位为 RELAX，上位为 ANGLE，下位或非法位置为 RELAX
+ *   遥控模式上电、离线超过 100 毫秒、输入异常或锁存故障后，须先右拨杆回中，再拨上重新使能
+ *   遥控模式单轴电机反馈超时只停止该轴，保持上位时反馈恢复即可自动起控，目标重置为当前姿态
+ *   遥控模式首次进入 ANGLE 时捕获当前姿态，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
+ *   遥控模式两轴满杆目标角速度均为 6 rad/s，中心死区 5%，方向参数在 module/cmd.c 中集中定义
+ * - gimbal_debug_enabled：默认 false，置 true 后跳过遥控邮箱读取与解析，完全由 EmberProbe 控制 gimbal_command
+ *   调试模式不依赖遥控在线状态和拨杆位置，停机时将 mode 写为 0 或关闭调试开关
+ *   mode：0 为停机、1 为速度内环、2 为角度与速度串级，两轴共用此模式
  *   速度模式写 rate_rad_s，单位 rad/s；固定角度调试须将对应 source 设为 1，再写 angle_deg
  *   角度模式目标采用 INS 坐标，yaw 为累计角、pitch 为俯仰角，rate_rad_s 为速度前馈
  *   固定角度测试将前馈置零，先在 mode=0 时配置目标与参数，最后写 mode 使能
