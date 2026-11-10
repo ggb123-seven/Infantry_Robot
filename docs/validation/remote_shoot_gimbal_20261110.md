@@ -80,4 +80,4 @@ git diff --check -- User/module/cmd.c User/module/cmd.h User/task/motor_gimbal.c
 
 实现时已删除第二个拨弹输出 switch 中重复的非法状态复位和保护性 return，非法上下文在前一个状态转换 switch 统一处理，第二个 switch 仅选择请求输出，默认保留零进给。没有新增重复的配置、反馈或浮点检查
 
-记录完成后尝试清理本任务临时创建的 User/task/.remote_mapping_host；自动审批分别拒绝递归目录清理和逐文件清理，原因仅返回 blocked by policy。该临时测试目录暂时保留且不纳入提交；既有 .chassis_ff_host、.yaw_friction_host 及正式测试资产保持原样
+2026-11-10 用户明确要求清理后，按已核对的完整路径逐文件删除测试源码、替身头、脚本和两个可执行文件，再删除空目录；Test-Path 确认 User/task/.remote_mapping_host 不存在。既有 .chassis_ff_host、.yaw_friction_host 及正式测试资产保持原样，ARCH/HW/SPEC 检查通过
