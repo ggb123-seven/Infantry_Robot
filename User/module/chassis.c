@@ -116,8 +116,8 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
 void Chassis_ResolveGimbalFollow(Chassis_Command_t *command, const MOTOR_RM_Feedback_t *feedback,
                                  uint64_t now_us, float zero_deg, bool reversed)
 {
-    // 仅跟随模式需要云台反馈，其他模式保留原始运动命令
-    if (command->mode != CHASSIS_MODE_FOLLOW_GIMBAL)
+    // 跟随和自旋共用云台坐标转换，独立零速刹车不依赖云台反馈
+    if (command->mode != CHASSIS_MODE_FOLLOW_GIMBAL && command->mode != CHASSIS_MODE_SPIN)
     {
         return;
     }
@@ -141,7 +141,11 @@ void Chassis_ResolveGimbalFollow(Chassis_Command_t *command, const MOTOR_RM_Feed
     const float vy = command->move.vy;
     command->move.vx = cosine * vx - sine * vy;
     command->move.vy = sine * vx + cosine * vy;
-    command->move.wz = AbsClip(CHASSIS_FOLLOW_GAIN * relative, CHASSIS_FOLLOW_MAX_WZ);
+    // 自旋保留命令层给定方向，只有跟随模式追随云台朝向
+    if (command->mode == CHASSIS_MODE_FOLLOW_GIMBAL)
+    {
+        command->move.wz = AbsClip(CHASSIS_FOLLOW_GAIN * relative, CHASSIS_FOLLOW_MAX_WZ);
+    }
 }
 
 /**
@@ -190,6 +194,7 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         {
             case CHASSIS_MODE_INDEPENDENT:
             case CHASSIS_MODE_FOLLOW_GIMBAL:
+            case CHASSIS_MODE_SPIN:
                 if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
                     Mixer_Apply(&chassis->mixer, &command->move, requested_speed,
                                 CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
@@ -231,7 +236,7 @@ void Chassis_DumpOutput(const Chassis_t *chassis, CANDevices_Command_t *output)
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
         output->current_a[i] = (chassis->mode == CHASSIS_MODE_INDEPENDENT ||
-            chassis->mode == CHASSIS_MODE_FOLLOW_GIMBAL) &&
+            chassis->mode == CHASSIS_MODE_FOLLOW_GIMBAL || chassis->mode == CHASSIS_MODE_SPIN) &&
             chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING ? chassis->wheel[i].output_current_a : 0.0F;
     }
 }

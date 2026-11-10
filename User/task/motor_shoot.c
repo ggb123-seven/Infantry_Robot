@@ -8,33 +8,13 @@
 #include <string.h>
 
 /*
- * 下位回中位首次收到零速制动命令时开始计时，经过 3 秒后关闭速度环
- * 时长由用户确认，单位微秒；只按实际经过时间撤驱，不再判断两轮转速是否稳定
- * 重复零速命令、反馈波动和空命令邮箱不重置计时，上位失能或新非零目标取消本轮制动
- */
-#define MOTOR_SHOOT_BRAKE_DURATION_US (1000000ULL)
-
-// 空闲、定时制动和已撤驱互斥，撤驱后持续零目标不再重新开启速度环
-typedef enum
-{
-    MOTOR_SHOOT_STOP_IDLE = 0,
-    MOTOR_SHOOT_STOP_BRAKING,
-    MOTOR_SHOOT_STOPPED,
-} MotorShoot_StopState_t;
-
-/*
  * 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱
- * shoot.config.speed_pid 为直接复制 shoot_config 的可调转子 rpm 速度参数
+ * shoot.config.speed_pid 为复制 shoot_config 的可调转子 rpm 速度参数
  * shoot_speed_feedforward_gain_a_per_rpm 为既有目标差分前馈入口，单位 A/rpm
- * shoot_command 为本周期实际提交模块的命令，制动满 3 秒后 enabled 为 false
- * shoot_stop_state 保存定时制动阶段，shoot_stop_since_us 保存本轮制动起点，单位微秒
+ * shoot_command 为本周期新命令，安全档持续零速闭环，备弹和开火档保持运行
  */
 Shoot_t shoot;
 Shoot_Command_t shoot_command;
-static MotorShoot_StopState_t shoot_stop_state = MOTOR_SHOOT_STOP_IDLE;
-static uint64_t shoot_stop_since_us;
-
-static void MotorShoot_UpdateStopState(bool command_received, bool brake_requested, uint64_t now_us);
 
 /**
  * @brief 周期编排双摩擦轮反馈、速度控制与电流邮箱发布
@@ -74,15 +54,6 @@ void Task_motor_shoot(void *argument)
             memset(&shoot_command, 0, sizeof(shoot_command));
         }
 
-        // 按首次零速命令计时，满 3 秒的本周期即提交失能，持续中位和空邮箱不重新使能
-        const bool brake_requested = shoot_command.enabled &&
-            shoot_command.target_speed_rpm[0] == 0.0f && shoot_command.target_speed_rpm[1] == 0.0f;
-        MotorShoot_UpdateStopState(command_received, brake_requested, now_us);
-        if (shoot_stop_state == MOTOR_SHOOT_STOPPED)
-        {
-            shoot_command.enabled = false;
-        }
-
         // 模块集中校验本周期输入并计算电流，失能时清除控制历史并由唯一输出闸门撤驱
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
@@ -106,52 +77,5 @@ void Task_motor_shoot(void *argument)
         tick += delay_tick;
         // 等待绝对周期边界，保持与总线通信相同的运行频率
         osDelayUntil(tick);
-    }
-}
-
-/**
- * @brief 从首次零速制动命令开始计时，满 3 秒锁存撤驱阶段
- *
- * 调用方保证 now_us 为本周期单调微秒时间，计时独立于反馈更新和模块运行状态
- *
- * @param[in] command_received 本周期成功读取新命令时为 true
- * @param[in] brake_requested 原始命令使能且两轮目标均为零时为 true
- * @param[in] now_us 本周期单调时间，单位微秒，来自 BSP_TIME_Get
- * @return 无返回值
- */
-static void MotorShoot_UpdateStopState(bool command_received, bool brake_requested, uint64_t now_us)
-{
-    // 空邮箱沿用计时阶段，明确的新命令才能取消计时或解除已撤驱阶段
-    switch (shoot_stop_state)
-    {
-        case MOTOR_SHOOT_STOP_IDLE:
-            if (brake_requested)
-            {
-                shoot_stop_since_us = now_us;
-                shoot_stop_state = MOTOR_SHOOT_STOP_BRAKING;
-            }
-            break;
-
-        case MOTOR_SHOOT_STOP_BRAKING:
-            if (command_received && !brake_requested)
-            {
-                shoot_stop_state = MOTOR_SHOOT_STOP_IDLE;
-            }
-            else if (now_us - shoot_stop_since_us >= MOTOR_SHOOT_BRAKE_DURATION_US)
-            {
-                shoot_stop_state = MOTOR_SHOOT_STOPPED;
-            }
-            break;
-
-        case MOTOR_SHOOT_STOPPED:
-            if (command_received && !brake_requested)
-            {
-                shoot_stop_state = MOTOR_SHOOT_STOP_IDLE;
-            }
-            break;
-
-        default:
-            shoot_stop_state = MOTOR_SHOOT_STOPPED;
-            break;
     }
 }

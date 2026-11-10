@@ -100,7 +100,7 @@ void Task_motor_chassis(void *argument)
         // 仅接管已获遥控许可的自旋请求，清除平移分量以单独验证四轮速度前馈
         const uint32_t debug_enabled = chassis_debug_speed_enabled;
         const float debug_speed_rpm = chassis_debug_speed_rpm;
-        if (debug_enabled == 1U && chassis_command.mode == CHASSIS_MODE_INDEPENDENT)
+        if (debug_enabled == 1U && chassis_command.mode == CHASSIS_MODE_SPIN)
         {
             chassis_command.move.vx = 0.0f;
             chassis_command.move.vy = 0.0f;
@@ -108,7 +108,7 @@ void Task_motor_chassis(void *argument)
             chassis_command.wheel_speed_scale_rpm = fabsf(debug_speed_rpm);
         }
 
-        // 模块用已标定车头零点转换跟随命令，失效反馈在模块入口阻断跟随
+        // 模块用已标定零点转换跟随及自旋平移，失效反馈统一在模块入口阻断
         Chassis_ResolveGimbalFollow(&chassis_command, yaw_feedback_received ? &yaw_feedback_cache : NULL,
                                      remote_time_us, gimbal_config.yaw.zero_encoder_deg, gimbal_config.yaw.reversed);
 
@@ -192,7 +192,7 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 static bool MotorChassis_PublishState(void)
 {
     // 命令已由命令层校验，当前非零旋转分量只来自左拨杆下位的小陀螺映射
-    const bool spinning = chassis.mode == CHASSIS_MODE_INDEPENDENT && chassis_command.move.wz != 0.0f;
+    const bool spinning = chassis.mode == CHASSIS_MODE_SPIN && chassis_command.move.wz != 0.0f;
     const Gimbal_ChassisState_t state = !Chassis_HasOnlineWheel(&chassis) ? GIMBAL_CHASSIS_OFFLINE :
         (spinning ? GIMBAL_CHASSIS_SPINNING : GIMBAL_CHASSIS_ONLINE);
     const osMessageQueueId_t queue = task_runtime.msgq.chassis_gimbal;

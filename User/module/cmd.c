@@ -8,16 +8,16 @@
 /*
  * 遥控映射参数，沿用现有底盘与云台参数：
  * - 满量程 660 计数，中心死区 5%，帧龄上限使用 DR16 的 100 毫秒协议约定
- * - 底盘轮速尺度 100 rpm，左拨杆中位跟随云台，上位待机，下位进入车体自旋
+ * - 底盘轮速尺度 100 rpm，左拨杆中位跟随云台，上位零速刹车，下位顺时针自旋
  * - 云台两轴方向取 -1，满杆角速度 6 rad/s，加减速上限 60000 度每平方秒
  * - 平滑时间常数 4 毫秒，误差在 0.1 度每秒内且满足变化上限时直接收敛
  * - 周期合法范围 (0, 0.1] 秒，度转弧度系数保留原任务精度
- * - 拨弹单发向上端部为右摇杆归一化值不大于 -0.95，沿用既有向上为负的通道约定
+ * - 右拨杆上位安全、中位备弹、下位开火，右摇杆仅用于云台
  */
 #define CMD_CHANNEL_LIMIT (660.0f)
 #define CMD_DEADZONE (0.05f)
 #define CMD_CHASSIS_SCALE_RPM (100.0f)
-#define CMD_CHASSIS_SPIN_WZ (0.30f)
+#define CMD_CHASSIS_SPIN_WZ (-0.30f)
 #define CMD_GIMBAL_DIRECTION (-1.0f)
 #define CMD_GIMBAL_RATE_RAD_S (6.0f)
 #define CMD_GIMBAL_ACCEL_DEG_S2 (60000.0f)
@@ -26,7 +26,6 @@
 #define CMD_GIMBAL_SETTLE_DEG_S (0.1f)
 #define CMD_GIMBAL_MAX_PERIOD_S (0.1f)
 #define CMD_DEG_TO_RAD (0.0174532925199f)
-#define CMD_FEEDER_SINGLE_UP_RATIO (-0.95f)
 
 /**
  * @brief 将原始通道计数限幅归一化并去除中心死区
@@ -102,12 +101,13 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
         return false;
     }
 
-    // 中位请求云台坐标跟随，上位待机，下位沿用车体坐标自旋
+    // 上位零速闭环刹车，中位跟随，下位保持云台坐标平移并顺时针自旋
     const float lateral = Cmd_NormalizeChannel(rc->data.ch_l_x, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
     const float forward = Cmd_NormalizeChannel(rc->data.ch_l_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
     switch (rc->data.sw_l)
     {
         case DR16_SWITCH_UP:
+            out->mode = CHASSIS_MODE_INDEPENDENT;
             break;
 
         case DR16_SWITCH_MIDDLE:
@@ -117,7 +117,7 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
             break;
 
         case DR16_SWITCH_DOWN:
-            out->mode = CHASSIS_MODE_INDEPENDENT;
+            out->mode = CHASSIS_MODE_SPIN;
             out->move.vx = -forward;
             out->move.vy = lateral;
             out->move.wz = CMD_CHASSIS_SPIN_WZ;
@@ -131,21 +131,20 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 }
 
 /**
- * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
+ * @brief 按右拨杆生成安全、备弹和开火命令，模式切换后要求重新备弹
  *
- * 右拨杆上位选择单发，下位选择连发，启动和模式切换须先回中
- *
- * @param[in,out] ctx 拨弹任务独占命令上下文，调用方保证非空且初始为零
+ * @param[in,out] ctx 任务独占命令上下文，调用方保证非空且初始为零
  * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
  * @param[in] now_us 读取快照后的当前时间，单位微秒
- * @param[out] out 拨弹命令，调用方保证非空
- * @return 遥控快照在线且时效有效时返回 true，否则返回 false
+ * @param[in] fire_mode 遥控进给模式，0 连发、1 单发、2 五连发
+ * @param[out] out 本周期拨弹命令，调用方保证非空
+ * @return 遥控与模式有效时为 true，失效或非法档位时为 false
  */
 bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
-                     Feeder_Command_t *out)
+                     uint8_t fire_mode, Feeder_Command_t *out)
 {
-    // 默认离线档，失效遥控和非法档位都不得沿用上一周期的速度比例
+    // 遥控边界统一拒绝旧帧，失联和非法输入撤销备弹记忆
     *out = (Feeder_Command_t)
     {
         .mode = FEEDER_CMD_OFFLINE,
@@ -157,82 +156,62 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
         return false;
     }
 
-    // 右拨杆只选择射击模式，左拨杆继续独立控制底盘
+    // 在线模式入口只校验一次，状态同时记录备弹时选定的模式
+    Cmd_FeederState_t ready;
+    Cmd_FeederState_t active;
+    switch (fire_mode)
+    {
+        case FEEDER_FIRE_MODE_AUTO:
+            ready = CMD_FEEDER_AUTO_READY;
+            active = CMD_FEEDER_AUTO_ACTIVE;
+            break;
+
+        case FEEDER_FIRE_MODE_SINGLE:
+            ready = CMD_FEEDER_SINGLE_READY;
+            active = CMD_FEEDER_SINGLE_ACTIVE;
+            break;
+
+        case FEEDER_FIRE_MODE_BURST:
+            ready = CMD_FEEDER_BURST_READY;
+            active = CMD_FEEDER_BURST_ACTIVE;
+            break;
+
+        default:
+            ctx->state = CMD_FEEDER_DISABLED;
+            return false;
+    }
+    out->fire_mode = fire_mode;
+
+    // 左拨杆和两路右摇杆不参与射击，只有中位可以建立备弹阶段
     switch (rc->data.sw_r)
     {
         case DR16_SWITCH_UP:
+            out->mode = FEEDER_CMD_RELAX;
+            ctx->state = CMD_FEEDER_DISABLED;
+            break;
+
+        case DR16_SWITCH_MIDDLE:
             out->mode = FEEDER_CMD_RUN;
-            out->fire_mode = FEEDER_FIRE_MODE_SINGLE;
+            ctx->state = ready;
             break;
 
         case DR16_SWITCH_DOWN:
             out->mode = FEEDER_CMD_RUN;
+            if (ctx->state == ready || ctx->state == active)
+            {
+                ctx->state = active;
+                out->speed_ratio = 1.0f;
+                out->single_fire = true;
+            }
+            else
+            {
+                ctx->state = CMD_FEEDER_DISABLED;
+            }
             break;
-
-        case DR16_SWITCH_MIDDLE:
-            out->mode = FEEDER_CMD_RELAX;
-            ctx->state = CMD_FEEDER_DISABLED;
-            return true;
 
         default:
             ctx->state = CMD_FEEDER_DISABLED;
             return false;
-    }
-
-    // 启动和单连发互切后重新回中，避免保持推杆时直接产生新模式的进给请求
-    const float ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
-    const bool single = out->fire_mode == FEEDER_FIRE_MODE_SINGLE;
-    const Cmd_FeederState_t wait_state = single ? CMD_FEEDER_SINGLE_WAIT_CENTER : CMD_FEEDER_AUTO_WAIT_CENTER;
-    switch (ctx->state)
-    {
-        case CMD_FEEDER_DISABLED:
-            ctx->state = wait_state;
-            break;
-
-        case CMD_FEEDER_AUTO_WAIT_CENTER:
-        case CMD_FEEDER_AUTO_READY:
-            if (single)
-            {
-                ctx->state = CMD_FEEDER_SINGLE_WAIT_CENTER;
-            }
-            break;
-
-        case CMD_FEEDER_SINGLE_WAIT_CENTER:
-        case CMD_FEEDER_SINGLE_READY:
-            if (!single)
-            {
-                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER;
-            }
-            break;
-
-        default:
-            ctx->state = CMD_FEEDER_DISABLED;
-            out->mode = FEEDER_CMD_OFFLINE;
-            return false;
-    }
-
-    // 等待阶段不提交进给，回中确认后由拨弹模块负责逐齿执行和到位判定
-    switch (ctx->state)
-    {
-        case CMD_FEEDER_AUTO_WAIT_CENTER:
-        case CMD_FEEDER_SINGLE_WAIT_CENTER:
-            if (ratio == 0.0f)
-            {
-                ctx->state = single ? CMD_FEEDER_SINGLE_READY : CMD_FEEDER_AUTO_READY;
-            }
-            break;
-
-        case CMD_FEEDER_AUTO_READY:
-            out->speed_ratio = ratio;
-            break;
-
-        case CMD_FEEDER_SINGLE_READY:
-            out->speed_ratio = ratio;
-            out->single_fire = ratio <= CMD_FEEDER_SINGLE_UP_RATIO;
-            break;
-
-        default:
-            break;
     }
     return true;
 }

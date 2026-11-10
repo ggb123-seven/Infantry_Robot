@@ -20,12 +20,13 @@ extern "C"
  */
 extern volatile float chassis_speed_feedforward_gain_a_per_rpm[CHASSIS_WHEEL_COUNT];
 
-// 底盘模式：待机零电流，独立模式直接运动，跟随模式以云台为前方并追随其朝向
+// 底盘模式：待机零电流，独立模式含零速刹车，跟随和自旋均以云台为平移坐标
 typedef enum
 {
     CHASSIS_MODE_RELAX = 0,
     CHASSIS_MODE_INDEPENDENT,
     CHASSIS_MODE_FOLLOW_GIMBAL,
+    CHASSIS_MODE_SPIN,
 } Chassis_Mode_t;
 
 // 单轮状态：待机、闭环运行、反馈离线；离线恢复后自动重新预置
@@ -64,7 +65,7 @@ typedef struct
  * 底盘命令：
  * - mode：控制模式，未知值按待机处理
  * - move：归一化运动向量，vx 前向、vy 左向、wz 俯视逆时针为正，约定范围 [-1, 1]
- *   跟随模式的遥控平移先以云台为坐标，经 ResolveGimbalFollow 转换后才交给 Control
+ *   跟随与自旋模式的遥控平移先以云台为坐标，经 ResolveGimbalFollow 转换后才交给 Control
  * - wheel_speed_scale_rpm：归一化轮速 1 对应的输出轴 rpm，须非负，超过配置上限时限幅
  */
 typedef struct
@@ -142,16 +143,16 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
  * @brief 推进底盘模式和每轮状态机并计算电流
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] command 归一化控制命令，无命令时传 NULL，调用方保证跟随命令已经过 ResolveGimbalFollow
+ * @param[in] command 归一化控制命令，无命令时传 NULL，调用方保证跟随及自旋命令已经过 ResolveGimbalFollow
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
 void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float period_s);
 
 /**
- * @brief 根据云台机械角转换平移命令并计算底盘跟随转向
+ * @brief 根据云台机械角转换跟随及自旋平移，跟随时额外计算转向
  *
- * @param[in,out] command 已解析的底盘命令，跟随反馈无效时转为待机
+ * @param[in,out] command 已解析的底盘命令，跟随或自旋反馈无效时转为待机
  * @param[in] feedback 最近一次云台电机反馈，未取得时传 NULL
  * @param[in] now_us 读取反馈后的单调时间，单位微秒
  * @param[in] zero_deg 调用方保证为已标定的方向修正后编码器零点，单位度

@@ -34,12 +34,13 @@ typedef enum
 } Feeder_CmdMode_t;
 
 /*
- * 拨弹进给模式，由命令层根据拨杆顺序选择，上电默认连发速度环
- * 自动档为连发：只走速度环，摇杆倍率直接映射输出轴转速，角度环不参与
- * 单发档采用串级控制，每次只推进一齿，实际到位后才允许下一齿，当前八齿配置对应 45°
+ * 拨弹接口保留三种进给模式，遥控默认选择五连发
+ * 连发只走速度环，倍率映射输出轴转速；单发与五连发采用逐齿到位串级控制
+ * 固定发数完成后持续请求不重复，释放请求取消剩余发数并允许重新触发
  */
 #define FEEDER_FIRE_MODE_AUTO (0U)
 #define FEEDER_FIRE_MODE_SINGLE (1U)
+#define FEEDER_FIRE_MODE_BURST (2U)
 
 // 本周期实际采用的进给模式，仅供观测，命令层为唯一选择来源
 extern volatile uint8_t feeder_fire_mode;
@@ -50,9 +51,9 @@ extern volatile float feeder_angle_target_deg;
  * 拨弹命令由命令层每周期根据遥控快照重新生成，模块只读取不修改
  * mode 为命令档位，拨杆非法或遥控不新鲜时保持离线，只有待机档能解除故障锁存
  * speed_ratio 沿用命令层既有字段名，语义为连发归一化转速倍率，调用方保证有限且位于 [-1, 1]
- * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定；单发档用零值确认回中
- * fire_mode 为已由命令层确认的连发或单发模式，取值为 FEEDER_FIRE_MODE_AUTO 或 FEEDER_FIRE_MODE_SINGLE
- * single_fire 表示单发档右摇杆向上端部的持续请求，执行期间释放仅取消后续步骤
+ * 连发档保留倍率正负号，目标方向由 config.direction 与倍率符号共同决定
+ * fire_mode 为命令层已校验的进给模式，0 连发、1 单发、2 五连发
+ * single_fire 为单发或五连发的持续开火请求，释放立即取消未完成进给，完成后须释放再触发
  */
 typedef struct
 {
@@ -132,9 +133,9 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 /**
  * @brief 校验周期配置，按命令档位执行连发速度环或到位后逐发推进的串级控制
  *
- * 单发使能及反馈恢复时捕获当前位置并等待摇杆回中，触发后固定目标推进一齿
+ * 单发及五连发使能或反馈恢复时捕获当前位置并等待请求释放，触发后逐齿执行固定发数
  * 到位须满足输出轴误差不超过 0.5 度、绝对转速不超过 1 rpm 并持续 20 毫秒，超时 1 秒锁存故障
- * 松杆后完成当前一齿，持续请求在到位且满足发射间隔后推进下一齿，退出使能立即撤驱
+ * 释放请求立即取消剩余目标；固定发数完成后持续请求不重复，退出使能立即撤驱
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存

@@ -29,20 +29,21 @@ typedef struct
 } Cmd_Gimbal_t;
 
 /*
- * 拨弹命令阶段：中位停机，上位选择单发，下位选择连发，与左拨杆完全解耦
- * 启动和单连发切换均先等待右摇杆回中，再允许对应模式运行
- * 单发就绪后保持向上端部电平请求，执行和到位判定由拨弹模块负责
+ * 拨弹命令阶段保存已备弹或已开火的模式，上位安全、中位备弹、下位开火
+ * 初次下位、失联恢复仍下位及运行中切换模式都须先回中位，不使用右摇杆触发
  */
 typedef enum
 {
     CMD_FEEDER_DISABLED = 0,
-    CMD_FEEDER_AUTO_WAIT_CENTER,
     CMD_FEEDER_AUTO_READY,
-    CMD_FEEDER_SINGLE_WAIT_CENTER,
+    CMD_FEEDER_AUTO_ACTIVE,
     CMD_FEEDER_SINGLE_READY,
+    CMD_FEEDER_SINGLE_ACTIVE,
+    CMD_FEEDER_BURST_READY,
+    CMD_FEEDER_BURST_ACTIVE,
 } Cmd_FeederState_t;
 
-// 拨弹任务独占的命令上下文，state 保存射击模式及摇杆回中阶段
+// 拨弹任务独占的命令上下文，state 保存射击模式及拨杆备弹阶段
 typedef struct
 {
     Cmd_FeederState_t state;
@@ -62,18 +63,19 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 /**
  * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
  *
- * 右拨杆上位选择单发，下位选择连发，中位待机，左拨杆不参与射击模式选择
- * 启动及模式切换先等待右摇杆回中；连发保留双向速度比例，单发仅向上端部产生持续请求
+ * 右拨杆上位安全、中位备弹、下位开火，左拨杆与右摇杆不参与射击选择
+ * 启动及模式切换先等待右拨杆回中，固定发数的执行与释放重触发由拨弹模块负责
  *
  * @param[in,out] ctx 拨弹任务独占命令上下文，调用方保证非空且初始为零
  * @param[in] rc 最近遥控快照，调用方保证非空
  * @param[in] rc_valid 已取得有效缓存时为 true
  * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[in] fire_mode 遥控进给模式，0 连发、1 单发、2 五连发，非法值输出离线档
  * @param[out] out 拨弹命令，调用方保证非空
- * @return 遥控快照在线且时效有效时返回 true，否则返回 false
+ * @return 遥控、模式和右拨杆有效时返回 true，否则返回 false
  */
 bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
-                     Feeder_Command_t *out);
+                     uint8_t fire_mode, Feeder_Command_t *out);
 
 /**
  * @brief 解析在线遥控的云台平滑速度，异常输入撤销运行请求
