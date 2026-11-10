@@ -118,6 +118,9 @@ typedef struct
  * - feedback_timeout_s：反馈帧最大间隔，单位 s，超过时视为失联并断开连续角
  *   须保证最高转速下该时间内转动小于半圈，才能唯一展开编码器角度
  * - imu_timeout_s：惯性反馈源采样时刻的最大帧龄及相邻帧间隔，单位 s，范围 (0, 0.1]
+ * - yaw_friction_current_a：仅 yaw 使用的平滑库仑摩擦补偿幅值，单位 A，范围 [0, yaw.max_current_a]，零表示关闭
+ * - yaw_friction_smoothing_rad_s：仅 yaw 使用的零速平滑尺度，单位 rad/s，须为有限正数
+ *   补偿方向使用电机相对底盘的编码器角速度，两字段随周期快照集中校验，不影响 pitch
  */
 typedef struct
 {
@@ -125,6 +128,8 @@ typedef struct
     Gimbal_AxisConfig_t pitch;
     float feedback_timeout_s;
     float imu_timeout_s;
+    float yaw_friction_current_a;
+    float yaw_friction_smoothing_rad_s;
 } Gimbal_Config_t;
 
 // 两轴独立选择目标来源：遥控使用增量，自瞄及调试轨迹使用绝对角度
@@ -161,7 +166,7 @@ typedef struct
  * - state：单轴运行状态
  * - encoder_deg：方向修正后的编码器单圈角度，单位度，范围 [0, 360)，失联时为非数值
  * - mechanical_angle_deg：编码器相对零点的机械角，单位度，yaw 连续展开，pitch 为 [-180, 180)
- * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测及 yaw 机械运动保护
+ * - motor_speed_rad_s：编码器换算的角速度，单位 rad/s，用于机械观测、yaw 摩擦补偿及机械运动保护
  * - angle_deg：当前 INS 坐标下的姿态角，单位度，yaw 为累计 Yaw，pitch 为 Pitch
  * - speed_rad_s：大地系欧拉角速度，单位 rad/s，由机体系陀螺仪按 ZYX 欧拉运动学换算
  *   yaw 为 (ωy·sinRoll + ωz·cosRoll) / cosPitch，pitch 为 ωy·cosRoll − ωz·sinRoll，姿态未就绪时与角度均为非数值

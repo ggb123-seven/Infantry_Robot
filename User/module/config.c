@@ -56,7 +56,7 @@ const Shoot_Config_t shoot_config =
     {
         .k = 1.0f,
         .p = 0.16f,
-        .i = 0.0f,
+        .i = 0.1f,
         .d = 0.0f,
         .i_limit = 20.0f,
         .out_limit = 3.0f,
@@ -103,7 +103,7 @@ const Chassis_Config_t chassis_config =
     .wheel_speed_pid =
     {
         .k = 1.0F,
-        .p = 0.16F,
+        .p = 0.20F,
         .i = 0.0F,
         .d = 0.0F,
         .i_limit = 20.0F,
@@ -123,8 +123,10 @@ const Chassis_Config_t chassis_config =
  * - 电流控制码按 ±3 A 对应 ±16384 换算，±0.5 A、±1 A、±3 A 取整后分别对应 ±2730、±5461、±16384
  * - 角度环输出为目标角速度，单位 rad/s；速度环输出为电流候选，单位 A，最终另按 max_current_a 限幅
  * - PID 增益、积分限幅和输出限幅保留各轴独立配置，参数副本支持在线调参，控制周期使用已校验快照
- * - pitch 水平零点 118.08016° 取自用户实测，沿用当前 reversed=false 的编码器方向
- * - pitch 编码器机械范围按用户指定设为水平零点两侧各 60°，即 [-60°, 60°]
+ * - yaw 摩擦补偿默认 0 A，即关闭；平滑尺度初值 0.2 rad/s，运行中修改整体配置内的两个 yaw_friction 参数
+ * - yaw 按编码器相对底盘转速计算平滑库仑补偿，与速度环电流相加后统一限流，pitch 不使用摩擦补偿
+ * - pitch 机械零点 238.93068° 由用户于 2026-11-07 确认，沿用当前 reversed=false 的编码器方向
+ * - pitch 编码器机械范围沿用当前确认参数，为机械零点两侧各 20°，即 [-20°, 20°]
  * - 两轴均启用并独立输出电流，默认命令为 RELAX，上电保持零电流
  * - 编码器仅用于机械角、限位与在线检测，pitch 使用有符号角，yaw 保留连续展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
@@ -149,18 +151,18 @@ const Gimbal_Config_t gimbal_config =
             .i = 0.0f,
             .d = 0.0f,
             .i_limit = 1.0f,
-            .out_limit = 320.0f * 0.10471975512f,
+            .out_limit = 1.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },
         .speed_pid =
         {
             .k = 1.0f,
-            .p = 0.06f,
-            .i = 0.0f,
+            .p = 1.0f,
+            .i = 0.177f,
             .d = 0.0f,
-            .i_limit = 0.5f / 0.177f,
-            .out_limit = 0.5f,
+            .i_limit = 1.0f,
+            .out_limit = 10.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },
@@ -170,34 +172,36 @@ const Gimbal_Config_t gimbal_config =
         .enabled = true,
         .reversed = false,
         .mechanical_limit_enabled = true,
-        .zero_encoder_deg = 118.08016f,
-        .min_angle_deg = -60.0f,
-        .max_angle_deg = 60.0f,
+        .zero_encoder_deg = 238.93068f,
+        .min_angle_deg = -20.0f,
+        .max_angle_deg = 20.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
         .max_current_a = 1.0f,
         .angle_pid =
         {
             .k = 1.0f,
             .p = 15.0f,
-            .i = 0.005f,
+            .i = 0.00f,
             .d = 0.0f,
-            .i_limit = 1.0f,
-            .out_limit = 320.0f * 0.10471975512f,
+            .i_limit = 0.0f,
+            .out_limit = 1.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },
         .speed_pid =
         {
             .k = 1.0f,
-            .p = 0.06f,
+            .p = 0.3f,
             .i = 0.177f,
             .d = 0.0f,
-            .i_limit = 0.5f / 0.177f,
-            .out_limit = 0.5f,
+            .i_limit = 1.0f,
+            .out_limit = 10.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },
     },
     .feedback_timeout_s = 0.09f,
     .imu_timeout_s = 0.01f,
+    .yaw_friction_current_a = 0.0f,
+    .yaw_friction_smoothing_rad_s = 0.2f,
 };

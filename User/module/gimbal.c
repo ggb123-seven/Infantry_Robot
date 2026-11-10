@@ -118,11 +118,11 @@ static void Gimbal_ApplyAxisConfig(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *i
 static void Gimbal_EnterRunning(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal);
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
                            const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisSetpoint_t *command, float period_s);
+                           const Gimbal_AxisSetpoint_t *command, float period_s, bool yaw_friction);
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
                                const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool imu_ready);
+                               bool imu_ready, bool yaw_friction);
 
 /**
  * @brief 将有限角度环绕到单圈区间
@@ -323,7 +323,7 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command,
     if (yaw_valid)
     {
         Gimbal_ControlAxis(&gimbal->yaw, &gimbal_internal.yaw, &snapshot.yaw, mode, mode_changed,
-                           &gimbal_internal.yaw.setpoint, period_s, imu_ready);
+                           &gimbal_internal.yaw.setpoint, period_s, imu_ready, true);
     }
     else
     {
@@ -332,7 +332,7 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command,
     if (pitch_valid)
     {
         Gimbal_ControlAxis(&gimbal->pitch, &gimbal_internal.pitch, &snapshot.pitch, mode, mode_changed,
-                           &gimbal_internal.pitch.setpoint, period_s, imu_ready);
+                           &gimbal_internal.pitch.setpoint, period_s, imu_ready, false);
     }
     else
     {
@@ -405,6 +405,9 @@ static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_
         config->feedback_timeout_s <= 1.0f && isfinite(config->imu_timeout_s) &&
         config->imu_timeout_s >= 1.0e-6f && config->imu_timeout_s <= 0.1f &&
         Gimbal_IsAxisConfigValid(&config->yaw) && Gimbal_IsAxisConfigValid(&config->pitch) &&
+        isfinite(config->yaw_friction_current_a) && config->yaw_friction_current_a >= 0.0f &&
+        config->yaw_friction_current_a <= config->yaw.max_current_a &&
+        isfinite(config->yaw_friction_smoothing_rad_s) && config->yaw_friction_smoothing_rad_s > 0.0f &&
         config->yaw.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
         config->yaw.speed_pid.d_cutoff_freq < frequency_hz * 0.5f &&
         config->pitch.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
@@ -490,9 +493,21 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *inte
     axis->state = GIMBAL_AXIS_RUNNING;
 }
 
+/**
+ * @brief 计算单轴闭环电流，仅 yaw 可叠加摩擦补偿，调用方保证反馈、命令、配置及周期已经校验
+ *
+ * @param[in,out] axis 单轴运行状态与观测
+ * @param[in,out] internal 单轴私有控制器与目标
+ * @param[in] config 本周期已经校验的单轴配置
+ * @param[in] mode 本周期控制模式，仅速度或角度模式
+ * @param[in] command 已解析的单轴目标，角度单位为度，角速度单位为 rad/s
+ * @param[in] period_s 已校验的本周期时长，单位 s
+ * @param[in] yaw_friction 仅 yaw 传 true，使用本周期整体配置快照中的摩擦补偿参数
+ * @return 计算链及积分有限时返回 true，异常时由调用方转入故障状态
+ */
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
                            const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
-                           const Gimbal_AxisSetpoint_t *command, float period_s)
+                           const Gimbal_AxisSetpoint_t *command, float period_s, bool yaw_friction)
 {
     // 调用方已保证反馈就绪、命令合法及周期有效，本层只执行控制计算
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
@@ -542,7 +557,14 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     }
     // 速度环输出电流，非有限结果视为计算异常
     const float previous_speed_integral = internal->speed_pid.i;
-    const float current_a = PID_Calc(&internal->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
+    float current_a = PID_Calc(&internal->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
+    // yaw 使用相对底盘的编码器转速补偿摩擦，小陀螺保持世界朝向时仍可识别实际机械运动
+    if (yaw_friction)
+    {
+        const Gimbal_Config_t *control_config = &gimbal_internal.control_config;
+        current_a += control_config->yaw_friction_current_a *
+            tanhf(axis->motor_speed_rad_s / control_config->yaw_friction_smoothing_rad_s);
+    }
     if (!isfinite(target_speed_rad_s))
     {
         return false;
@@ -562,13 +584,28 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     {
         internal->angle_pid.i = previous_angle_integral;
     }
-    return isfinite(axis->output_current_a) && isfinite(internal->speed_pid.i);
+    // 在合成计算链出口检查候选电流，防止限幅掩盖非有限结果，输出仍由状态闸门放行
+    return isfinite(current_a) && isfinite(internal->speed_pid.i);
 }
 
+/**
+ * @brief 根据运行许可和反馈推进单轴状态机，运行时计算闭环及该轴允许的补偿
+ *
+ * @param[in,out] axis 单轴运行状态与观测
+ * @param[in,out] internal 单轴私有控制器与目标
+ * @param[in] config 本周期已经校验的单轴配置
+ * @param[in] mode 本周期共用控制模式
+ * @param[in] mode_changed 本周期控制模式改变时为 true
+ * @param[in] command 已解析的单轴目标，角度单位为度，角速度单位为 rad/s
+ * @param[in] period_s 已校验的本周期时长，单位 s
+ * @param[in] imu_ready 本周期惯性反馈就绪时为 true
+ * @param[in] yaw_friction 仅 yaw 传 true，pitch 始终传 false
+ * @return 无返回值
+ */
 static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
                                const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
                                bool mode_changed, const Gimbal_AxisSetpoint_t *command, float period_s,
-                               bool imu_ready)
+                               bool imu_ready, bool yaw_friction)
 {
     // 参数已由 Control 入口同步，此处仅依据运行请求和明确反馈状态推进状态机
     const bool run_requested = config->enabled && (mode == GIMBAL_MODE_SPEED || mode == GIMBAL_MODE_ANGLE);
@@ -591,7 +628,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *inter
                 break;
             }
             Gimbal_EnterRunning(axis, internal);
-            if (!Gimbal_RunAxis(axis, internal, config, mode, command, period_s))
+            if (!Gimbal_RunAxis(axis, internal, config, mode, command, period_s, yaw_friction))
             {
                 Gimbal_StopAxis(axis, internal, GIMBAL_AXIS_FAULT);
             }
@@ -606,7 +643,7 @@ static void Gimbal_ControlAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *inter
             {
                 Gimbal_EnterRunning(axis, internal);
             }
-            if (!feedback_ready || !Gimbal_RunAxis(axis, internal, config, mode, command, period_s))
+            if (!feedback_ready || !Gimbal_RunAxis(axis, internal, config, mode, command, period_s, yaw_friction))
             {
                 Gimbal_StopAxis(axis, internal, GIMBAL_AXIS_FAULT);
             }
