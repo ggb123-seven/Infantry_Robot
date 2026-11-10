@@ -17,12 +17,24 @@
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
+/*
+ * 四轮前馈初值取自 2026-11-10 架空正向 30 rpm 实测，单位 A/rpm：
+ * 依次为左前 0.0137、左后 0.0231、右后 0.0097、右前 0.0092
+ * 调试器写入后由控制入口逐周期采纳，适用范围及零值关闭语义见头文件
+ */
+volatile float chassis_speed_feedforward_gain_a_per_rpm[CHASSIS_WHEEL_COUNT] =
+{
+    0.0137F, 0.0231F, 0.0097F, 0.0092F,
+};
+
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
 static void Chassis_ResetWheel(Chassis_Wheel_t *wheel);
 static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm);
 static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config);
-static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run, float period_s);
-static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s);
+static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run,
+                                 float period_s, float feedforward_gain);
+static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s,
+                             float feedforward_gain);
 
 /**
  * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
@@ -148,10 +160,17 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         return;
     }
 
-    // EmberProbe 可在任意时刻写入 config，本周期只校验并使用这一份快照
+    // 配置与前馈系数可被调试器异步改写，本周期只校验并使用入口快照
     const Chassis_Config_t snapshot = *(const volatile Chassis_Config_t *)&chassis->config;
+    float feedforward_gain[CHASSIS_WHEEL_COUNT];
+    bool feedforward_valid = true;
+    for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
+    {
+        feedforward_gain[i] = chassis_speed_feedforward_gain_a_per_rpm[i];
+        feedforward_valid = isfinite(feedforward_gain[i]) && feedforward_gain[i] >= 0.0F && feedforward_valid;
+    }
     const float frequency_hz = 1.0F / chassis->wheel[0].speed_pid.dt_min;
-    chassis->config_valid = Chassis_IsConfigValid(&snapshot, frequency_hz);
+    chassis->config_valid = Chassis_IsConfigValid(&snapshot, frequency_hz) && feedforward_valid;
     if (chassis->config_valid)
     {
         Chassis_ApplyPidConfig(chassis, &snapshot);
@@ -194,7 +213,7 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
             wheel->state = CHASSIS_WHEEL_RELAX;
         }
         wheel->requested_speed_rpm = next_mode != CHASSIS_MODE_RELAX ? requested_speed[i] : 0.0F;
-        Chassis_ControlWheel(wheel, &snapshot, next_mode != CHASSIS_MODE_RELAX, period_s);
+        Chassis_ControlWheel(wheel, &snapshot, next_mode != CHASSIS_MODE_RELAX, period_s, feedforward_gain[i]);
     }
     chassis->mode = next_mode;
 }
@@ -341,9 +360,11 @@ static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *c
  * @param[in] config 已校验的底盘配置，待机时允许配置非法
  * @param[in] run 本周期是否请求运行
  * @param[in] period_s 实测控制周期，运行时须在 (0, 0.1] s 内
+ * @param[in] feedforward_gain 本轮周期快照中的速度前馈系数，单位 A/rpm，运行时已校验
  * @return 无返回值
  */
-static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run, float period_s)
+static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run,
+                                 float period_s, float feedforward_gain)
 {
     Chassis_WheelState_t next_state = CHASSIS_WHEEL_RELAX;
     switch (wheel->state)
@@ -371,7 +392,7 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
     switch (wheel->state)
     {
         case CHASSIS_WHEEL_RUNNING:
-            Chassis_RunWheel(wheel, config, period_s);
+            Chassis_RunWheel(wheel, config, period_s, feedforward_gain);
             break;
 
         case CHASSIS_WHEEL_OFFLINE:
@@ -383,14 +404,16 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
 }
 
 /**
- * @brief 执行单轮限幅、换向保护、斜坡和速度闭环
+ * @brief 执行单轮换向保护、目标斜坡、速度闭环和前馈电流合成
  *
  * @param[in,out] wheel 运行中的单轮状态，反馈须有限
  * @param[in] config 已校验的底盘配置
  * @param[in] period_s 实测控制周期，单位 s
+ * @param[in] feedforward_gain 调用方保证为本周期已校验的有限非负系数，单位 A/rpm
  * @return 无返回值，计算结果非法时复位本轮并转入待机
  */
-static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s)
+static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s,
+                             float feedforward_gain)
 {
     float target = wheel->requested_speed_rpm;
 
@@ -406,11 +429,14 @@ static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *con
         target = 0.0F;
     }
 
-    // 按实测周期推进斜坡，然后依次计算反馈滤波、速度 PID 和电流滤波
+    // 前馈采用换向保护与斜坡后的目标，基础驱动电流随目标正负方向变化
     wheel->target_speed_rpm = RampTo(wheel->target_speed_rpm, target, config->wheel_accel_rpm_s * period_s);
     wheel->filtered_speed_rpm = LowPassFilter2p_Apply(&wheel->speed_filter, wheel->measured_speed_rpm);
+    const float feedforward_a = feedforward_gain * wheel->target_speed_rpm;
+
+    // 速度环只修正反馈误差，合成电流统一经过现有滤波、计算出口检查和最终限流
     const float current = PID_Calc(&wheel->speed_pid, wheel->target_speed_rpm, wheel->filtered_speed_rpm,
-                                   0.0F, period_s);
+                                   0.0F, period_s) + feedforward_a;
     wheel->output_current_a = LowPassFilter2p_Apply(&wheel->current_filter, current);
 
     // 非有限计算只隔离本轮，下一周期重新预置后才恢复闭环

@@ -1,0 +1,393 @@
+{
+  "firmware": {
+    "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "mtimeMs": 1794287013616.657,
+    "size": 1956920,
+    "sha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+    "machine": 40,
+    "elfClass": 1,
+    "encoding": 1
+  },
+  "firmwareConsistency": {
+    "status": "match",
+    "elfSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+    "flashedSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+    "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "flashedAt": "2026-11-10T05:04:39.249Z",
+    "target": "stm32f4x.cfg"
+  },
+  "gains": [
+    0.0137,
+    0.0231,
+    0.0097,
+    0.0092
+  ],
+  "stage0": [
+    {
+      "wheel": 0,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 27.990764498710632,
+      "filtered": 27.979541540145874,
+      "std": 0.9139429115023983,
+      "bias": 2.0092374086380005,
+      "current": 0.40316135473549364,
+      "maxCurrent": 0.556231677532196
+    },
+    {
+      "wheel": 1,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 26.68499310016632,
+      "filtered": 26.758071088790892,
+      "std": 1.2096803968960201,
+      "bias": 3.3150088071823127,
+      "current": 0.6495003007352352,
+      "maxCurrent": 0.7666797637939453
+    },
+    {
+      "wheel": 2,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 28.525831532478332,
+      "filtered": 28.51287422180176,
+      "std": 0.7183983915531447,
+      "bias": 1.474170374870301,
+      "current": 0.297077726200223,
+      "maxCurrent": 0.45353659987449646
+    },
+    {
+      "wheel": 3,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 28.510860013961793,
+      "filtered": 28.646921491622926,
+      "std": 1.2729026132075953,
+      "bias": 1.48914189338684,
+      "current": 0.26591308480128645,
+      "maxCurrent": 0.4457584321498871
+    }
+  ],
+  "stage1": [
+    {
+      "wheel": 0,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 29.068709397315978,
+      "filtered": 29.040474677085875,
+      "std": 0.8860990042496675,
+      "bias": 0.9312925100326552,
+      "current": 0.40754841417074206,
+      "maxCurrent": 0.5686161518096924
+    },
+    {
+      "wheel": 1,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 28.474407696723937,
+      "filtered": 28.45461826324463,
+      "std": 1.296030822174558,
+      "bias": 1.5255942106246962,
+      "current": 0.6745247982442379,
+      "maxCurrent": 0.7894267439842224
+    },
+    {
+      "wheel": 2,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 29.306299996376037,
+      "filtered": 29.313084530830384,
+      "std": 0.7055090911158863,
+      "bias": 0.6937019109725959,
+      "current": 0.2927623623982072,
+      "maxCurrent": 0.4445982575416565
+    },
+    {
+      "wheel": 3,
+      "n": 80,
+      "target": 30.000001907348633,
+      "mean": 29.398732328414916,
+      "filtered": 29.232515239715575,
+      "std": 1.1292483491213379,
+      "bias": 0.6012695789337172,
+      "current": 0.2907694728113711,
+      "maxCurrent": 0.4675982594490051
+    }
+  ],
+  "stage2": [
+    {
+      "wheel": 0,
+      "n": 130,
+      "target": 30.000001907348633,
+      "mean": 29.735014372605544,
+      "filtered": 29.892653920100287,
+      "std": 0.8855159730991313,
+      "filteredStd": 0.266577599091135,
+      "bias": 0.26498753474308856,
+      "current": 0.43222652536172135,
+      "maxCurrent": 0.5949611067771912,
+      "minSpeed": 27.859926223754883,
+      "maxSpeed": 31.817598342895508
+    },
+    {
+      "wheel": 1,
+      "n": 130,
+      "target": 30.000001907348633,
+      "mean": 30.088721187298116,
+      "filtered": 30.09210834503174,
+      "std": 1.2796510057505435,
+      "filteredStd": 0.2766175336420647,
+      "bias": -0.08871927994948337,
+      "current": 0.6721090513926286,
+      "maxCurrent": 0.8040404915809631,
+      "minSpeed": 27.75577735900879,
+      "maxSpeed": 32.75494384765625
+    },
+    {
+      "wheel": 2,
+      "n": 130,
+      "target": 30.000001907348633,
+      "mean": 29.848777374854453,
+      "filtered": 29.90563534956712,
+      "std": 0.9327274748082371,
+      "filteredStd": 0.34182808725782543,
+      "bias": 0.15122453249417944,
+      "current": 0.3101262798676124,
+      "maxCurrent": 0.46094977855682373,
+      "minSpeed": 27.130882263183594,
+      "maxSpeed": 31.45307731628418
+    },
+    {
+      "wheel": 3,
+      "n": 130,
+      "target": 30.000001907348633,
+      "mean": 30.075101647010218,
+      "filtered": 29.95062713623047,
+      "std": 1.1232857637126044,
+      "filteredStd": 0.4194520671315378,
+      "bias": -0.07509973966158512,
+      "current": 0.28763494067467177,
+      "maxCurrent": 0.45190221071243286,
+      "minSpeed": 27.130882263183594,
+      "maxSpeed": 32.02589797973633
+    }
+  ],
+  "confirmation": [
+    {
+      "wheel": 0,
+      "n": 230,
+      "target": 30.000001907348633,
+      "mean": 29.84691391820493,
+      "filtered": 29.970846018583877,
+      "std": 0.8690880015988233,
+      "filteredStd": 0.21785104074083828,
+      "bias": 0.15308798914370314,
+      "current": 0.41758674849634586,
+      "maxCurrent": 0.5571593642234802,
+      "minSpeed": 27.75577735900879,
+      "maxSpeed": 32.13004684448242
+    },
+    {
+      "wheel": 1,
+      "n": 230,
+      "target": 30.000001907348633,
+      "mean": 30.138305340642514,
+      "filtered": 30.07285494597062,
+      "std": 1.1291122452951787,
+      "filteredStd": 0.2632291575647281,
+      "bias": -0.13830343329388128,
+      "current": 0.6782894740933957,
+      "maxCurrent": 0.8100532293319702,
+      "minSpeed": 27.651628494262695,
+      "maxSpeed": 32.65079116821289
+    },
+    {
+      "wheel": 2,
+      "n": 230,
+      "target": 30.000001907348633,
+      "mean": 29.890611250504204,
+      "filtered": 29.916866435175358,
+      "std": 0.8012888371175951,
+      "filteredStd": 0.3667068484458801,
+      "bias": 0.10939065684442895,
+      "current": 0.30760423353184824,
+      "maxCurrent": 0.543402910232544,
+      "minSpeed": 27.235031127929688,
+      "maxSpeed": 31.661375045776367
+    },
+    {
+      "wheel": 3,
+      "n": 230,
+      "target": 30.000001907348633,
+      "mean": 30.12992816593336,
+      "filtered": 29.982103115579356,
+      "std": 1.2669540390066716,
+      "filteredStd": 0.4612330100562082,
+      "bias": -0.12992625858472806,
+      "current": 0.27675852049951966,
+      "maxCurrent": 0.47660237550735474,
+      "minSpeed": 27.130882263183594,
+      "maxSpeed": 32.33834457397461
+    }
+  ],
+  "writes": [
+    {
+      "source": "temporary-probe",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794287013616.657,
+        "size": 1956920,
+        "sha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[0]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[0]",
+          "address": "0x20005D20",
+          "type": "f32",
+          "previous": 0,
+          "previousText": null,
+          "written": 0.007199999876320362,
+          "writtenText": null,
+          "readBack": 0.007199999876320362,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[1]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[1]",
+          "address": "0x20005D24",
+          "type": "f32",
+          "previous": 0,
+          "previousText": null,
+          "written": 0.01209999993443489,
+          "writtenText": null,
+          "readBack": 0.01209999993443489,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[2]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[2]",
+          "address": "0x20005D28",
+          "type": "f32",
+          "previous": 0,
+          "previousText": null,
+          "written": 0.005200000014156103,
+          "writtenText": null,
+          "readBack": 0.005200000014156103,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[3]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[3]",
+          "address": "0x20005D2C",
+          "type": "f32",
+          "previous": 0,
+          "previousText": null,
+          "written": 0.004600000102072954,
+          "writtenText": null,
+          "readBack": 0.004600000102072954,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "flashedSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:04:39.249Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    },
+    {
+      "source": "active-sampling",
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794287013616.657,
+        "size": 1956920,
+        "sha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "results": [
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[0]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[0]",
+          "address": "0x20005D20",
+          "type": "f32",
+          "previous": 0.007199999876320362,
+          "previousText": null,
+          "written": 0.013700000010430813,
+          "writtenText": null,
+          "readBack": 0.013700000010430813,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[1]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[1]",
+          "address": "0x20005D24",
+          "type": "f32",
+          "previous": 0.01209999993443489,
+          "previousText": null,
+          "written": 0.023099999874830246,
+          "writtenText": null,
+          "readBack": 0.023099999874830246,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[2]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[2]",
+          "address": "0x20005D28",
+          "type": "f32",
+          "previous": 0.005200000014156103,
+          "previousText": null,
+          "written": 0.009700000286102295,
+          "writtenText": null,
+          "readBack": 0.009700000286102295,
+          "readBackText": null,
+          "verified": true
+        },
+        {
+          "name": "chassis_speed_feedforward_gain_a_per_rpm[3]",
+          "resolvedName": "chassis_speed_feedforward_gain_a_per_rpm[3]",
+          "address": "0x20005D2C",
+          "type": "f32",
+          "previous": 0.004600000102072954,
+          "previousText": null,
+          "written": 0.009200000204145908,
+          "writtenText": null,
+          "readBack": 0.009200000204145908,
+          "readBackText": null,
+          "verified": true
+        }
+      ],
+      "halted": false,
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "flashedSha256": "06d6f418d8bf0114d8c7adcf374a8b2979460dc368f324e342d275da3de929c3",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-10T05:04:39.249Z",
+        "target": "stm32f4x.cfg"
+      },
+      "permission": {
+        "mode": "full",
+        "trusted": false
+      }
+    }
+  ]
+}

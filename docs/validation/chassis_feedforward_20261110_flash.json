@@ -1,0 +1,86 @@
+{
+  "preflight": {
+    "transport": "auto",
+    "probeSerial": "332107146640",
+    "adapterSpeedKhz": 0,
+    "probeCandidates": [],
+    "workspace": "F:\\RM\\Infantry_Robot",
+    "elf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "elfSha256": "56ab4b9d1796c2adc864a01dd5b7701d411fd08865eb7ab0336adcb1c7c06107",
+    "elfMtimeUtc": "2026-11-10T05:09:51.334Z",
+    "target": "stm32f4x.cfg",
+    "probe": "cmsis-dap.cfg",
+    "openocd": "c:\\Users\\seven\\AppData\\Roaming\\Code\\User\\globalStorage\\bakesheep.emberprobe\\emberprobe\\openocd\\bin\\openocd.exe",
+    "openocdVersion": "0.12.0+dev-02228-ge5888bda3-dirty",
+    "openocdCompatible": true,
+    "minimumOpenocdVersion": "0.12.0",
+    "ready": true,
+    "notes": [],
+    "sources": {
+      "elf": "explicit",
+      "target": "config",
+      "probe": "config",
+      "openocd": "config",
+      "probeSerial": "inventory",
+      "adapterSpeedKhz": "config",
+      "transport": "script-default"
+    },
+    "diagnostics": []
+  },
+  "verified": true,
+  "elf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+  "elfSha256": "56ab4b9d1796c2adc864a01dd5b7701d411fd08865eb7ab0336adcb1c7c06107",
+  "code": 0,
+  "programming": {
+    "unchanged": false,
+    "flashClockKhz": 10000,
+    "speedFallback": false
+  },
+  "authorization": {
+    "authorized": true,
+    "confirmationRequired": false,
+    "mode": "full",
+    "operation": "flash.execute",
+    "elf": {
+      "path": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "sha256": "56ab4b9d1796c2adc864a01dd5b7701d411fd08865eb7ab0336adcb1c7c06107"
+    },
+    "transport": "auto",
+    "probeSerial": "332107146640",
+    "selectionIdentity": {
+      "kind": "usb",
+      "family": "cmsis-dap",
+      "deviceId": "USB\\VID_FAED&PID_4870\\332107146640",
+      "attachmentId": "",
+      "serial": "332107146640",
+      "anonymous": false,
+      "profile": "8a0c0d1a4b0a1e7b25afa9b094e80248dbe1a938f0fa23fc4c286f650a5ceb9c"
+    },
+    "adapterSpeedKhz": 0,
+    "target": "stm32f4x.cfg",
+    "probe": "cmsis-dap.cfg",
+    "openocd": "c:\\Users\\seven\\AppData\\Roaming\\Code\\User\\globalStorage\\bakesheep.emberprobe\\emberprobe\\openocd\\bin\\openocd.exe"
+  },
+  "lines": [
+    "Info : [stm32f4x.cpu] target has 6 breakpoints, 4 watchpoints",
+    "Info : [stm32f4x.cpu] Examination succeed",
+    "Info : [stm32f4x.cpu] gdb port disabled",
+    "EP_TARGET_ID cpuid=410FC241 idcode=10076413 uid=001D0035374E500820363355",
+    "EP_FLASH_STAGE=init",
+    "EP_FLASH_STAGE=reset_init",
+    "[stm32f4x.cpu] halted due to debug-request, current mode: Thread",
+    "xPSR: 0x01000000 pc: 0x0800e3f0 msp: 0x20020000",
+    "** Programming Started **",
+    "EP_FLASH_SPEED=10000",
+    "EP_FLASH_STAGE=program_boost",
+    "Info : device id = 0x10076413",
+    "Info : flash size = 1024 KiB",
+    "** Programming Finished **",
+    "** Verify Started **",
+    "EP_FLASH_STAGE=verify_boost",
+    "** Verified OK **",
+    "** Resetting Target **",
+    "EP_FLASH_STAGE=reset_run",
+    "shutdown command invoked"
+  ]
+}

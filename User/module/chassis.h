@@ -11,6 +11,15 @@ extern "C"
 
 #define CHASSIS_WHEEL_COUNT (4U)
 
+/*
+ * 四轮速度前馈的在线调参入口，依次对应左前、左后、右后、右前：
+ * - 系数单位为 A/rpm，须为有限非负值，零表示关闭
+ * - 启动初值来自四轮架空正向 30 rpm 的实测整定，其他转速和负载需另行验证
+ * - 前馈电流取本轮系数乘以斜坡后的目标轮速，与速度 PID 相加后统一滤波和限流
+ * - Control 入口每周期读取并集中校验快照，任一系数非法时四轮待机
+ */
+extern volatile float chassis_speed_feedforward_gain_a_per_rpm[CHASSIS_WHEEL_COUNT];
+
 // 底盘模式：待机零电流，独立模式直接运动，跟随模式以云台为前方并追随其朝向
 typedef enum
 {
@@ -93,7 +102,7 @@ typedef struct
  * 底盘实例，初始化后不得整体复制，避免内部 PID 参数指针失效：
  * - config：默认配置的可调副本
  * - initialized：混合器、四路 PID 和滤波器全部初始化成功时为 true
- * - config_valid：本周期配置校验结果，非法时四轮零输出
+ * - config_valid：本周期配置与四轮前馈系数的校验结果，非法时四轮零输出
  * - applied_wheel_speed_pid：四路 PID 共同引用的参数副本，变更时清空四轮积分
  * - mode：本周期实际采用的控制模式
  * - mixer：运动学混合器，仅初始化时选择布局
