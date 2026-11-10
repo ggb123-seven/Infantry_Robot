@@ -19,9 +19,9 @@ extern "C"
  * - gimbal：云台实例，可直接观察两轴状态，并修改 gimbal.config 在线调参或改零点
  *   imu_state 为 2 时惯性反馈就绪，angle_deg/speed_rad_s 为惯性量，mechanical_angle_deg 为编码器机械角
  * - gimbal_command：遥控模式由遥控每周期更新，调试模式由 EmberProbe 写入模式、来源及两轴目标
- *   遥控模式右拨杆中位为 RELAX，上位为 ANGLE，下位或非法位置为 RELAX
- *   遥控模式上电、离线超过 100 毫秒、输入异常或锁存故障后，须先右拨杆回中，再拨上重新使能
- *   遥控模式单轴电机反馈超时只停止该轴，保持上位时反馈恢复即可自动起控，目标重置为当前姿态
+ *   遥控模式在线时默认两轴 ANGLE，两侧拨杆不参与云台使能，离线超过 100 毫秒或输入异常时 RELAX
+ *   遥控上线或故障解除后自动捕获当前姿态，不再要求右拨杆回中再拨上
+ *   遥控模式单轴电机反馈超时只停止该轴，反馈恢复即可自动起控，目标重置为当前姿态
  *   遥控模式首次进入 ANGLE 时捕获当前姿态，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
  *   遥控模式两轴满杆目标角速度均为 6 rad/s，中心死区 5%，方向参数在 module/cmd.c 中集中定义
  * - gimbal_debug_enabled：默认 false，置 true 后跳过遥控邮箱读取与解析，完全由 EmberProbe 控制 gimbal_command
@@ -31,13 +31,19 @@ extern "C"
  *   角度模式目标采用 INS 坐标，yaw 为累计角、pitch 为俯仰角，rate_rad_s 为速度前馈
  *   固定角度测试将前馈置零，先在 mode=0 时配置目标与参数，最后写 mode 使能
  *   调试期间屏蔽正弦测试，关闭调试后恢复遥控，多字段写入不保证原子同步
+ * - gimbal_remote_speed_loop_enabled：默认 true，仅遥控模式生效，置 false 后两轴均撤驱
+ * - gimbal_remote_angle_loop_enabled：默认 true，仅遥控模式生效，置 false 后两轴只运行速度内环
+ *   速度内环保持开启时，右摇杆直接给定两轴角速度；两开关均开启时恢复角度与速度串级
+ *   两开关不覆盖失联和故障待机，单轴隔离使用 gimbal.config.yaw.enabled 或 pitch.enabled
  * - gimbal_sine_test_enabled：默认 false，闭环后以当前 yaw 为中心生成振幅 30°、相位速度 6 rad/s 的正弦轨迹
  * - gimbal_sine_feedforward_enabled：默认 true，控制正弦测试是否同时提供解析角速度前馈
- *   正弦测试以 ABSOLUTE 来源覆盖 yaw 命令，仍受右拨杆和失联停机约束，编译开关关闭时不提供这两个变量
+ *   正弦测试以 ABSOLUTE 来源覆盖 yaw 命令，受遥控闭环开关和失联停机约束，编译关闭时不提供这两个变量
  */
 extern Gimbal_t gimbal;
 extern Gimbal_Command_t gimbal_command;
 extern volatile bool gimbal_debug_enabled;
+extern volatile bool gimbal_remote_speed_loop_enabled;
+extern volatile bool gimbal_remote_angle_loop_enabled;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 extern volatile bool gimbal_sine_test_enabled;
 extern volatile bool gimbal_sine_feedforward_enabled;

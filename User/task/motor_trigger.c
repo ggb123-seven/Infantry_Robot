@@ -8,10 +8,10 @@
 
 #include <stddef.h>
 
-// 右拨杆下位时两只摩擦轮的转子目标转速，单位 rpm，中位制动目标为零
+// 右拨杆上位或下位时两只摩擦轮的转子目标转速，单位 rpm，中位制动目标为零
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
-// 撤驱、运行与零速制动请求互斥，上电撤驱；实际撤驱由摩擦轮任务按 3 秒计时确认
+// 撤驱、运行与零速制动请求互斥，上电撤驱；实际撤驱由摩擦轮任务按既有时长计时确认
 typedef enum
 {
     MOTOR_TRIGGER_SHOOT_DISABLED = 0,
@@ -24,12 +24,12 @@ typedef enum
  * feeder_command 为命令层每周期生成的拨弹命令，speed_ratio 为连发归一化转速倍率
  * feeder.target_angle_deg 为模块持有的逐发目标，feeder.target_speed_rpm 与 measured_speed_rpm 为速度内环目标与实测
  * 角度连续性失效时角度观察量为非数值，帧超时后角度和转速均为非数值
- * 右拨杆下位为运行使能，随后左拨杆切上位选择单发，右摇杆向上端部请求逐发，连发仍按倍率运行
- * trigger_command_context 保存命令层拨杆顺序和回中阶段，单发执行阶段由拨弹模块独占
+ * 右拨杆上位选择单发、下位选择连发，右摇杆向上端部请求逐发，连发仍按倍率运行
+ * trigger_command_context 保存命令层模式选择和回中阶段，单发执行阶段由拨弹模块独占
  * trigger_remote 为最近消费的遥控快照，源时间保持不变，空邮箱不撤销有效缓存
  * trigger_remote_valid 表示缓存可用，除空邮箱外的读取错误会撤销缓存有效性
  * trigger_output_published 表示上周期拨弹输出与摩擦轮命令均发布成功，失败后下一周期不提交拨弹命令
- * trigger_shoot_state 只保存本任务的摩擦轮命令阶段，上位或遥控失效清除零速制动记忆
+ * trigger_shoot_state 只保存本任务的摩擦轮命令阶段，遥控失效清除零速制动记忆
  */
 Feeder_t feeder;
 DR16_State_t trigger_remote;
@@ -39,8 +39,7 @@ static bool trigger_output_published = true;
 static Cmd_Feeder_t trigger_command_context;
 static MotorTrigger_ShootState_t trigger_shoot_state = MOTOR_TRIGGER_SHOOT_DISABLED;
 
-static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode,
-                                                      DR16_SwitchPosition_t right_switch);
+static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode);
 
 /**
  * @brief 周期编排拨弹遥控、反馈控制及摩擦轮联动命令发布
@@ -94,9 +93,8 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
-        // 下位回中位持续请求零速制动，摩擦轮任务从首次请求计时 3 秒后撤驱，拨弹仍待机
-        const Shoot_Command_t shoot_command =
-            MotorTrigger_ParseShootCommand(feeder_command.mode, trigger_remote.data.sw_r);
+        // 射击档回中位持续请求零速制动，摩擦轮任务按既有时长计时撤驱，拨弹仍待机
+        const Shoot_Command_t shoot_command = MotorTrigger_ParseShootCommand(feeder_command.mode);
         const bool shoot_command_published = osMessageQueueReset(task_runtime.msgq.shoot_command) == osOK &&
             osMessageQueuePut(task_runtime.msgq.shoot_command, &shoot_command, 0U, 0U) == osOK;
 
@@ -119,15 +117,13 @@ void Task_motor_trigger(void *argument)
 /**
  * @brief 将已校验的拨杆命令映射为双摩擦轮运行、零速制动或撤驱请求
  *
- * 下位进入运行，下位回中位请求零速制动；上位和离线清除运行记忆
- * 摩擦轮任务从首次零速请求计时 3 秒后撤驱，反馈异常和故障继续由模块处理
+ * 上位与下位均进入运行，回中位请求零速制动，离线清除运行记忆
+ * 摩擦轮任务从首次零速请求按既有时长计时撤驱，反馈异常和故障继续由模块处理
  *
  * @param[in] feeder_mode 命令解析器输出的拨弹档位，离线档包含遥控失效和非法输入
- * @param[in] right_switch 同一遥控快照的右拨杆位置，仅在有效待机档区分中位与上位
  * @return 两轮共用使能和目标，运行目标为 8000 rpm，零速制动及撤驱目标为 0 rpm
  */
-static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode,
-                                                      DR16_SwitchPosition_t right_switch)
+static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode)
 {
     // 复用命令层的在线和时效判定，仅在此处维护摩擦轮拨杆转换记忆
     switch (trigger_shoot_state)
@@ -142,8 +138,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
                     break;
 
                 case FEEDER_CMD_RELAX:
-                    trigger_shoot_state = right_switch == DR16_SWITCH_MIDDLE &&
-                        trigger_shoot_state != MOTOR_TRIGGER_SHOOT_DISABLED ?
+                    trigger_shoot_state = trigger_shoot_state != MOTOR_TRIGGER_SHOOT_DISABLED ?
                         MOTOR_TRIGGER_SHOOT_BRAKING : MOTOR_TRIGGER_SHOOT_DISABLED;
                     break;
 
@@ -158,7 +153,7 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
             break;
     }
 
-    // 制动请求只把目标归零，由摩擦轮任务计时 3 秒并通过模块输出闸门撤驱
+    // 制动请求只把目标归零，由摩擦轮任务按既有时长计时并通过模块输出闸门撤驱
     const float target_rpm = trigger_shoot_state == MOTOR_TRIGGER_SHOOT_RUNNING ? MOTOR_TRIGGER_SHOOT_SPEED_RPM : 0.0f;
     const Shoot_Command_t command =
     {

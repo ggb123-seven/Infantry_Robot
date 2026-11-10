@@ -133,7 +133,7 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 /**
  * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
  *
- * 右拨杆下位后观测左拨杆切上位才选择单发，启动和模式切换须先回中
+ * 右拨杆上位选择单发，下位选择连发，启动和模式切换须先回中
  *
  * @param[in,out] ctx 拨弹任务独占命令上下文，调用方保证非空且初始为零
  * @param[in] rc 最近遥控快照，调用方保证非空
@@ -157,14 +157,18 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
         return false;
     }
 
-    // 右拨杆独立决定运行使能，退出运行立即取消顺序记忆并保留待机解除故障的途径
+    // 右拨杆只选择射击模式，左拨杆继续独立控制底盘
     switch (rc->data.sw_r)
     {
+        case DR16_SWITCH_UP:
+            out->mode = FEEDER_CMD_RUN;
+            out->fire_mode = FEEDER_FIRE_MODE_SINGLE;
+            break;
+
         case DR16_SWITCH_DOWN:
             out->mode = FEEDER_CMD_RUN;
             break;
 
-        case DR16_SWITCH_UP:
         case DR16_SWITCH_MIDDLE:
             out->mode = FEEDER_CMD_RELAX;
             ctx->state = CMD_FEEDER_DISABLED;
@@ -175,67 +179,29 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
             return false;
     }
 
-    // 仅根据实际观测到的先后状态确认顺序，同一快照中的两个拨杆组合不能证明动作先后
+    // 启动和单连发互切后重新回中，避免保持推杆时直接产生新模式的进给请求
     const float ratio = Cmd_NormalizeChannel(rc->data.ch_r_y, CMD_CHANNEL_LIMIT, CMD_DEADZONE);
-    const bool centered = ratio == 0.0f;
-    const bool left_up = rc->data.sw_l == DR16_SWITCH_UP;
+    const bool single = out->fire_mode == FEEDER_FIRE_MODE_SINGLE;
+    const Cmd_FeederState_t wait_state = single ? CMD_FEEDER_SINGLE_WAIT_CENTER : CMD_FEEDER_AUTO_WAIT_CENTER;
     switch (ctx->state)
     {
         case CMD_FEEDER_DISABLED:
-            ctx->state = left_up ? CMD_FEEDER_AUTO_WAIT_CENTER : CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+            ctx->state = wait_state;
             break;
 
         case CMD_FEEDER_AUTO_WAIT_CENTER:
-            if (!left_up)
-            {
-                ctx->state = centered ? CMD_FEEDER_AUTO_ARMED : CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
-            }
-            else if (centered)
-            {
-                ctx->state = CMD_FEEDER_AUTO_READY;
-            }
-            break;
-
-        case CMD_FEEDER_AUTO_WAIT_CENTER_ARMED:
-            if (left_up)
-            {
-                ctx->state = CMD_FEEDER_SINGLE_WAIT_CENTER;
-            }
-            else if (centered)
-            {
-                ctx->state = CMD_FEEDER_AUTO_ARMED;
-            }
-            break;
-
         case CMD_FEEDER_AUTO_READY:
-            if (!left_up)
-            {
-                ctx->state = CMD_FEEDER_AUTO_ARMED;
-            }
-            break;
-
-        case CMD_FEEDER_AUTO_ARMED:
-            if (left_up)
+            if (single)
             {
                 ctx->state = CMD_FEEDER_SINGLE_WAIT_CENTER;
             }
             break;
 
         case CMD_FEEDER_SINGLE_WAIT_CENTER:
-            if (!left_up)
-            {
-                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
-            }
-            else if (centered)
-            {
-                ctx->state = CMD_FEEDER_SINGLE_READY;
-            }
-            break;
-
         case CMD_FEEDER_SINGLE_READY:
-            if (!left_up)
+            if (!single)
             {
-                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER_ARMED;
+                ctx->state = CMD_FEEDER_AUTO_WAIT_CENTER;
             }
             break;
 
@@ -245,19 +211,24 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
             return false;
     }
 
-    // 模式选择和持续请求只在命令层生成，摩擦轮使能仍由右拨杆运行档独立决定
+    // 等待阶段不提交进给，回中确认后由拨弹模块负责逐齿执行和到位判定
     switch (ctx->state)
     {
+        case CMD_FEEDER_AUTO_WAIT_CENTER:
+        case CMD_FEEDER_SINGLE_WAIT_CENTER:
+            if (ratio == 0.0f)
+            {
+                ctx->state = single ? CMD_FEEDER_SINGLE_READY : CMD_FEEDER_AUTO_READY;
+            }
+            break;
+
         case CMD_FEEDER_AUTO_READY:
-        case CMD_FEEDER_AUTO_ARMED:
             out->speed_ratio = ratio;
             break;
 
-        case CMD_FEEDER_SINGLE_WAIT_CENTER:
         case CMD_FEEDER_SINGLE_READY:
-            out->fire_mode = FEEDER_FIRE_MODE_SINGLE;
             out->speed_ratio = ratio;
-            out->single_fire = ctx->state == CMD_FEEDER_SINGLE_READY && ratio <= CMD_FEEDER_SINGLE_UP_RATIO;
+            out->single_fire = ratio <= CMD_FEEDER_SINGLE_UP_RATIO;
             break;
 
         default:
@@ -267,7 +238,7 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
 }
 
 /**
- * @brief 撤销遥控使能与速度历史，要求重新确认中位
+ * @brief 撤销遥控运行阶段与速度历史，恢复后重新捕获姿态
  *
  * @param[out] ctx 云台命令上下文，调用方保证非空
  * @return 无返回值
@@ -276,12 +247,12 @@ void Cmd_ResetGimbal(Cmd_Gimbal_t *ctx)
 {
     *ctx = (Cmd_Gimbal_t)
     {
-        .state = CMD_GIMBAL_WAIT_NEUTRAL,
+        .state = CMD_GIMBAL_INACTIVE,
     };
 }
 
 /**
- * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
+ * @brief 解析在线遥控的云台平滑速度，异常输入撤销运行请求
  *
  * @param[in,out] ctx 云台任务独占上下文，调用方保证非空
  * @param[in] rc 最近遥控快照，调用方保证非空
@@ -314,41 +285,20 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
         return true;
     }
 
-    // 只有中位确认后的上位允许持续运行，停机档和非法状态要求重新确认
+    // 遥控正常通信即允许运行，两侧拨杆不参与云台使能，首次上线先捕获姿态
     const bool was_active = ctx->state == CMD_GIMBAL_ACTIVE;
     switch (ctx->state)
     {
-        case CMD_GIMBAL_WAIT_NEUTRAL:
-            if (rc->data.sw_r == DR16_SWITCH_MIDDLE)
-            {
-                ctx->state = CMD_GIMBAL_READY;
-            }
+        case CMD_GIMBAL_INACTIVE:
+            ctx->state = CMD_GIMBAL_ACTIVE;
             break;
 
-        case CMD_GIMBAL_READY:
         case CMD_GIMBAL_ACTIVE:
-            switch (rc->data.sw_r)
-            {
-                case DR16_SWITCH_MIDDLE:
-                    ctx->state = CMD_GIMBAL_READY;
-                    break;
-                case DR16_SWITCH_UP:
-                    ctx->state = CMD_GIMBAL_ACTIVE;
-                    break;
-                default:
-                    ctx->state = CMD_GIMBAL_WAIT_NEUTRAL;
-                    break;
-            }
             break;
 
         default:
-            ctx->state = CMD_GIMBAL_WAIT_NEUTRAL;
-            break;
-    }
-    if (ctx->state != CMD_GIMBAL_ACTIVE)
-    {
-        ctx->yaw_rate_deg_s = ctx->pitch_rate_deg_s = 0.0f;
-        return true;
+            Cmd_ResetGimbal(ctx);
+            return true;
     }
     out->mode = GIMBAL_MODE_ANGLE;
     if (!was_active)

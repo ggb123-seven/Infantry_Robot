@@ -35,6 +35,8 @@ Gimbal_Command_t gimbal_command =
     .mode = GIMBAL_MODE_RELAX,
 };
 volatile bool gimbal_debug_enabled = false;
+volatile bool gimbal_remote_speed_loop_enabled = true;
+volatile bool gimbal_remote_angle_loop_enabled = true;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
@@ -116,7 +118,7 @@ void Task_motor_gimbal(void *argument)
                 chassis_state_cache = GIMBAL_CHASSIS_OFFLINE;
             }
 
-            // 每周期固定调试来源，遥控解析继续提供运行许可和失联停机
+            // 每周期固定命令来源，遥控来源检查在线许可，手动来源沿用独立调试路径
             const bool debug_enabled = gimbal_debug_enabled;
             MotorGimbal_ApplyDR16Input(period_s, debug_enabled);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
@@ -188,13 +190,28 @@ static void MotorGimbal_ApplyDR16Input(float period_s, bool debug_enabled)
         remote_cache_valid = false;
     }
 
-    // 读取快照后再采时间，由命令层统一检查帧龄和人工使能顺序
+    // 读取快照后再采时间，由命令层统一检查帧龄和在线运行许可
     const uint64_t now_us = BSP_TIME_Get();
     Gimbal_Command_t parsed_command;
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &parsed_command);
 
-    // 遥控模式统一采用本周期完成校验的命令
+    // 两个开关各读取一次，关闭速度内环时一并撤销外环，失联命令始终保持待机
+    const bool speed_enabled = gimbal_remote_speed_loop_enabled;
+    const bool angle_enabled = gimbal_remote_angle_loop_enabled;
+    if (parsed_command.mode == GIMBAL_MODE_ANGLE)
+    {
+        if (!speed_enabled)
+        {
+            parsed_command.mode = GIMBAL_MODE_RELAX;
+        }
+        else if (!angle_enabled)
+        {
+            parsed_command.mode = GIMBAL_MODE_SPEED;
+        }
+    }
+
+    // 遥控模式统一采用本周期完成校验和闭环选择的命令
     gimbal_command = parsed_command;
 }
 

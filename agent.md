@@ -16,6 +16,15 @@
 
 ## 底盘当前进度
 
+### 2026-11-10 射击拨杆解耦与云台遥控闭环开关
+
+- 用户确认修改 module/cmd.* 和 User/task 对应编排，不新增结构体、不改 config.c；右拨杆上位单发、下位连发、中位待机，与左拨杆解耦，启动和单连发切换仍须右摇杆回中
+- 单发沿用右摇杆向上端部请求、到位逐齿和长推重复，连发沿用双向速度比例；上下射击档均请求摩擦轮 8000 rpm，中位沿用当前工作树的制动时长，本次未修改 motor_shoot.c
+- 遥控正常通信时不再依赖拨杆使能云台，默认两轴角度速度串级；新增 volatile bool 标量 gimbal_remote_speed_loop_enabled、gimbal_remote_angle_loop_enabled，默认均 true，仅正常遥控来源生效，关闭速度环撤驱，关闭角度环保留速度环
+- 单轴隔离仍用 gimbal.config.yaw.enabled、pitch.enabled，保留 RAM config 与周期快照；手动 gimbal_debug_enabled 独立来源保持原行为
+- Debug 构建、三份 C 文件 ARM 严格检查、ARCH/HW/SPEC、格式和主机回归通过；正弦编译开关两种配置各 29 组、193 条断言，验证记录见 docs/validation/remote_shoot_gimbal_20261110.md
+- 本次未烧录或写目标 RAM，实物拨杆切换、射击、云台在线起控及停机效果待上板；已有 config.c、gimbal.*、motor_shoot.c、硬件 spec 和数据文件差异未纳入本次改动
+
 ### 2026-11-10 四轮前馈多速度验证与调试入口
 
 - 本节是当前最新状态，下方同日正向 30 rpm 整定记录保留为历史阶段

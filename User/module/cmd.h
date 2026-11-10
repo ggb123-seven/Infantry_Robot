@@ -10,11 +10,10 @@ extern "C"
 {
 #endif
 
-// 启动及异常后等待中位确认，中位就绪后才允许上位运行
+// 在线后进入运行，失联或故障撤销运行阶段并清除平滑历史
 typedef enum
 {
-    CMD_GIMBAL_WAIT_NEUTRAL = 0,
-    CMD_GIMBAL_READY,
+    CMD_GIMBAL_INACTIVE = 0,
     CMD_GIMBAL_ACTIVE,
 } Cmd_GimbalState_t;
 
@@ -30,22 +29,20 @@ typedef struct
 } Cmd_Gimbal_t;
 
 /*
- * 拨弹命令阶段：停机时取消顺序记忆，连发档按回中是否完成及左拨杆是否离开上位区分
- * 只有右拨杆已在下位后观测到左拨杆从非上位切到上位，才进入单发等待回中阶段
+ * 拨弹命令阶段：中位停机，上位选择单发，下位选择连发，与左拨杆完全解耦
+ * 启动和单连发切换均先等待右摇杆回中，再允许对应模式运行
  * 单发就绪后保持向上端部电平请求，执行和到位判定由拨弹模块负责
  */
 typedef enum
 {
     CMD_FEEDER_DISABLED = 0,
     CMD_FEEDER_AUTO_WAIT_CENTER,
-    CMD_FEEDER_AUTO_WAIT_CENTER_ARMED,
     CMD_FEEDER_AUTO_READY,
-    CMD_FEEDER_AUTO_ARMED,
     CMD_FEEDER_SINGLE_WAIT_CENTER,
     CMD_FEEDER_SINGLE_READY,
 } Cmd_FeederState_t;
 
-// 拨弹任务独占的命令上下文，state 保存拨杆顺序、模式选择及摇杆回中阶段
+// 拨弹任务独占的命令上下文，state 保存射击模式及摇杆回中阶段
 typedef struct
 {
     Cmd_FeederState_t state;
@@ -65,7 +62,7 @@ bool Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 /**
  * @brief 将遥控快照转换为拨弹命令，异常输入输出离线档
  *
- * 右拨杆下位开启运行，随后左拨杆切上位选择单发，左拨杆离开上位选择连发
+ * 右拨杆上位选择单发，下位选择连发，中位待机，左拨杆不参与射击模式选择
  * 启动及模式切换先等待右摇杆回中；连发保留双向速度比例，单发仅向上端部产生持续请求
  *
  * @param[in,out] ctx 拨弹任务独占命令上下文，调用方保证非空且初始为零
@@ -79,7 +76,7 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
                      Feeder_Command_t *out);
 
 /**
- * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
+ * @brief 解析在线遥控的云台平滑速度，异常输入撤销运行请求
  *
  * @param[in,out] ctx 云台任务独占上下文，调用方保证非空
  * @param[in] rc 最近遥控快照，调用方保证非空
@@ -94,7 +91,7 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
                      float period_s, bool gimbal_fault, Gimbal_Command_t *out);
 
 /**
- * @brief 撤销遥控使能与速度历史，要求重新确认中位
+ * @brief 撤销遥控运行阶段与速度历史，恢复后重新捕获姿态
  *
  * @param[out] ctx 云台命令上下文，调用方保证非空
  * @return 无返回值
