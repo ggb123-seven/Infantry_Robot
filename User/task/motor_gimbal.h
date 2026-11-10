@@ -15,36 +15,18 @@ extern "C"
 #endif
 
 /*
- * 云台调试入口，均由云台任务串行消费，volatile 只保证调试器可见性，不提供多字段原子快照：
- * - gimbal：云台实例，可直接观察两轴状态，并修改 gimbal.config 在线调参或改零点
- *   imu_state 为 2 时惯性反馈就绪，angle_deg/speed_rad_s 为惯性量，mechanical_angle_deg 为编码器机械角
+ * 云台调试入口由云台任务串行消费，volatile 仅保证调试器可见性，不提供多字段原子快照
+ * - gimbal：观察两轴状态，在线修改 gimbal.config；imu_state=2 表示惯性反馈就绪
  * - gimbal.config.yaw.enabled、gimbal.config.pitch.enabled：分别使能 yaw、pitch，默认均为 true
- *   遥控与手动调试模式均受对应轴使能约束，置 false 仅撤驱该轴，不影响另一轴
- * - gimbal_command：遥控模式由遥控每周期更新，调试模式由 EmberProbe 写入模式、来源及两轴目标
- *   遥控模式在线时默认两轴 ANGLE，两侧拨杆不参与云台使能，离线超过 100 毫秒或输入异常时 RELAX
- *   遥控上线或故障解除后自动捕获当前姿态，不再要求右拨杆回中再拨上
- *   遥控模式单轴电机反馈超时只停止该轴，反馈恢复即可自动起控，目标重置为当前姿态
- *   遥控模式首次进入 ANGLE 时捕获当前姿态，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
- *   遥控模式两轴满杆目标角速度均为 6 rad/s，中心死区 5%，方向参数在 module/cmd.c 中集中定义
- * - gimbal_debug_enabled：默认 false，置 true 后跳过遥控邮箱读取与解析，完全由 EmberProbe 控制 gimbal_command
- *   调试模式不依赖遥控在线状态和拨杆位置，停机时将 mode 写为 0 或关闭调试开关
- *   mode：0 为停机、1 为速度内环、2 为角度与速度串级，两轴共用此模式
- *   速度模式写 rate_rad_s，单位 rad/s；固定角度调试须将对应 source 设为 1，再写 angle_deg
- *   角度模式目标采用 INS 坐标，yaw 为累计角、pitch 为俯仰角，rate_rad_s 为速度前馈
- *   固定角度测试将前馈置零，先在 mode=0 时配置目标与参数，最后写 mode 使能
- *   调试期间屏蔽正弦测试，关闭调试后恢复遥控，多字段写入不保证原子同步
- * - gimbal_remote_speed_loop_enabled：默认 true，两轴共用且仅遥控链路生效，置 false 后两轴均撤驱
- * - gimbal_remote_angle_loop_enabled：默认 true，两轴共用且仅遥控链路生效，速度环开启时置 false 仅运行速度内环
- *   速度内环保持开启时，右摇杆直接给定已使能轴的角速度；两开关均开启时恢复角度与速度串级
- *   两开关不影响手动调试模式，也不覆盖失联和故障待机；单轴隔离使用对应轴的 config.enabled
- *   单轴速度环测试保持 gimbal_debug_enabled=false，以保留遥控链路
- *   将目标轴 gimbal.config.yaw.enabled 或 gimbal.config.pitch.enabled 设为 true，另一轴设为 false
- *   将 gimbal_remote_speed_loop_enabled=true、gimbal_remote_angle_loop_enabled=false，再用右摇杆给定速度
- *   比赛默认保持两轴 enabled 和两个遥控环路开关均为 true，gimbal_debug_enabled=false
- *   遥控器继续直接控制云台，右摇杆左右控制 yaw、上下控制 pitch，回中保持目标角
- * - gimbal_sine_test_enabled：默认 false，闭环后以当前 yaw 为中心生成振幅 30°、相位速度 6 rad/s 的正弦轨迹
- * - gimbal_sine_feedforward_enabled：默认 true，控制正弦测试是否同时提供解析角速度前馈
- *   正弦测试以 ABSOLUTE 来源覆盖 yaw 命令，受遥控闭环开关和失联停机约束，编译关闭时不提供这两个变量
+ * - gimbal_command：遥控每周期更新，调试模式由 EmberProbe 写入；遥控在线默认两轴 ANGLE，失联或异常时 RELAX
+ * - gimbal_debug_enabled：默认 false；置 true 后跳过遥控输入，由 EmberProbe 控制 gimbal_command，mode 取 0/1/2
+ *   分别表示停机、速度环、角度与速度串级，停机时写 mode=0 或关闭此开关
+ *   速度目标写 rate_rad_s，单位 rad/s；固定角度将 source 设为 1、前馈置零后写 angle_deg
+ * - gimbal_remote_speed_loop_enabled、gimbal_remote_angle_loop_enabled：默认均为 true，仅遥控链路生效
+ *   speed=false 时两轴撤驱，angle=false 时保留速度环；手动调试、失联和故障待机不受其覆盖
+ *   单轴速度环测试：保持 gimbal_debug_enabled=false，目标轴 enabled=true、另一轴 enabled=false，speed=true、angle=false
+ *   比赛默认两轴 enabled 和两个遥控环路均为 true，右摇杆左右控制 yaw、上下控制 pitch
+ * - gimbal_sine_test_enabled、gimbal_sine_feedforward_enabled：正弦测试及其角速度前馈，默认 false/true
  */
 extern Gimbal_t gimbal;
 extern Gimbal_Command_t gimbal_command;
