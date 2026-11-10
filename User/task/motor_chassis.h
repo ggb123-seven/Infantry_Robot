@@ -13,11 +13,16 @@ extern "C"
  * - chassis.config.wheel_speed_pid：调试器在线修改四轮共用 PID 参数
  * - chassis.wheel[0~3]：电调 ID1~4 实测、目标、输出电流及单轮状态
  * - chassis_command：每周期由 DR16 覆盖，仅供观测当前控制请求
+ * - chassis_debug_speed_enabled：启动为零，值为 1 时仅接管遥控有效自旋档
+ * - chassis_debug_speed_rpm：调试四轮同向输出轴转速，单位 rpm，启动为零
+ *   接管时不叠加平移，停止和失联保护优先；测试结束必须关闭使能
  * - fault_detect_snapshot：本周期设备与底盘控制故障汇总
  */
 extern Chassis_t chassis;
 extern Chassis_Command_t chassis_command;
 extern FaultDetect_Snapshot_t fault_detect_snapshot;
+extern volatile uint32_t chassis_debug_speed_enabled;
+extern volatile float chassis_debug_speed_rpm;
 
 /**
  * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布

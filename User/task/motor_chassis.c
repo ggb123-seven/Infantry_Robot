@@ -7,6 +7,7 @@
 #include "task/user_task.h"
 
 #include <stddef.h>
+#include <math.h>
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
@@ -14,6 +15,15 @@ _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘�
 Chassis_t chassis;
 Chassis_Command_t chassis_command;
 FaultDetect_Snapshot_t fault_detect_snapshot;
+
+/*
+ * 架空测速的异步调试输入，每周期读取一次，不由任务回写：
+ * - chassis_debug_speed_enabled：启动为零，仅值为 1 时在遥控有效自旋档接管速度
+ * - chassis_debug_speed_rpm：四轮同向输出轴转速，单位 rpm，启动为零
+ * - 测试时先写速度再使能，结束先关闭使能；有限性和速度上限由既有模块入口处理
+ */
+volatile uint32_t chassis_debug_speed_enabled = 0U;
+volatile float chassis_debug_speed_rpm = 0.0f;
 
 /*
  * 底盘任务私有状态：
@@ -81,11 +91,22 @@ void Task_motor_chassis(void *argument)
             yaw_feedback_received = false;
         }
 
-        // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
+        // 遥控先决定运行许可，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
         Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
+
+        // 仅接管已获遥控许可的自旋请求，清除平移分量以单独验证四轮速度前馈
+        const uint32_t debug_enabled = chassis_debug_speed_enabled;
+        const float debug_speed_rpm = chassis_debug_speed_rpm;
+        if (debug_enabled == 1U && chassis_command.mode == CHASSIS_MODE_INDEPENDENT)
+        {
+            chassis_command.move.vx = 0.0f;
+            chassis_command.move.vy = 0.0f;
+            chassis_command.move.wz = debug_speed_rpm == 0.0f ? 0.0f : copysignf(1.0f, debug_speed_rpm);
+            chassis_command.wheel_speed_scale_rpm = fabsf(debug_speed_rpm);
+        }
 
         // 模块用已标定车头零点转换跟随命令，失效反馈在模块入口阻断跟随
         Chassis_ResolveGimbalFollow(&chassis_command, yaw_feedback_received ? &yaw_feedback_cache : NULL,
