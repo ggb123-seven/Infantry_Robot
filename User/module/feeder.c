@@ -18,12 +18,11 @@
 #define FEEDER_MAX_PERIOD_S (0.1f)
 /*
  * 单发到位参数：角度容差由用户确定为输出轴正负 0.5 度
- * 输出轴低速阈值 1 rpm、连续确认 20 毫秒、执行超时 1 秒为本轮方案确认的首版值，待实物复核
+ * 输出轴低速阈值 1 rpm、连续确认 20 毫秒，均为本轮方案确认的首版值，待实物复核
  */
 #define FEEDER_SINGLE_ERROR_DEG (0.5f)
 #define FEEDER_SINGLE_SPEED_RPM (1.0f)
 #define FEEDER_SINGLE_SETTLE_S (0.020f)
-#define FEEDER_SINGLE_TIMEOUT_S (1.0f)
 // 用户确定每组五发，按实际逐齿到位计数，不按时间估算发数
 #define FEEDER_BURST_SHOTS (5U)
 // 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获当前位置
@@ -185,7 +184,7 @@ static void Feeder_StartSingleStep(Feeder_t *feeder, Feeder_Internal_t *internal
  * @param[in,out] internal 任务独占的单发阶段和周期快照
  * @param[in] command 本周期已由命令层确认的单发命令，调用方保证非空
  * @param[in] period_s 已在控制入口校验的实际周期，单位秒
- * @return 无返回值，执行超时或非法阶段使模块进入故障，由唯一输出闸门撤驱
+ * @return 无返回值，非法阶段使模块进入故障，由唯一输出闸门撤驱
  */
 static void Feeder_UpdateSingle(Feeder_t *feeder, Feeder_Internal_t *internal,
                                const Feeder_Command_t *command, float period_s)
@@ -230,10 +229,6 @@ static void Feeder_UpdateSingle(Feeder_t *feeder, Feeder_Internal_t *internal,
             if (internal->settled_s >= FEEDER_SINGLE_SETTLE_S)
             {
                 internal->single_state = FEEDER_SINGLE_INTERVAL;
-            }
-            else if (internal->step_elapsed_s >= FEEDER_SINGLE_TIMEOUT_S)
-            {
-                feeder->state = FEEDER_FAULT;
             }
             break;
         }
@@ -433,7 +428,7 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     const bool restart = next_state != feeder->state || config_changed || loop_mode_changed || fire_mode_changed;
     if (restart)
     {
-        // 停机、恢复或控制方式变化时取消旧单发阶段，在线改参保留本发固定目标和执行超时
+        // 停机、恢复或控制方式变化时取消旧单发阶段，在线改参保留本发固定目标和到位计时
         if (next_state != feeder->state || loop_mode_changed || fire_mode_changed)
         {
             feeder_steps_remaining = 0U;
