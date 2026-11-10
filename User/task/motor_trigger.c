@@ -8,7 +8,7 @@
 
 #include <stddef.h>
 
-// 备弹与开火档的双摩擦轮转子目标为 8000 rpm，安全档持续零速闭环
+// 备弹与开火档的双摩擦轮转子目标为 8000 rpm，安全档立即失能撤驱
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
 // 遥控进给模式在线入口，每周期只读一次，0 连发、1 单发、2 五连发
@@ -88,7 +88,7 @@ void Task_motor_trigger(void *argument)
             .current_a = Feeder_DumpOutput(&feeder),
         };
 
-        // 备弹和开火保持摩擦轮运转，安全档持续零速闭环，离线立即撤驱
+        // 备弹和开火保持摩擦轮运转，安全档与离线立即失能撤驱
         const Shoot_Command_t shoot_command = MotorTrigger_ParseShootCommand(feeder_command.mode);
         const bool shoot_command_published = osMessageQueueReset(task_runtime.msgq.shoot_command) == osOK &&
             osMessageQueuePut(task_runtime.msgq.shoot_command, &shoot_command, 0U, 0U) == osOK;
@@ -110,10 +110,10 @@ void Task_motor_trigger(void *argument)
 }
 
 /**
- * @brief 将已校验的档位映射为双摩擦轮运行、持续零速闭环或撤驱
+ * @brief 将已校验的档位映射为双摩擦轮运行或立即撤驱
  *
  * @param[in] feeder_mode 命令层已校验的档位，离线档包含遥控失效和非法输入
- * @return 备弹与开火为 8000 rpm，安全为使能零速，离线为失能零速
+ * @return 备弹与开火为使能且目标 8000 rpm，安全与离线为失能零速
  */
 static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mode)
 {
@@ -131,9 +131,6 @@ static Shoot_Command_t MotorTrigger_ParseShootCommand(Feeder_CmdMode_t feeder_mo
             break;
 
         case FEEDER_CMD_RELAX:
-            command.enabled = true;
-            break;
-
         default:
             break;
     }

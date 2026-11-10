@@ -11,7 +11,7 @@
  * 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱
  * shoot.config.speed_pid 为复制 shoot_config 的可调转子 rpm 速度参数
  * shoot_speed_feedforward_gain_a_per_rpm 为既有目标差分前馈入口，单位 A/rpm
- * shoot_command 为本周期新命令，安全档持续零速闭环，备弹和开火档保持运行
+ * shoot_command 为本周期新命令，安全档立即失能撤驱，备弹和开火档保持运行
  */
 Shoot_t shoot;
 Shoot_Command_t shoot_command;
