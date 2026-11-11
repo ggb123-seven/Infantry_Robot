@@ -1,0 +1,22 @@
+{
+  "elf": {
+    "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "mtimeMs": 1794378048028.937,
+    "size": 1959440,
+    "sha256": "b78018ff2e33d1518b583eb0cd4b039a53b36ddd6736710eb1b7536dda488491",
+    "machine": 40,
+    "elfClass": 1,
+    "encoding": 1
+  },
+  "firmwareConsistency": {
+    "status": "match",
+    "elfSha256": "b78018ff2e33d1518b583eb0cd4b039a53b36ddd6736710eb1b7536dda488491",
+    "flashedSha256": "b78018ff2e33d1518b583eb0cd4b039a53b36ddd6736710eb1b7536dda488491",
+    "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "flashedAt": "2026-11-11T06:39:47.820Z",
+    "target": "stm32f4x.cfg"
+  },
+  "source": "temporary-probe",
+  "sampleCount": 250,
+  "spanMs": 20042
+}
