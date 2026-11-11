@@ -107,8 +107,8 @@ static void Gimbal_UpdateAxisFeedback(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t
 static void Gimbal_ClearFeedback(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal);
 static void Gimbal_StopAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
                             Gimbal_AxisState_t next_state);
-static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid);
-static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config);
+static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid, bool allow_angle_wrap);
+static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config, bool allow_angle_wrap);
 static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_hz);
 static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t *applied);
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
@@ -377,25 +377,42 @@ void Gimbal_DumpOutput(const Gimbal_t *gimbal, Gimbal_Output_t *output)
     output->pitch_current_a = gimbal_internal.pitch.applied_reversed ? -pitch_current_a : pitch_current_a;
 }
 
-static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid)
+/**
+ * @brief 在配置入口校验单个 PID，按环路职责决定是否接受整圈角度误差
+ *
+ * @param[in] pid 待校验的 PID 参数，调用方保证非空
+ * @param[in] allow_angle_wrap 仅 pitch 角度环为 true，允许 range 为 2π 弧度
+ * @return 参数合法返回 true，非法返回 false
+ */
+static bool Gimbal_IsPidConfigValid(const KPID_Params_t *pid, bool allow_angle_wrap)
 {
     const bool gains_valid = isfinite(pid->k) && isfinite(pid->p) && isfinite(pid->i) && isfinite(pid->d) &&
                              pid->k >= 0.0f && pid->p >= 0.0f && pid->i >= 0.0f && pid->d >= 0.0f &&
                              pid->k <= GIMBAL_MAX_GAIN && pid->p <= GIMBAL_MAX_GAIN &&
                              pid->i <= GIMBAL_MAX_GAIN && pid->d <= GIMBAL_MAX_GAIN;
-    // 输出限幅为零时底层 PID 永不累计积分，连续线性角度要求不启用环绕
+    // 零值与负值关闭环绕，仅获得许可的角度环接受 2π 周期
+    const bool range_valid = isfinite(pid->range) &&
+                             (pid->range <= 0.0f || (allow_angle_wrap && pid->range == M_2PI));
     return gains_valid && isfinite(pid->i_limit) && pid->i_limit >= 0.0f && isfinite(pid->out_limit) &&
-           pid->out_limit > 0.0f && isfinite(pid->d_cutoff_freq) && pid->range == 0.0f;
+           pid->out_limit > 0.0f && isfinite(pid->d_cutoff_freq) && range_valid;
 }
 
-static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config)
+/**
+ * @brief 在配置入口校验单轴机械参数及两环 PID
+ *
+ * @param[in] config 待校验的单轴配置，调用方保证非空
+ * @param[in] allow_angle_wrap 仅 pitch 轴为 true，速度环始终不允许整圈环绕
+ * @return 配置合法返回 true，非法返回 false
+ */
+static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config, bool allow_angle_wrap)
 {
     return isfinite(config->zero_encoder_deg) && config->zero_encoder_deg >= 0.0f &&
            config->zero_encoder_deg < GIMBAL_FULL_TURN_DEG && isfinite(config->min_angle_deg) &&
            isfinite(config->max_angle_deg) && config->min_angle_deg <= config->max_angle_deg &&
            isfinite(config->max_speed_rad_s) && config->max_speed_rad_s > 0.0f &&
            isfinite(config->max_current_a) && config->max_current_a > 0.0f &&
-           Gimbal_IsPidConfigValid(&config->angle_pid) && Gimbal_IsPidConfigValid(&config->speed_pid);
+           Gimbal_IsPidConfigValid(&config->angle_pid, allow_angle_wrap) &&
+           Gimbal_IsPidConfigValid(&config->speed_pid, false);
 }
 
 static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_hz)
@@ -404,7 +421,7 @@ static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_
         isfinite(config->feedback_timeout_s) && config->feedback_timeout_s >= 1.0e-6f &&
         config->feedback_timeout_s <= 1.0f && isfinite(config->imu_timeout_s) &&
         config->imu_timeout_s >= 1.0e-6f && config->imu_timeout_s <= 0.1f &&
-        Gimbal_IsAxisConfigValid(&config->yaw) && Gimbal_IsAxisConfigValid(&config->pitch) &&
+        Gimbal_IsAxisConfigValid(&config->yaw, false) && Gimbal_IsAxisConfigValid(&config->pitch, true) &&
         isfinite(config->yaw_friction_current_a) && config->yaw_friction_current_a >= 0.0f &&
         config->yaw_friction_current_a <= config->yaw.max_current_a &&
         isfinite(config->yaw_friction_smoothing_rad_s) && config->yaw_friction_smoothing_rad_s > 0.0f &&
@@ -418,7 +435,7 @@ static bool Gimbal_IsPidChanged(const KPID_Params_t *config, const KPID_Params_t
 {
     return config->k != applied->k || config->p != applied->p || config->i != applied->i ||
            config->d != applied->d || config->i_limit != applied->i_limit || config->out_limit != applied->out_limit ||
-           config->d_cutoff_freq != applied->d_cutoff_freq;
+           config->d_cutoff_freq != applied->d_cutoff_freq || config->range != applied->range;
 }
 
 static int8_t Gimbal_InitAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,

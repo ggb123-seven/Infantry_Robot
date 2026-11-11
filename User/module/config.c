@@ -131,6 +131,9 @@ const Chassis_Config_t chassis_config =
  * - 编码器仅用于机械角、限位与在线检测，pitch 使用有符号角，yaw 保留连续展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  * - IMU 独立超时初始取 10 ms，以源采样时间校验，后续须通过实机调度抖动核定
+ * - pitch 采用用户提供的 PID 参数，角度环 k=2、p=5、i=2.5，速度环 k=0.25、p=1、i=0
+ * - pitch 角度环输出限幅 10 rad/s，速度环输出限幅 1 A；两环微分关闭，负截止频率表示不滤波
+ * - pitch 角度环积分限幅为零，沿用现有 PID 的积分处理，角度误差按 2π 弧度环绕，速度误差不环绕
  */
 const Gimbal_Config_t gimbal_config =
 {
@@ -179,25 +182,25 @@ const Gimbal_Config_t gimbal_config =
         .max_current_a = 1.0f,
         .angle_pid =
         {
-            .k = 1.0f,
-            .p = 15.0f,
-            .i = 0.00f,
+            .k = 2.0f,
+            .p = 5.0f,
+            .i = 2.5f,
             .d = 0.0f,
             .i_limit = 0.0f,
-            .out_limit = 1.0f,
-            .d_cutoff_freq = 0.0f,
-            .range = 0.0f,
+            .out_limit = 10.0f,
+            .d_cutoff_freq = -1.0f,
+            .range = M_2PI,
         },
         .speed_pid =
         {
-            .k = 1.0f,
-            .p = 0.3f,
-            .i = 0.177f,
+            .k = 0.25f,
+            .p = 1.0f,
+            .i = 0.0f,
             .d = 0.0f,
             .i_limit = 1.0f,
-            .out_limit = 10.0f,
-            .d_cutoff_freq = 0.0f,
-            .range = 0.0f,
+            .out_limit = 1.0f,
+            .d_cutoff_freq = -1.0f,
+            .range = -1.0f,
         },
     },
     .feedback_timeout_s = 0.09f,
