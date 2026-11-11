@@ -240,8 +240,8 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
                 {
                     PID_Reset(&chassis_internal.follow_pid);
                 }
-                move.wz = PID_Calc(&chassis_internal.follow_pid, 0.0F, -relative_rad,
-                                    -chassis->follow_relative_speed_rad_s, period_s);
+                move.wz = PID_Calc(&chassis_internal.follow_pid, 0.0F, relative_rad,
+                                    chassis->follow_relative_speed_rad_s, period_s);
                 chassis->follow_wz = move.wz;
             }
         }

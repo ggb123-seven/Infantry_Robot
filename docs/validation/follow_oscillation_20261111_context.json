@@ -1,0 +1,328 @@
+{
+  "source": "temporary-probe",
+  "elf": {
+    "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "mtimeMs": 1794399445032.1948,
+    "size": 1964844,
+    "sha256": "62905ba27e8e307b1e405e0597488d937b5ad70d8c0fd49c42ceca807933bf16",
+    "machine": 40,
+    "elfClass": 1,
+    "encoding": 1
+  },
+  "firmwareConsistency": {
+    "status": "match",
+    "elfSha256": "62905ba27e8e307b1e405e0597488d937b5ad70d8c0fd49c42ceca807933bf16",
+    "flashedSha256": "62905ba27e8e307b1e405e0597488d937b5ad70d8c0fd49c42ceca807933bf16",
+    "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+    "flashedAt": "2026-11-11T12:49:47.916Z",
+    "target": "stm32f4x.cfg"
+  },
+  "timestamp": 1794403728968,
+  "values": {
+    "gimbal.config.yaw.zero_encoder_deg": {
+      "requestedName": "gimbal.config.yaw.zero_encoder_deg",
+      "value": 97.07520294189453,
+      "valueText": null,
+      "type": "f32",
+      "address": "0x20006728"
+    },
+    "gimbal.config.yaw.reversed": {
+      "requestedName": "gimbal.config.yaw.reversed",
+      "value": 0,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006725"
+    },
+    "gimbal.yaw": {
+      "requestedName": "gimbal.yaw",
+      "tree": {
+        "name": "yaw",
+        "kind": "struct",
+        "typeName": "Gimbal_Axis_t",
+        "byteSize": 36,
+        "offset": 196,
+        "members": [
+          {
+            "name": "state",
+            "offset": 196,
+            "value": 1,
+            "valueText": null,
+            "enumText": "GIMBAL_AXIS_RUNNING(1)",
+            "type": "u8",
+            "typeName": "Gimbal_AxisState_t"
+          },
+          {
+            "name": "encoder_deg",
+            "offset": 200,
+            "value": 273.779296875,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "mechanical_angle_deg",
+            "offset": 204,
+            "value": -903.2958984375,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "motor_speed_rad_s",
+            "offset": 208,
+            "value": 0.8377580642700195,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "angle_deg",
+            "offset": 212,
+            "value": -1725.105712890625,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "speed_rad_s",
+            "offset": 216,
+            "value": -0.044124770909547806,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "target_angle_deg",
+            "offset": 220,
+            "value": -1723.15966796875,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "target_speed_rad_s",
+            "offset": 224,
+            "value": 0.6792831420898438,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "output_current_a",
+            "offset": 228,
+            "value": 0.36068886518478394,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x200067E8"
+    },
+    "gimbal_command.yaw": {
+      "requestedName": "gimbal_command.yaw",
+      "tree": {
+        "name": "yaw",
+        "kind": "struct",
+        "typeName": "Gimbal_AxisCommand_t",
+        "byteSize": 12,
+        "offset": 4,
+        "members": [
+          {
+            "name": "source",
+            "offset": 4,
+            "value": 0,
+            "valueText": null,
+            "enumText": "GIMBAL_TARGET_INCREMENT(0)",
+            "type": "u8",
+            "typeName": "Gimbal_TargetSource_t"
+          },
+          {
+            "name": "rate_rad_s",
+            "offset": 8,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "angle_deg",
+            "offset": 12,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20006838"
+    },
+    "gimbal.mode": {
+      "requestedName": "gimbal.mode",
+      "value": 2,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x200067E5"
+    },
+    "chassis_command": {
+      "requestedName": "chassis_command",
+      "tree": {
+        "kind": "struct",
+        "typeName": "Chassis_Command_t",
+        "byteSize": 20,
+        "offset": 0,
+        "members": [
+          {
+            "name": "mode",
+            "offset": 0,
+            "value": 2,
+            "valueText": null,
+            "enumText": "CHASSIS_MODE_FOLLOW_GIMBAL(2)",
+            "type": "u8",
+            "typeName": "Chassis_Mode_t"
+          },
+          {
+            "name": "move",
+            "kind": "struct",
+            "typeName": "MoveVector_t",
+            "byteSize": 12,
+            "offset": 4,
+            "members": [
+              {
+                "name": "vx",
+                "offset": 4,
+                "value": 0,
+                "valueText": null,
+                "type": "f32",
+                "typeName": "float"
+              },
+              {
+                "name": "vy",
+                "offset": 8,
+                "value": 0,
+                "valueText": null,
+                "type": "f32",
+                "typeName": "float"
+              },
+              {
+                "name": "wz",
+                "offset": 12,
+                "value": 0,
+                "valueText": null,
+                "type": "f32",
+                "typeName": "float"
+              }
+            ]
+          },
+          {
+            "name": "wheel_speed_scale_rpm",
+            "offset": 16,
+            "value": 100,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20006628"
+    },
+    "chassis.config.follow_pid": {
+      "requestedName": "chassis.config.follow_pid",
+      "tree": {
+        "name": "follow_pid",
+        "kind": "struct",
+        "typeName": "KPID_Params_t",
+        "byteSize": 32,
+        "offset": 60,
+        "members": [
+          {
+            "name": "k",
+            "offset": 60,
+            "value": 1,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "p",
+            "offset": 64,
+            "value": 0.5,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "i",
+            "offset": 68,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "d",
+            "offset": 72,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "i_limit",
+            "offset": 76,
+            "value": 0,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "out_limit",
+            "offset": 80,
+            "value": 0.30000001192092896,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "d_cutoff_freq",
+            "offset": 84,
+            "value": -1,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          },
+          {
+            "name": "range",
+            "offset": 88,
+            "value": 6.2831854820251465,
+            "valueText": null,
+            "type": "f32",
+            "typeName": "float"
+          }
+        ]
+      },
+      "type": "composite",
+      "address": "0x20006384"
+    },
+    "chassis.config.layout": {
+      "requestedName": "chassis.config.layout",
+      "value": 3,
+      "valueText": null,
+      "type": "u8",
+      "address": "0x20006348"
+    }
+  },
+  "partial": true,
+  "variableErrors": [
+    {
+      "requestedName": "chassis_debug_enabled",
+      "error": {
+        "code": "VARIABLE_NOT_FOUND",
+        "message": "Variable not found in current ELF: chassis_debug_enabled"
+      }
+    }
+  ]
+}

@@ -33,11 +33,11 @@ yaw 编码器反馈 → 单一反馈边界检查 → 相对车头角度及相对
                          混控 → 既有轮速斜坡与速度环 → DumpOutput
 ```
 
-1. 跟随目标为相对 yaw 角归零，正角差仍产生当前约定的正转向
+1. 跟随目标为相对 yaw 角归零，按实测执行方向，正角差产生负转向请求
 2. PID 输入使用弧度，输出使用归一化 wz，禁止将输出直接当作 rad/s 或电流
 3. 使用最短角差，保持现有编码器零点和 reversed 方向约定
-4. 计算采用 sp=0、fb=-relative_rad、range=2π；误差与当前正向比例控制一致
-5. 使用 KPID_MODE_SET_D，fb_dot=-relative_speed_rad_s，由已有 yaw 电机转速提供，避免对跨 ±π 的角度直接差分
+4. 计算采用 sp=0、fb=relative_rad、range=2π；2026-11-11 实测发现初版负号令角差远离零点，用户已去掉反馈负号，误差为最短角差的相反数
+5. 使用 KPID_MODE_SET_D，fb_dot=relative_speed_rad_s，与角度反馈保持同一符号，由已有 yaw 电机转速提供，避免对跨 ±π 的角度直接差分
 6. SET_D 使用直接速度输入，当前 PID 组件不对该输入应用微分低通；首轮 d=0，后续若启用 D，先检查速度噪声，不能把 d_cutoff_freq 当作已生效的滤波
 7. follow_pid.out_limit 是跟随 wz 的唯一专用限幅，不再保留 CHASSIS_FOLLOW_MAX_WZ 的重复裁剪
 8. 平移转换和跟随 PID 均在 Control 内执行，解析反馈接口不再修改命令；SPIN 只执行坐标转换并使用遥控给定的 wz
