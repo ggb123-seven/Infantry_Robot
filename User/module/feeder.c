@@ -10,7 +10,8 @@
  * 开启速度环后定量发射恢复串级，连续进给仍要求速度环使能，不将速度目标解释为电流
  * 连发时命令倍率直接映射输出轴转速目标，倍率为零按待机撤驱，方向由 config.direction 决定
  * 单发或五连发逐齿推进，实际到位且满足 feed_hz 间隔后才允许下一齿，释放立即取消剩余进给
- * 单发及五连发进入或反馈恢复时捕获当前位置并等待释放，摩擦轮使能保持由任务层独立编排
+ * 未完成的定量组在反馈恢复后捕获当前位置并重新计发，已完成的组保持撤驱直到请求释放
+ * 回中立即取消当前组并撤驱，摩擦轮使能保持由任务层独立编排
  * 度数仅用于观察，角度外环使用输出轴弧度，速度内环使用减速后的输出轴 rpm，目标差分前馈未标定时默认关闭
  */
 #define FEEDER_TWO_PI (6.28318530717958647692f)
@@ -25,7 +26,7 @@
 #define FEEDER_SINGLE_SETTLE_S (0.020f)
 // 用户确定每组五发，按实际逐齿到位计数，不按时间估算发数
 #define FEEDER_BURST_SHOTS (5U)
-// 500 Hz 通信允许最多五个周期未取得新帧，超过 10 ms 撤驱且恢复时重捕获当前位置
+// 500 Hz 通信最多容许五个周期缺少新反馈，超过 10 毫秒由输入边界撤销反馈资格
 #define FEEDER_FEEDBACK_TIMEOUT_US (10000U)
 // 命令层选择的实际进给模式，仅供观测，遥控默认五连发
 volatile uint8_t feeder_fire_mode = FEEDER_FIRE_MODE_BURST;
@@ -45,7 +46,7 @@ typedef enum
     FEEDER_LOOP_CASCADE,
 } Feeder_LoopMode_t;
 
-// 定量进给阶段分别表示恢复后等待释放、就绪、执行一齿、齿间等待以及完成后等待释放
+// 定量进给阶段分别表示恢复后待命、就绪、执行一齿、齿间等待以及完成后等待释放
 typedef enum
 {
     FEEDER_SINGLE_WAIT_CENTER = 0,
@@ -61,10 +62,10 @@ typedef enum
  * feedback_time_us 为驱动反馈源时间低 32 位，单位微秒
  * feedback_angle_rad 为最近一帧输出轴单圈角度，单位 rad
  * initialized 表示两路 PID 初始化成功
- * feedback_valid 表示最近一帧角度连续且未超时
+ * feedback_valid 表示最近一次角度帧连续有效且源时间未超时
  * position_pid 与 speed_pid 分别保存角度外环和速度内环历史，参数指向 cycle_config
  * frequency_hz 为初始化采样频率，单位 Hz
- * single_state 保存单发阶段，只有执行阶段检测本发到位和超时
+ * single_state 保存逐齿阶段，完成后保留等待释放状态，避免反馈恢复时重新开火
  * step_elapsed_s 为本发目标发布后的时间，单位秒，到位后保留以限制下一发启动间隔
  * settled_s 为角度及低速条件连续满足的时间，单位秒，条件被打断即清零
  */
@@ -182,41 +183,20 @@ static void Feeder_StartSingleStep(Feeder_t *feeder, Feeder_Internal_t *internal
  *
  * @param[in,out] feeder 拨弹实例，调用方保证运行状态、配置和反馈均有效
  * @param[in,out] internal 任务独占的单发阶段和周期快照
- * @param[in] command 本周期已由命令层确认的单发命令，调用方保证非空
+ * @param[in] command 本周期已由命令层确认的定量命令，调用方保证非空且开火请求有效
  * @param[in] period_s 已在控制入口校验的实际周期，单位秒
  * @return 无返回值，非法阶段使模块进入故障，由唯一输出闸门撤驱
  */
 static void Feeder_UpdateSingle(Feeder_t *feeder, Feeder_Internal_t *internal,
                                const Feeder_Command_t *command, float period_s)
 {
-    // 释放请求立即捕获当前角度并取消组内目标，避免回中后仍完成剩余进给
-    if (!command->single_fire && internal->single_state != FEEDER_SINGLE_WAIT_CENTER &&
-        internal->single_state != FEEDER_SINGLE_READY)
-    {
-        feeder_steps_remaining = 0U;
-        feeder->target_angle_deg = feeder->measured_angle_deg;
-        feeder->target_speed_rpm = 0.0f;
-        PID_Reset(&internal->position_pid);
-        PID_Reset(&internal->speed_pid);
-        internal->single_state = FEEDER_SINGLE_READY;
-    }
-
     // 到位条件只服务于本发完成判定，不依赖摩擦轮转速
     switch (internal->single_state)
     {
         case FEEDER_SINGLE_WAIT_CENTER:
-            if (!command->single_fire)
-            {
-                internal->single_state = FEEDER_SINGLE_READY;
-            }
-            break;
-
         case FEEDER_SINGLE_READY:
-            if (command->single_fire)
-            {
-                feeder_steps_remaining = command->fire_mode == FEEDER_FIRE_MODE_BURST ? FEEDER_BURST_SHOTS : 1U;
-                Feeder_StartSingleStep(feeder, internal);
-            }
+            feeder_steps_remaining = command->fire_mode == FEEDER_FIRE_MODE_BURST ? FEEDER_BURST_SHOTS : 1U;
+            Feeder_StartSingleStep(feeder, internal);
             break;
 
         case FEEDER_SINGLE_EXECUTING:
@@ -228,24 +208,29 @@ static void Feeder_UpdateSingle(Feeder_t *feeder, Feeder_Internal_t *internal,
             internal->settled_s = settled ? internal->settled_s + period_s : 0.0f;
             if (internal->settled_s >= FEEDER_SINGLE_SETTLE_S)
             {
-                internal->single_state = FEEDER_SINGLE_INTERVAL;
+                // 最后一齿实际到位就完成整组，立即撤驱且保留完成状态，不等待下一齿间隔
+                if (feeder_steps_remaining == 0U)
+                {
+                    internal->single_state = FEEDER_SINGLE_WAIT_RELEASE;
+                    feeder->state = FEEDER_RELAX;
+                    feeder->target_speed_rpm = 0.0f;
+                    PID_Reset(&internal->position_pid);
+                    PID_Reset(&internal->speed_pid);
+                }
+                else
+                {
+                    internal->single_state = FEEDER_SINGLE_INTERVAL;
+                }
             }
             break;
         }
 
         case FEEDER_SINGLE_INTERVAL:
-            // 保留上一发启动时间以限制组内频率，最后一齿到位后等待请求释放
+            // 调用方保证该阶段尚有未启动齿数，沿用上一发起点限制组内启动频率
             internal->step_elapsed_s += period_s;
             if (internal->step_elapsed_s >= 1.0f / internal->cycle_config.feed_hz)
             {
-                if (feeder_steps_remaining != 0U)
-                {
-                    Feeder_StartSingleStep(feeder, internal);
-                }
-                else
-                {
-                    internal->single_state = FEEDER_SINGLE_WAIT_RELEASE;
-                }
+                Feeder_StartSingleStep(feeder, internal);
             }
             break;
 
@@ -330,12 +315,12 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
         feeder->measured_speed_rpm = feedback->rotor_speed;
     }
 
-    // 驱动保存微秒时间低 32 位，无符号差值允许正常回绕并拒绝启动时的未来帧
+    // 驱动源时间只保存低 32 位，无符号差值支持回绕，并拒绝启动时晚于当前时间的帧
     const uint32_t age_us = (uint32_t)now_us - internal->feedback_time_us;
     const bool frame_fresh = age_us <= FEEDER_FEEDBACK_TIMEOUT_US && now_us >= age_us;
     internal->feedback_valid = internal->feedback_valid && frame_fresh;
 
-    // 单角度环与串级均需要角度连续，连发速度环只需要帧新鲜，两类观察量分别置为非数值
+    // 角度连续性与反馈帧龄在此统一生效，下游只读取本次输入边界的结果
     if (internal->feedback_valid)
     {
         feeder->measured_angle_deg = internal->feedback_angle_rad * M_RAD2DEG_MULT;
@@ -388,13 +373,17 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
     const bool config_changed = memcmp(&previous_config, &internal->cycle_config, sizeof(previous_config)) != 0;
     const bool period_valid = isfinite(period_s) && period_s > 0.0f && period_s <= FEEDER_MAX_PERIOD_S;
     const bool fire_mode_changed = fire_mode != feeder_active_fire_mode;
+    // 完成状态属于当前射击组，不随反馈离线和恢复变化，模式或环路切换建立新组
+    const bool group_complete = internal->single_state == FEEDER_SINGLE_WAIT_RELEASE &&
+                                !loop_mode_changed && !fire_mode_changed;
     const float feed_ratio = !angle_mode ? cycle_command.speed_ratio : 0.0f;
     const bool position_active = mode == FEEDER_CMD_RUN &&
         (loop_mode == FEEDER_LOOP_ANGLE || loop_mode == FEEDER_LOOP_CASCADE);
     // 角度控制需要连续角度，纯速度环只要求转速新鲜，关闭所有有效环路时直接待机
     const bool feedback_drive_valid = position_active ? internal->feedback_valid : isfinite(feeder->measured_speed_rpm);
     const bool feed_requested = mode == FEEDER_CMD_RUN &&
-        (position_active || (loop_mode == FEEDER_LOOP_SPEED && feed_ratio != 0.0f));
+        ((position_active && cycle_command.single_fire && !group_complete) ||
+         (loop_mode == FEEDER_LOOP_SPEED && feed_ratio != 0.0f));
     Feeder_State_t next_state;
 
     // 初始化失败、配置非法或周期异常锁存故障，等待遥控待机档人工解除
@@ -424,18 +413,22 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
         }
     }
 
-    // 状态、配置或环路结构变化时执行入口动作并重置控制历史
+    // 释放或切换控制方式取消当前组，未完成的组在反馈状态变化后重新计发，完成状态持续保留
+    const bool reset_group = mode != FEEDER_CMD_RUN || !cycle_command.single_fire ||
+                             loop_mode_changed || fire_mode_changed ||
+                             (next_state != feeder->state && !group_complete);
+    if (reset_group && internal->single_state != FEEDER_SINGLE_WAIT_CENTER)
+    {
+        feeder_steps_remaining = 0U;
+        internal->single_state = FEEDER_SINGLE_WAIT_CENTER;
+        internal->step_elapsed_s = 0.0f;
+        internal->settled_s = 0.0f;
+    }
+
+    // 状态、配置或环路结构变化时重置控制历史，回中只撤驱而不继续计算位置保持
     const bool restart = next_state != feeder->state || config_changed || loop_mode_changed || fire_mode_changed;
     if (restart)
     {
-        // 停机、恢复或控制方式变化时取消旧单发阶段，在线改参保留本发固定目标和到位计时
-        if (next_state != feeder->state || loop_mode_changed || fire_mode_changed)
-        {
-            feeder_steps_remaining = 0U;
-            internal->single_state = FEEDER_SINGLE_WAIT_CENTER;
-            internal->step_elapsed_s = 0.0f;
-            internal->settled_s = 0.0f;
-        }
         PID_Reset(&internal->position_pid);
         PID_Reset(&internal->speed_pid);
         feeder->target_speed_rpm = 0.0f;
@@ -449,12 +442,12 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
                 internal->speed_pid.last.k_fb = LowPassFilter2p_Reset(&internal->speed_pid.dfilter,
                     internal->cycle_config.speed_pid.k * feeder->measured_speed_rpm);
             }
-            // 单角度环与串级均维护逐齿目标，恢复或切换控制结构时捕获当前位置并等待释放
+            // 单角度环与串级均维护逐齿目标，恢复或切换控制结构时捕获当前位置并清理当前进给阶段
             if (position_active)
             {
                 LowPassFilter2p_Init(&internal->position_pid.dfilter, internal->frequency_hz,
                     internal->cycle_config.position_pid.d_cutoff_freq);
-                // 首次使能或反馈恢复时捕获当前位置，防止切换模式或拨杆下位产生自动转动
+                // 首次使能或反馈恢复时捕获当前位置，避免切换模式时追赶旧目标
                 if (loop_mode_changed || feeder->state != FEEDER_RUNNING || fire_mode_changed)
                 {
                     feeder->target_angle_deg = feeder->measured_angle_deg;
@@ -490,7 +483,7 @@ void Feeder_Control(Feeder_t *feeder, const Feeder_Command_t *command, float per
         return;
     }
 
-    // 本发完成前保持固定目标，组内逐齿推进，固定发数完成后不重复，超时由输出闸门撤驱
+    // 本发完成前保持固定目标，组内逐齿推进，整组完成由运行状态切换和唯一输出闸门撤驱
     Feeder_UpdateSingle(feeder, internal, &cycle_command, period_s);
     feeder_angle_target_deg = feeder->target_angle_deg;
     if (feeder->state != FEEDER_RUNNING)

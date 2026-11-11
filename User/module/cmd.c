@@ -204,7 +204,7 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
     }
     out->fire_mode = fire_mode;
 
-    // 左拨杆和两路右摇杆不参与射击，只有中位可以建立备弹阶段
+    // 左拨杆和两路右摇杆不参与射击，右拨杆中位备弹、下位直接请求开火
     switch (rc->data.sw_r)
     {
         case DR16_SWITCH_UP:
@@ -219,16 +219,9 @@ bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, u
 
         case DR16_SWITCH_DOWN:
             out->mode = FEEDER_CMD_RUN;
-            if (ctx->state == ready || ctx->state == active)
-            {
-                ctx->state = active;
-                out->speed_ratio = 1.0f;
-                out->single_fire = true;
-            }
-            else
-            {
-                ctx->state = CMD_FEEDER_DISABLED;
-            }
+            ctx->state = active;
+            out->speed_ratio = 1.0f;
+            out->single_fire = true;
             break;
 
         default:

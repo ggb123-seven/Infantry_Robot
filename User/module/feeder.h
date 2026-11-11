@@ -12,9 +12,9 @@ extern "C"
 
 /*
  * 拨弹运行状态：
- * - FEEDER_RELAX：待机零输出，进给倍率为零或命令回到待机档时进入
+ * - FEEDER_RELAX：待机零输出，回中释放、定量组完成或连续进给倍率为零时进入
  * - FEEDER_RUNNING：速度环、逐发单角度环或角度速度串级控制运行
- * - FEEDER_OFFLINE：反馈超时或角度连续性丢失，零输出等待有效反馈后自动重新起控
+ * - FEEDER_OFFLINE：反馈超时或角度连续性丢失，零输出等待恢复，未完成的定量组重新计发
  * - FEEDER_FAULT：初始化失败、配置非法、周期异常或控制量溢出，零输出锁存至命令回到待机档
  */
 typedef enum
@@ -36,7 +36,7 @@ typedef enum
 /*
  * 拨弹接口保留三种进给模式，遥控默认选择五连发
  * 连发要求速度环使能，倍率映射输出轴转速；单发与五连发按使能接口选择单角度环或串级控制
- * 固定发数完成后持续请求不重复，释放请求取消剩余发数并允许重新触发
+ * 固定发数完成后撤驱且持续请求不重复，释放取消剩余发数，未完成时反馈恢复自动重新计发
  */
 #define FEEDER_FIRE_MODE_AUTO (0U)
 #define FEEDER_FIRE_MODE_SINGLE (1U)
@@ -53,7 +53,7 @@ extern volatile float feeder_angle_target_deg;
  * angle=true、speed=true：单发和五连发恢复角度速度串级，角度环输出 rad/s
  * angle=false、speed=true：仅速度环，连续进给使用命令倍率，定量发射无速度倍率时保持撤驱
  * angle=false、speed=false：全部撤驱；连续进给在速度环关闭时也撤驱，不把速度目标解释为电流
- * 环路结构改变会取消本组目标并清除控制历史，定量发射须重新释放请求后才能触发
+ * 环路结构改变会取消本组目标并清除控制历史，恢复有效角度控制且有开火请求时重新计发
  */
 extern volatile bool feeder_angle_loop_enabled;
 extern volatile bool feeder_speed_loop_enabled;
@@ -104,8 +104,8 @@ typedef struct
  * config 为 EmberProbe 可写配置副本，Control 每周期复制并校验后供控制器使用
  * config_valid 为最近一次 Control 周期的配置校验结果
  * state 为唯一运行状态，非运行状态由 Feeder_DumpOutput 统一输出零电流
- * measured_angle_deg 为输出轴单圈角度，单位度；角度无效或超时时为非数值
- * measured_speed_rpm 为输出轴实测转速，单位 rpm；反馈超时时为非数值
+ * measured_angle_deg 为输出轴单圈角度，单位度；角度无效或反馈超时时为非数值
+ * measured_speed_rpm 为输出轴实测转速，单位 rpm；尚未收到反馈或反馈超时时为非数值
  * target_angle_deg 为角度模式采用的目标，单位度
  * target_speed_rpm 为速度内环目标，单位 rpm，单角度环时固定为零，不代表角度环撤驱
  * output_current_a 为限幅后的候选转子电流，单位 A，非运行状态由输出闸门归零
@@ -145,9 +145,10 @@ void Feeder_UpdateFeedback(Feeder_t *feeder, const MOTOR_RM_Feedback_t *feedback
 /**
  * @brief 校验周期配置，按环路使能接口执行速度环、单角度环或逐发串级控制
  *
- * 单发及五连发使能或反馈恢复时捕获当前位置并等待请求释放，触发后逐齿执行固定发数
+ * 单发及五连发收到开火请求时捕获当前位置并逐齿执行固定发数
+ * 未完成的组在反馈恢复后从当前位置重新计发，已完成的组保留完成状态，不因反馈恢复重复开火
  * 到位须满足输出轴误差不超过 0.5 度、绝对转速不超过 1 rpm 并持续 20 毫秒；未到位时持续追踪目标，不因运行时间锁存故障
- * 释放请求立即取消剩余目标；固定发数完成后持续请求不重复，退出使能立即撤驱
+ * 释放请求立即取消剩余目标并撤驱；固定发数完成后撤驱且持续请求不重复，退出使能立即撤驱
  *
  * @param[in,out] feeder 拨弹实例，调用方保证非空
  * @param[in] command 本周期拨弹命令，无命令时传 NULL，按离线档处理且不解除故障锁存
