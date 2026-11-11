@@ -8,12 +8,11 @@
 #define CHASSIS_MAX_PERIOD_S (0.1F)
 
 /*
- * 跟随参数沿用参考工程比例增益 0.5，旋转请求限制为既有小陀螺幅度 0.3
- * 反馈时效取云台电机反馈上限 90 毫秒，角度为弧度，比例输出为归一化转向
+ * 跟随反馈时效沿用云台电机反馈上限 90 毫秒
+ * 电机转速由 rpm 换算为 rad/s，每分钟 60 秒、每圈 2π 弧度
  */
-#define CHASSIS_FOLLOW_GAIN (0.5F)
-#define CHASSIS_FOLLOW_MAX_WZ (0.3F)
 #define CHASSIS_FOLLOW_TIMEOUT_US (90000U)
+#define CHASSIS_RPM_TO_RAD_S (M_2PI / 60.0F)
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
@@ -27,17 +26,32 @@ volatile float chassis_speed_feedforward_gain_a_per_rpm[CHASSIS_WHEEL_COUNT] =
     0.0137F, 0.0231F, 0.0097F, 0.0092F,
 };
 
+/*
+ * 单一底盘实例的私有跟随控制状态，由底盘任务独占：
+ * - cycle_config：最近一次在控制入口通过校验的持久配置快照，跟随 PID 参数长期引用此处
+ * - follow_pid：跟随角度 PID 的积分、微分及上一输出历史
+ * - yaw_feedback_valid：本周期反馈入口产生的时效、角度及连续性校验结果
+ */
+typedef struct
+{
+    Chassis_Config_t cycle_config;
+    KPID_t follow_pid;
+    bool yaw_feedback_valid;
+} Chassis_Internal_t;
+
+static Chassis_Internal_t chassis_internal;
+
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
 static void Chassis_ResetWheel(Chassis_Wheel_t *wheel);
 static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm);
-static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config);
+static bool Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config);
 static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run,
                                  float period_s, float feedforward_gain);
 static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s,
                              float feedforward_gain);
 
 /**
- * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
+ * @brief 复制配置并初始化运动学、跟随 PID、四轮 PID 与滤波器
  *
  * @param[out] chassis 待初始化的底盘实例，调用方保证非空，初始化后不得整体复制
  * @param[in] config 默认配置，调用方保证非空
@@ -48,10 +62,20 @@ int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float fr
 {
     // 清空旧状态并标记缺失反馈，保证所有初始化失败路径输出零电流
     memset(chassis, 0, sizeof(*chassis));
+    memset(&chassis_internal, 0, sizeof(chassis_internal));
     Chassis_UpdateFeedback(chassis, NULL);
+    Chassis_UpdateGimbalFeedback(chassis, NULL, 0U, 0.0F, false);
     chassis->config = *config;
     chassis->config_valid = Chassis_IsConfigValid(config, frequency_hz);
     if (!chassis->config_valid)
+    {
+        return -1;
+    }
+
+    // 跟随参数保存在持久快照中，避免控制器引用周期栈上的临时配置
+    chassis_internal.cycle_config = *config;
+    if (PID_Init(&chassis_internal.follow_pid, KPID_MODE_SET_D, frequency_hz,
+                 &chassis_internal.cycle_config.follow_pid) != 0)
     {
         return -1;
     }
@@ -104,48 +128,37 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
 }
 
 /**
- * @brief 解析跟随命令，反馈边界与输入约束见头文件
+ * @brief 校验云台机械反馈并更新相对车头角度及相对角速度
  *
- * @param[in,out] command 本周期遥控命令
+ * @param[in,out] chassis 底盘实例，调用方保证非空
  * @param[in] feedback 最近 yaw 反馈，没有缓存时传 NULL
  * @param[in] now_us 单调微秒时间
  * @param[in] zero_deg 调用方保证为已标定的方向修正后编码器零点，单位度
  * @param[in] reversed 编码器方向修正开关
  * @return 无返回值
  */
-void Chassis_ResolveGimbalFollow(Chassis_Command_t *command, const MOTOR_RM_Feedback_t *feedback,
-                                 uint64_t now_us, float zero_deg, bool reversed)
+void Chassis_UpdateGimbalFeedback(Chassis_t *chassis, const MOTOR_RM_Feedback_t *feedback,
+                                   uint64_t now_us, float zero_deg, bool reversed)
 {
-    // 跟随和自旋共用云台坐标转换，独立零速刹车不依赖云台反馈
-    if (command->mode != CHASSIS_MODE_FOLLOW_GIMBAL && command->mode != CHASSIS_MODE_SPIN)
-    {
-        return;
-    }
-
     // 最新帧可能尚未到达或已经超时，帧龄用低位无符号差处理时间戳回绕
     const uint32_t age_us = feedback != NULL ? (uint32_t)now_us - feedback->last_update_time : UINT32_MAX;
     if (feedback == NULL || age_us > CHASSIS_FOLLOW_TIMEOUT_US ||
         !feedback->angle_valid || feedback->angle_lost_count != 0U ||
         !(feedback->rotor_single_angle >= 0.0F && feedback->rotor_single_angle < M_2PI))
     {
-        command->mode = CHASSIS_MODE_RELAX;
+        chassis_internal.yaw_feedback_valid = false;
+        chassis->follow_relative_angle_deg = NAN;
+        chassis->follow_relative_speed_rad_s = NAN;
         return;
     }
 
-    // 在最短半圈内计算云台相对车头角度，并将云台坐标下的平移转到车体坐标
+    // 最短机械角用于跟随与坐标转换，整数协议转速换算为直接微分输入
     const float angle = reversed ? -feedback->rotor_single_angle : feedback->rotor_single_angle;
     const float relative = remainderf(angle - zero_deg * M_DEG2RAD_MULT, M_2PI);
-    const float cosine = cosf(relative);
-    const float sine = sinf(relative);
-    const float vx = command->move.vx;
-    const float vy = command->move.vy;
-    command->move.vx = cosine * vx - sine * vy;
-    command->move.vy = sine * vx + cosine * vy;
-    // 自旋保留命令层给定方向，只有跟随模式追随云台朝向
-    if (command->mode == CHASSIS_MODE_FOLLOW_GIMBAL)
-    {
-        command->move.wz = AbsClip(CHASSIS_FOLLOW_GAIN * relative, CHASSIS_FOLLOW_MAX_WZ);
-    }
+    chassis->follow_relative_angle_deg = relative * M_RAD2DEG_MULT;
+    const float speed_rad_s = feedback->rotor_speed * CHASSIS_RPM_TO_RAD_S;
+    chassis->follow_relative_speed_rad_s = reversed ? -speed_rad_s : speed_rad_s;
+    chassis_internal.yaw_feedback_valid = true;
 }
 
 /**
@@ -175,9 +188,10 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
     }
     const float frequency_hz = 1.0F / chassis->wheel[0].speed_pid.dt_min;
     chassis->config_valid = Chassis_IsConfigValid(&snapshot, frequency_hz) && feedforward_valid;
+    bool follow_config_changed = false;
     if (chassis->config_valid)
     {
-        Chassis_ApplyPidConfig(chassis, &snapshot);
+        follow_config_changed = Chassis_ApplyPidConfig(chassis, &snapshot);
     }
 
     // 默认整组待机，只有合法运动命令和有效周期才能请求运动学计算
@@ -189,24 +203,64 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
     if (chassis->config_valid && command != NULL && isfinite(period_s) &&
         period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S)
     {
-        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
         switch (command->mode)
         {
             case CHASSIS_MODE_INDEPENDENT:
+                next_mode = CHASSIS_MODE_INDEPENDENT;
+                break;
+
             case CHASSIS_MODE_FOLLOW_GIMBAL:
             case CHASSIS_MODE_SPIN:
-                if (isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F &&
-                    Mixer_Apply(&chassis->mixer, &command->move, requested_speed,
-                                CHASSIS_WHEEL_COUNT, scale_rpm) == MIXER_OK)
-                {
-                    next_mode = command->mode;
-                }
+                next_mode = chassis_internal.yaw_feedback_valid ? command->mode : CHASSIS_MODE_RELAX;
                 break;
 
             case CHASSIS_MODE_RELAX:
             default:
                 break;
         }
+    }
+
+    // 跟随输出只由本周期 PID 产生，进入跟随前的历史已在初始化或上次退出时清除
+    const bool follow_requested = next_mode == CHASSIS_MODE_FOLLOW_GIMBAL;
+    chassis->follow_wz = 0.0F;
+    if (next_mode != CHASSIS_MODE_RELAX)
+    {
+        MoveVector_t move = command->move;
+        if (next_mode == CHASSIS_MODE_FOLLOW_GIMBAL || next_mode == CHASSIS_MODE_SPIN)
+        {
+            const float relative_rad = chassis->follow_relative_angle_deg * M_DEG2RAD_MULT;
+            const float cosine = cosf(relative_rad);
+            const float sine = sinf(relative_rad);
+            move.vx = cosine * command->move.vx - sine * command->move.vy;
+            move.vy = sine * command->move.vx + cosine * command->move.vy;
+            if (follow_requested)
+            {
+                // 运行中改参先清除旧历史，退出跟随时由后续统一清理，避免重复复位
+                if (follow_config_changed)
+                {
+                    PID_Reset(&chassis_internal.follow_pid);
+                }
+                move.wz = PID_Calc(&chassis_internal.follow_pid, 0.0F, -relative_rad,
+                                    -chassis->follow_relative_speed_rad_s, period_s);
+                chassis->follow_wz = move.wz;
+            }
+        }
+
+        // 混控入口统一检查运动分量与轮速尺度，失败时取消本周期运行请求
+        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
+        if (!isfinite(command->wheel_speed_scale_rpm) || command->wheel_speed_scale_rpm < 0.0F ||
+            Mixer_Apply(&chassis->mixer, &move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) != MIXER_OK)
+        {
+            next_mode = CHASSIS_MODE_RELAX;
+        }
+    }
+
+    // 退出跟随或本周期跟随计算被混控拒绝时清理历史，持续待机不重复复位
+    if (next_mode != CHASSIS_MODE_FOLLOW_GIMBAL &&
+        (chassis->mode == CHASSIS_MODE_FOLLOW_GIMBAL || follow_requested))
+    {
+        PID_Reset(&chassis_internal.follow_pid);
+        chassis->follow_wz = 0.0F;
     }
 
     // 模式切换统一清除动态历史，随后由单轮状态机决定是否从实测转速起步
@@ -218,7 +272,8 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
             wheel->state = CHASSIS_WHEEL_RELAX;
         }
         wheel->requested_speed_rpm = next_mode != CHASSIS_MODE_RELAX ? requested_speed[i] : 0.0F;
-        Chassis_ControlWheel(wheel, &snapshot, next_mode != CHASSIS_MODE_RELAX, period_s, feedforward_gain[i]);
+        Chassis_ControlWheel(wheel, &chassis_internal.cycle_config, next_mode != CHASSIS_MODE_RELAX,
+                               period_s, feedforward_gain[i]);
     }
     chassis->mode = next_mode;
 }
@@ -261,7 +316,7 @@ bool Chassis_HasOnlineWheel(const Chassis_t *chassis)
 }
 
 /**
- * @brief 校验底盘限幅、斜坡、滤波和公共速度 PID 参数
+ * @brief 在初始化及周期入口集中校验底盘配置、公共速度 PID 和跟随 PID
  *
  * @param[in] config 待校验的非空配置
  * @param[in] frequency_hz 初始化时的采样频率，单位 Hz
@@ -270,6 +325,7 @@ bool Chassis_HasOnlineWheel(const Chassis_t *chassis)
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz)
 {
     const KPID_Params_t *pid = &config->wheel_speed_pid;
+    const KPID_Params_t *follow = &config->follow_pid;
     const float nyquist_hz = frequency_hz * 0.5F;
     return isfinite(frequency_hz) && frequency_hz > 0.0F && isfinite(1.0F / frequency_hz) &&
            isfinite(config->max_wheel_speed_rpm) && config->max_wheel_speed_rpm > 0.0F &&
@@ -282,7 +338,12 @@ static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequenc
            isfinite(pid->i) && pid->i >= 0.0F && isfinite(pid->d) && pid->d >= 0.0F &&
            isfinite(pid->i_limit) && pid->i_limit >= 0.0F && isfinite(pid->out_limit) && pid->out_limit >= 0.0F &&
            isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq < nyquist_hz &&
-           isfinite(pid->range) && pid->range >= 0.0F;
+           isfinite(pid->range) && pid->range >= 0.0F &&
+           isfinite(follow->k) && follow->k > 0.0F && isfinite(follow->p) && follow->p >= 0.0F &&
+           isfinite(follow->i) && follow->i >= 0.0F && isfinite(follow->d) && follow->d >= 0.0F &&
+           isfinite(follow->i_limit) && follow->i_limit >= 0.0F &&
+           isfinite(follow->out_limit) && follow->out_limit > 0.000001F && follow->out_limit <= 1.0F &&
+           isfinite(follow->d_cutoff_freq) && follow->d_cutoff_freq < nyquist_hz && follow->range == M_2PI;
 }
 
 /**
@@ -323,21 +384,36 @@ static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm)
 }
 
 /**
- * @brief 同步公共 PID 参数并清空四轮旧积分
+ * @brief 采纳持久配置快照并同步四轮参数，返回跟随参数变更供控制入口处理历史
  *
  * @param[in,out] chassis 配置合法且初始化成功的底盘实例
  * @param[in] config 本周期已校验的配置快照
- * @return 无返回值
+ * @return 跟随参数改变时返回真，否则返回假
  */
-static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config)
+static bool Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config)
 {
+    // 跟随控制器长期引用持久快照，更新前检测变更，滤波参数只在改变时同步
+    const KPID_Params_t *follow = &config->follow_pid;
+    const KPID_Params_t *applied = &chassis_internal.cycle_config.follow_pid;
+    const bool follow_changed = follow->k != applied->k || follow->p != applied->p ||
+        follow->i != applied->i || follow->d != applied->d || follow->i_limit != applied->i_limit ||
+        follow->out_limit != applied->out_limit || follow->d_cutoff_freq != applied->d_cutoff_freq;
+    const bool cutoff_changed = follow->d_cutoff_freq != applied->d_cutoff_freq;
+    chassis_internal.cycle_config = *config;
+    if (cutoff_changed)
+    {
+        LowPassFilter2p_Init(&chassis_internal.follow_pid.dfilter,
+                              1.0F / chassis_internal.follow_pid.dt_min, follow->d_cutoff_freq);
+    }
+
+    // 四轮参数继续使用公共副本，只有轮速参数变更才清除轮速积分
     const KPID_Params_t *next = &config->wheel_speed_pid;
     const KPID_Params_t *old = &chassis->applied_wheel_speed_pid;
     if (next->k == old->k && next->p == old->p && next->i == old->i && next->d == old->d &&
         next->i_limit == old->i_limit && next->out_limit == old->out_limit &&
         next->d_cutoff_freq == old->d_cutoff_freq && next->range == old->range)
     {
-        return;
+        return follow_changed;
     }
 
     // 只在参数变更时复制一次；截止频率变化时同步重建各轮微分滤波系数
@@ -356,6 +432,7 @@ static void Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *c
             pid->last.k_fb = scaled_feedback;
         }
     }
+    return follow_changed;
 }
 
 /**

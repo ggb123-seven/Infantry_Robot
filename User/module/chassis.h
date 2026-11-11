@@ -48,6 +48,9 @@ typedef enum
  * - max_current_a：最终转子侧电流绝对值上限，单位 A，须大于 0
  * - wheel_speed_pid：四轮共用速度 PID，输入 rpm、输出 A，运行中修改后四轮同时生效
  *   k 须大于 0，p/i/d/i_limit/out_limit/range 须非负，截止频率须小于采样频率一半
+ * - follow_pid：跟随角度 PID，输入弧度、输出归一化转向，参数改变时清除跟随历史
+ *   k 须大于 0，p/i/d/i_limit 须非负，out_limit 位于 (0.000001, 1]，range 固定为 2π
+ *   微分使用编码器相对角速度，d_cutoff_freq 须为有限值且小于采样频率一半，不对直接微分输入滤波
  */
 typedef struct
 {
@@ -59,13 +62,14 @@ typedef struct
     float current_filter_cutoff_hz;
     float max_current_a;
     KPID_Params_t wheel_speed_pid;
+    KPID_Params_t follow_pid;
 } Chassis_Config_t;
 
 /*
  * 底盘命令：
  * - mode：控制模式，未知值按待机处理
  * - move：归一化运动向量，vx 前向、vy 左向、wz 俯视逆时针为正，约定范围 [-1, 1]
- *   跟随与自旋模式的遥控平移先以云台为坐标，经 ResolveGimbalFollow 转换后才交给 Control
+ *   跟随与自旋的遥控平移以云台为坐标，由 Control 转换到车体坐标，命令本身不被模块回写
  * - wheel_speed_scale_rpm：归一化轮速 1 对应的输出轴 rpm，须非负，超过配置上限时限幅
  */
 typedef struct
@@ -100,14 +104,17 @@ typedef struct
 } Chassis_Wheel_t;
 
 /*
- * 底盘实例，初始化后不得整体复制，避免内部 PID 参数指针失效：
+ * 底盘实例，本工程使用单一实例，初始化后不得整体复制，避免内部 PID 参数指针失效：
  * - config：默认配置的可调副本
- * - initialized：混合器、四路 PID 和滤波器全部初始化成功时为 true
+ * - initialized：混合器、跟随 PID、四轮 PID 和滤波器全部初始化成功时为 true
  * - config_valid：本周期配置与四轮前馈系数的校验结果，非法时四轮零输出
  * - applied_wheel_speed_pid：四路 PID 共同引用的参数副本，变更时清空四轮积分
  * - mode：本周期实际采用的控制模式
  * - mixer：运动学混合器，仅初始化时选择布局
  * - wheel[0~3]：电调 ID1~4 的单轮状态，依次为左前、左后、右后、右前
+ * - follow_relative_angle_deg：云台相对车头的最短机械角，单位度，反馈无效时为非数值
+ * - follow_relative_speed_rad_s：方向修正后的云台相对底盘角速度，单位 rad/s，反馈无效时为非数值
+ * - follow_wz：本周期跟随 PID 的归一化转向请求，仅跟随运行时非零，不代表实测车体角速度
  */
 typedef struct
 {
@@ -118,10 +125,13 @@ typedef struct
     Chassis_Mode_t mode;
     Mixer_t mixer;
     Chassis_Wheel_t wheel[CHASSIS_WHEEL_COUNT];
+    float follow_relative_angle_deg;
+    float follow_relative_speed_rad_s;
+    float follow_wz;
 } Chassis_t;
 
 /**
- * @brief 复制配置并初始化运动学、四轮 PID 与滤波器
+ * @brief 复制配置并初始化运动学、跟随 PID、四轮 PID 与滤波器，仅支持本工程单一实例
  *
  * @param[out] chassis 待初始化的底盘实例，初始化后不得整体复制
  * @param[in] config 默认配置，调用方保证非空
@@ -143,24 +153,24 @@ void Chassis_UpdateFeedback(Chassis_t *chassis, const CANDevices_Snapshot_t *can
  * @brief 推进底盘模式和每轮状态机并计算电流
  *
  * @param[in,out] chassis 底盘实例
- * @param[in] command 归一化控制命令，无命令时传 NULL，调用方保证跟随及自旋命令已经过 ResolveGimbalFollow
+ * @param[in] command 归一化控制命令，无命令时传 NULL，跟随及自旋平移使用云台坐标
  * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
  * @return 无返回值
  */
 void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float period_s);
 
 /**
- * @brief 根据云台机械角转换跟随及自旋平移，跟随时额外计算转向
+ * @brief 在反馈边界校验云台帧并更新跟随角度与相对角速度，后续控制只使用本次校验结果
  *
- * @param[in,out] command 已解析的底盘命令，跟随或自旋反馈无效时转为待机
+ * @param[in,out] chassis 底盘实例，调用方保证非空
  * @param[in] feedback 最近一次云台电机反馈，未取得时传 NULL
  * @param[in] now_us 读取反馈后的单调时间，单位微秒
  * @param[in] zero_deg 调用方保证为已标定的方向修正后编码器零点，单位度
  * @param[in] reversed 云台编码器是否反向
  * @return 无返回值
  */
-void Chassis_ResolveGimbalFollow(Chassis_Command_t *command, const MOTOR_RM_Feedback_t *feedback,
-                                 uint64_t now_us, float zero_deg, bool reversed);
+void Chassis_UpdateGimbalFeedback(Chassis_t *chassis, const MOTOR_RM_Feedback_t *feedback,
+                                   uint64_t now_us, float zero_deg, bool reversed);
 
 /**
  * @brief 导出四路电流，保留调用方设置的命令序号

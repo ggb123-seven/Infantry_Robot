@@ -108,9 +108,9 @@ void Task_motor_chassis(void *argument)
             chassis_command.wheel_speed_scale_rpm = fabsf(debug_speed_rpm);
         }
 
-        // 模块用已标定零点转换跟随及自旋平移，失效反馈统一在模块入口阻断
-        Chassis_ResolveGimbalFollow(&chassis_command, yaw_feedback_received ? &yaw_feedback_cache : NULL,
-                                     remote_time_us, gimbal_config.yaw.zero_encoder_deg, gimbal_config.yaw.reversed);
+        // 反馈边界用已标定零点更新机械观测，跟随计算和坐标转换统一交给控制入口
+        Chassis_UpdateGimbalFeedback(&chassis, yaw_feedback_received ? &yaw_feedback_cache : NULL,
+                                       remote_time_us, gimbal_config.yaw.zero_encoder_deg, gimbal_config.yaw.reversed);
 
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =

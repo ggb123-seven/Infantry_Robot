@@ -65,6 +65,17 @@
 
 ## 底盘当前进度
 
+### 2026-11-11 底盘跟随改为独立角度 PID
+
+- 用户选择方案 A 并授权实施，跟随配置统一放入 chassis.config.follow_pid，角度与相对角速度观测公开，PID 历史与持久配置快照位于 chassis.c 私有上下文，仅支持工程单一底盘实例
+- 采用现有 KPID 的 SET_D 模式，输入弧度、输出归一化 wz，初值 k=1、p=0.5、i=d=0、i_limit=0、out_limit=0.3、d_cutoff_freq=-1、range=2π；直接转速微分不经过组件微分低通，参数属于首轮整定值
+- 反馈入口更新机械观测，Control 负责 FOLLOW/SPIN 平移转换与跟随计算，不回写命令；在线参数在入口快照、校验与同步，退出跟随清历史，DumpOutput 保持唯一输出闸门
+- 源码改动为 chassis.c/.h、config.c 跟随追加项、motor_chassis.c/.h；已有四轮、拨弹及云台配置值保留，未改 BSP、设备、通用 PID、CAN 或 CubeMX
+- 模块 17,719 条断言、任务 17 场景 1,020 周期及 6,768 条断言通过，ARM 严格检查、Debug、格式与 ARCH/HW/SPEC 通过；RAM 50,616 B、FLASH 131,612 B
+- 底盘任务配置栈 1024 B，Task_motor_chassis 静态帧 144 B、Chassis_Control 静态帧 208 B；无本次固件运行时高水位，未烧录、未写目标 RAM、未实车验收
+- 剩余问题与下一步：先架空核对方向、限幅及栈高水位，再落地对比 ±10°、±30° 和连续转动，按角差、wz、四轮速度及电流录波决定 I/D；软件验证不能代表跟随手感改善
+- 证据见 docs/validation/chassis_follow_pid_20261111.md，方案见 docs/workflows/2026-11-11_chassis_follow_pid_plan.md
+
 ### 2026-11-10 摩擦轮安全撤驱与一秒启停
 
 - 本节更新摩擦轮行为，替代下方“遥控映射同步与五连发”中的安全档持续零速闭环描述
