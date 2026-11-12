@@ -5,23 +5,26 @@
 Task_Runtime_t task_runtime;
 
 /*
- * 启动末尾创建的三个任务使用静态存储，避免耗尽 15360 字节的 FreeRTOS 动态堆
- * 控制块各保存一个任务的内核状态，栈各为 1024 字节，生命周期覆盖任务创建和失败回收
+ * 云台、遥控、摩擦轮和拨弹任务使用静态存储，避免耗尽 15360 字节的 FreeRTOS 动态堆
+ * 云台栈为 3072 字节，容纳配置快照、嵌套控制计算和浮点上下文，其他三个栈各为 1024 字节
+ * 控制块各保存一个任务的内核状态，控制块与栈的生命周期覆盖任务创建和失败回收
  * StackType_t 数组按 8 字节对齐，满足 Cortex-M4F 的任务栈对齐要求
  */
 static StaticTask_t dr16_task_control_block;
 static StaticTask_t motor_shoot_task_control_block;
 static StaticTask_t motor_trigger_task_control_block;
+static StaticTask_t motor_gimbal_task_control_block;
 static StackType_t dr16_task_stack[1024U / sizeof(StackType_t)] __ALIGNED(8);
 static StackType_t motor_shoot_task_stack[1024U / sizeof(StackType_t)] __ALIGNED(8);
 static StackType_t motor_trigger_task_stack[1024U / sizeof(StackType_t)] __ALIGNED(8);
+static StackType_t motor_gimbal_task_stack[3072U / sizeof(StackType_t)] __ALIGNED(8);
 
 /*
  * 业务任务静态属性：
  * - Task_Init：实时优先级，栈空间 2048 字节，初始化业务模块并创建业务对象后退出
  * - can：高于普通优先级，栈空间 1024 字节，执行 500 赫兹 CAN 设备通信
  * - motor_chassis：普通优先级，栈空间 1024 字节，执行 500 赫兹底盘周期控制
- * - motor_gimbal：普通优先级，栈空间 1024 字节，执行 500 赫兹双轴惯性串级控制及编码器机械保护
+ * - motor_gimbal：普通优先级，静态栈空间 3072 字节，执行 500 赫兹双轴惯性串级控制及编码器机械保护
  * - motor_shoot：普通优先级，栈空间 1024 字节，执行 500 赫兹双摩擦轮速度控制
  * - motor_trigger：普通优先级，栈空间 1024 字节，执行 500 赫兹拨弹逐齿位置控制
  * - dr16：高于普通优先级，栈空间 1024 字节，消费 UART 字节流并发布遥控状态
@@ -62,7 +65,10 @@ const osThreadAttr_t attr_motor_gimbal =
 {
     .name = "motor_gimbal",
     .priority = osPriorityNormal,
-    .stack_size = 256U * 4U,
+    .cb_mem = &motor_gimbal_task_control_block,
+    .cb_size = sizeof(motor_gimbal_task_control_block),
+    .stack_mem = motor_gimbal_task_stack,
+    .stack_size = sizeof(motor_gimbal_task_stack),
 };
 
 const osThreadAttr_t attr_ins =
