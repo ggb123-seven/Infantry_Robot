@@ -15,7 +15,7 @@ extern "C"
  * 四轮速度前馈的在线调参入口，依次对应左前、左后、右后、右前：
  * - 系数单位为 A/rpm，须为有限非负值，零表示关闭
  * - 启动初值来自四轮架空正向 30 rpm 的实测整定，其他转速和负载需另行验证
- * - 前馈电流取本轮系数乘以斜坡后的目标轮速，与速度 PID 相加后统一滤波和限流
+ * - 前馈电流取本轮系数乘以本周期目标轮速，与速度 PID 相加后统一滤波和限流
  * - Control 入口每周期读取并集中校验快照，任一系数非法时四轮待机
  */
 extern volatile float chassis_speed_feedforward_gain_a_per_rpm[CHASSIS_WHEEL_COUNT];
@@ -41,8 +41,9 @@ typedef enum
  * 底盘配置，运行中可由调试器修改，模块每周期校验并采纳：
  * - layout：机械布局，仅初始化时生效，当前为 MIXER_OMNICROSS
  * - max_wheel_speed_rpm：输出轴目标转速绝对值上限，单位 rpm，须大于 0
- * - wheel_accel_rpm_s：目标斜坡变化率，单位 rpm/s，须大于 0
- * - reverse_release_speed_rpm：允许反向目标的实测转速绝对值阈值，单位 rpm，须非负
+ * - wheel_accel_rpm_s：指令斜坡的等效单轮转速变化率，单位 rpm/s，须大于 0
+ *   斜坡作用在归一化运动指令上，纯前后或纯左右推杆时单轮转速变化率等于该值，不再限制轮速层
+ * - reverse_release_speed_rpm：换向放行阈值，单位 rpm，须非负；换向置零逻辑已删除，字段保留但当前不参与控制
  * - speed_filter_cutoff_hz：反馈二阶低通截止频率，单位 Hz，非正时直通，仅初始化时生效
  * - current_filter_cutoff_hz：电流二阶低通截止频率，单位 Hz，非正时直通，仅初始化时生效
  * - max_current_a：最终转子侧电流绝对值上限，单位 A，须大于 0
@@ -85,7 +86,7 @@ typedef struct
  * - measured_speed_rpm：本周期输出轴实测转速，单位 rpm，反馈无效时为 NaN
  * - filtered_speed_rpm：送入速度环的滤波转速，单位 rpm
  * - requested_speed_rpm：运动学解算目标，单位 rpm
- * - target_speed_rpm：限幅、换向保护和斜坡后实际进入速度环的目标，单位 rpm
+ * - target_speed_rpm：本周期实际进入速度环和前馈的目标，单位 rpm，运行时等于 requested_speed_rpm
  * - output_current_a：本周期转子侧电流，单位 A
  * - speed_pid：本轮独立的积分和微分历史，参数指向实例中的公共副本
  * - speed_filter、current_filter：本轮反馈和电流二阶低通状态
@@ -110,6 +111,7 @@ typedef struct
  * - config_valid：本周期配置与四轮前馈系数的校验结果，非法时四轮零输出
  * - applied_wheel_speed_pid：四路 PID 共同引用的参数副本，变更时清空四轮积分
  * - mode：本周期实际采用的控制模式
+ * - ramped_move：指令斜坡后的运动向量，跟随与自旋时为云台坐标，待机和独立模式时清零
  * - mixer：运动学混合器，仅初始化时选择布局
  * - wheel[0~3]：电调 ID1~4 的单轮状态，依次为左前、左后、右后、右前
  * - follow_relative_angle_deg：云台相对车头的最短机械角，单位度，反馈无效时为非数值
@@ -123,6 +125,7 @@ typedef struct
     bool config_valid;
     KPID_Params_t applied_wheel_speed_pid;
     Chassis_Mode_t mode;
+    MoveVector_t ramped_move;
     Mixer_t mixer;
     Chassis_Wheel_t wheel[CHASSIS_WHEEL_COUNT];
     float follow_relative_angle_deg;

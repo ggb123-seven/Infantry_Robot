@@ -43,8 +43,10 @@ static Chassis_Internal_t chassis_internal;
 
 static bool Chassis_IsConfigValid(const Chassis_Config_t *config, float frequency_hz);
 static void Chassis_ResetWheel(Chassis_Wheel_t *wheel);
-static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm);
+static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel);
 static bool Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *config);
+static void Chassis_RampMove(MoveVector_t *ramped, const MoveVector_t *target, float scale_rpm,
+                             float accel_rpm_s, float period_s);
 static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, bool run,
                                  float period_s, float feedforward_gain);
 static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s,
@@ -194,14 +196,15 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         follow_config_changed = Chassis_ApplyPidConfig(chassis, &snapshot);
     }
 
-    // 默认整组待机，只有合法运动命令和有效周期才能请求运动学计算
+    // 默认整组待机，只有合法运动命令、有效周期和合法轮速尺度才能请求运动学计算
     Chassis_Mode_t next_mode = CHASSIS_MODE_RELAX;
     float requested_speed[CHASSIS_WHEEL_COUNT] =
     {
         0,
     };
     if (chassis->config_valid && command != NULL && isfinite(period_s) &&
-        period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S)
+        period_s > 0.0F && period_s <= CHASSIS_MAX_PERIOD_S &&
+        isfinite(command->wheel_speed_scale_rpm) && command->wheel_speed_scale_rpm >= 0.0F)
     {
         switch (command->mode)
         {
@@ -223,36 +226,49 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
     // 跟随输出只由本周期 PID 产生，进入跟随前的历史已在初始化或上次退出时清除
     const bool follow_requested = next_mode == CHASSIS_MODE_FOLLOW_GIMBAL;
     chassis->follow_wz = 0.0F;
-    if (next_mode != CHASSIS_MODE_RELAX)
+    MoveVector_t move =
     {
-        MoveVector_t move = command->move;
-        if (next_mode == CHASSIS_MODE_FOLLOW_GIMBAL || next_mode == CHASSIS_MODE_SPIN)
+        0,
+    };
+    if (next_mode == CHASSIS_MODE_FOLLOW_GIMBAL || next_mode == CHASSIS_MODE_SPIN)
+    {
+        // 指令斜坡先限制云台坐标平移与自旋分量的变化率，旋转和混控放在斜坡之后
+        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
+        Chassis_RampMove(&chassis->ramped_move, &command->move, scale_rpm, snapshot.wheel_accel_rpm_s, period_s);
+        move = chassis->ramped_move;
+
+        // 平移按云台相对车头的角度旋转到车体坐标，轮速随旋转的变化不再受斜坡限制
+        const float relative_rad = chassis->follow_relative_angle_deg * M_DEG2RAD_MULT;
+        const float cosine = cosf(relative_rad);
+        const float sine = sinf(relative_rad);
+        move.vx = cosine * chassis->ramped_move.vx - sine * chassis->ramped_move.vy;
+        move.vy = sine * chassis->ramped_move.vx + cosine * chassis->ramped_move.vy;
+
+        // 跟随输出直接叠加在斜坡后的自旋分量上，闭环输出不进入斜坡
+        if (follow_requested)
         {
-            const float relative_rad = chassis->follow_relative_angle_deg * M_DEG2RAD_MULT;
-            const float cosine = cosf(relative_rad);
-            const float sine = sinf(relative_rad);
-            move.vx = cosine * command->move.vx - sine * command->move.vy;
-            move.vy = sine * command->move.vx + cosine * command->move.vy;
-            if (follow_requested)
+            // 运行中改参先清除旧历史，退出跟随时由后续统一清理，避免重复复位
+            if (follow_config_changed)
             {
-                // 运行中改参先清除旧历史，退出跟随时由后续统一清理，避免重复复位
-                if (follow_config_changed)
-                {
-                    PID_Reset(&chassis_internal.follow_pid);
-                }
-                move.wz = PID_Calc(&chassis_internal.follow_pid, 0.0F, relative_rad,
-                                    chassis->follow_relative_speed_rad_s, period_s);
-                chassis->follow_wz = move.wz;
+                PID_Reset(&chassis_internal.follow_pid);
             }
+            const float follow_output = PID_Calc(&chassis_internal.follow_pid, 0.0F, relative_rad,
+                                                 chassis->follow_relative_speed_rad_s, period_s);
+            move.wz = chassis->ramped_move.wz + follow_output;
+            chassis->follow_wz = follow_output;
         }
 
-        // 混控入口统一检查运动分量与轮速尺度，失败时取消本周期运行请求
-        const float scale_rpm = fminf(command->wheel_speed_scale_rpm, snapshot.max_wheel_speed_rpm);
-        if (!isfinite(command->wheel_speed_scale_rpm) || command->wheel_speed_scale_rpm < 0.0F ||
-            Mixer_Apply(&chassis->mixer, &move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) != MIXER_OK)
+        // 混控入口检查运动分量并生成本周期轮速，失败时取消本周期运行请求
+        if (Mixer_Apply(&chassis->mixer, &move, requested_speed, CHASSIS_WHEEL_COUNT, scale_rpm) != MIXER_OK)
         {
             next_mode = CHASSIS_MODE_RELAX;
         }
+    }
+
+    // 斜坡状态只在跟随与自旋之间保持，待机、独立模式和混控失败时集中清零
+    if (next_mode != CHASSIS_MODE_FOLLOW_GIMBAL && next_mode != CHASSIS_MODE_SPIN)
+    {
+        ResetMoveVector(&chassis->ramped_move);
     }
 
     // 退出跟随或本周期跟随计算被混控拒绝时清理历史，持续待机不重复复位
@@ -363,19 +379,17 @@ static void Chassis_ResetWheel(Chassis_Wheel_t *wheel)
 }
 
 /**
- * @brief 用实测转速预置恢复运行时的反馈、微分和目标斜坡
+ * @brief 用实测转速预置恢复运行时的反馈与微分历史
  *
  * @param[in,out] wheel 反馈有效的单轮状态
- * @param[in] speed_limit_rpm 输出轴转速绝对值上限，单位 rpm
  * @return 无返回值
  */
-static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel, float speed_limit_rpm)
+static void Chassis_PrimeWheel(Chassis_Wheel_t *wheel)
 {
     // 预置速度与电流滤波器，使恢复运行时不沿用停机前历史
     PID_Reset(&wheel->speed_pid);
     wheel->filtered_speed_rpm = LowPassFilter2p_Reset(&wheel->speed_filter, wheel->measured_speed_rpm);
     LowPassFilter2p_Reset(&wheel->current_filter, 0.0F);
-    wheel->target_speed_rpm = AbsClip(wheel->filtered_speed_rpm, speed_limit_rpm);
 
     // 同步微分上一反馈，避免恢复使能时产生一次性电流冲击
     const float scaled_feedback = wheel->speed_pid.param->k * wheel->filtered_speed_rpm;
@@ -436,6 +450,46 @@ static bool Chassis_ApplyPidConfig(Chassis_t *chassis, const Chassis_Config_t *c
 }
 
 /**
+ * @brief 按时限速率把运动向量逼近目标，平移按二维向量整体限步
+ *
+ * @param[in,out] ramped 持久斜坡状态，调用方保证非空
+ * @param[in] target 本周期目标运动向量，调用方保证各分量有限
+ * @param[in] scale_rpm 归一化轮速尺度，单位 rpm，调用方保证有限非负
+ * @param[in] accel_rpm_s 纯平移时等效的单轮转速变化率，单位 rpm/s，调用方保证有限正值
+ * @param[in] period_s 实测控制周期，单位 s，调用方保证位于 (0, 0.1] 内
+ * @return 无返回值
+ */
+static void Chassis_RampMove(MoveVector_t *ramped, const MoveVector_t *target, float scale_rpm,
+                             float accel_rpm_s, float period_s)
+{
+    // 尺度为零时混控输出恒为零，直接跟随目标，避免除零
+    if (scale_rpm == 0.0F)
+    {
+        *ramped = *target;
+        return;
+    }
+
+    // 归一化步长由配置换算：纯前后或纯左右推杆时单轮转速变化率等于 accel_rpm_s
+    const float step = accel_rpm_s / scale_rpm * period_s;
+
+    // 平移按二维向量整体限步，避免两个分量到位时间不同导致起步过程中方向偏转
+    const float dx = target->vx - ramped->vx;
+    const float dy = target->vy - ramped->vy;
+    const float distance = hypotf(dx, dy);
+    if (distance > step)
+    {
+        ramped->vx += dx * step / distance;
+        ramped->vy += dy * step / distance;
+    }
+    else
+    {
+        ramped->vx = target->vx;
+        ramped->vy = target->vy;
+    }
+    ramped->wz = RampTo(ramped->wz, target->wz, step);
+}
+
+/**
  * @brief 集中处理单轮待机、运行、离线与恢复转换
  *
  * @param[in,out] wheel 当前单轮状态
@@ -468,7 +522,7 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
     // 入口动作只在恢复运行时预置，非运行状态持续清除历史并维持零输出
     if (next_state == CHASSIS_WHEEL_RUNNING && wheel->state != CHASSIS_WHEEL_RUNNING)
     {
-        Chassis_PrimeWheel(wheel, config->max_wheel_speed_rpm);
+        Chassis_PrimeWheel(wheel);
     }
     wheel->state = next_state;
     switch (wheel->state)
@@ -486,7 +540,7 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
 }
 
 /**
- * @brief 执行单轮换向保护、目标斜坡、速度闭环和前馈电流合成
+ * @brief 执行单轮目标方向切换、速度闭环和前馈电流合成
  *
  * @param[in,out] wheel 运行中的单轮状态，反馈须有限
  * @param[in] config 已校验的底盘配置
@@ -497,22 +551,16 @@ static void Chassis_ControlWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t 
 static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *config, float period_s,
                              float feedforward_gain)
 {
-    float target = wheel->requested_speed_rpm;
-
-    // 目标反转先清除旧方向积分，再等待实测转速接近零后放行反向目标
+    // 目标变号时清除旧方向积分，目标变化率已由上层指令斜坡限制
+    const float target = wheel->requested_speed_rpm;
     if ((wheel->target_speed_rpm > 0.0F && target < 0.0F) ||
         (wheel->target_speed_rpm < 0.0F && target > 0.0F))
     {
         PID_ResetIntegral(&wheel->speed_pid);
     }
-    if ((wheel->measured_speed_rpm > config->reverse_release_speed_rpm && target < 0.0F) ||
-        (wheel->measured_speed_rpm < -config->reverse_release_speed_rpm && target > 0.0F))
-    {
-        target = 0.0F;
-    }
 
-    // 前馈采用换向保护与斜坡后的目标，基础驱动电流随目标正负方向变化
-    wheel->target_speed_rpm = RampTo(wheel->target_speed_rpm, target, config->wheel_accel_rpm_s * period_s);
+    // 轮速层不再二次斜坡，目标直接进入速度环和前馈
+    wheel->target_speed_rpm = target;
     wheel->filtered_speed_rpm = LowPassFilter2p_Apply(&wheel->speed_filter, wheel->measured_speed_rpm);
     const float feedforward_a = feedforward_gain * wheel->target_speed_rpm;
 
@@ -522,8 +570,7 @@ static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *con
     wheel->output_current_a = LowPassFilter2p_Apply(&wheel->current_filter, current);
 
     // 非有限计算只隔离本轮，下一周期重新预置后才恢复闭环
-    if (!isfinite(wheel->target_speed_rpm) || !isfinite(wheel->filtered_speed_rpm) ||
-        !isfinite(wheel->output_current_a))
+    if (!isfinite(wheel->filtered_speed_rpm) || !isfinite(wheel->output_current_a))
     {
         Chassis_ResetWheel(wheel);
         wheel->state = CHASSIS_WHEEL_RELAX;
