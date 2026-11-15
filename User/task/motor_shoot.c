@@ -7,6 +7,9 @@
 #include <stddef.h>
 #include <string.h>
 
+// 命令邮箱容忍的最长无新命令时间，单位微秒，与反馈超时口径一致，覆盖两任务节拍抖动造成的单周期落空
+#define SHOOT_COMMAND_TIMEOUT_US (100000U)
+
 /*
  * 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱
  * shoot.config.speed_pid 为复制 shoot_config 的可调转子 rpm 速度参数
@@ -15,6 +18,7 @@
  */
 Shoot_t shoot;
 Shoot_Command_t shoot_command;
+static uint64_t command_time_us;
 
 /**
  * @brief 周期编排双摩擦轮反馈、速度控制与电流邮箱发布
@@ -49,11 +53,18 @@ void Task_motor_shoot(void *argument)
         // 只采用本周期新命令，失去命令时两轮一起失能
         const bool command_received =
             osMessageQueueGet(task_runtime.msgq.shoot_command, &shoot_command, NULL, 0U) == osOK;
-        if (!command_received)
+        if (command_received)
         {
-            // 邮箱落空计数供调试判断撤驱是否由命令缺失引起
+            command_time_us = now_us;
+        }
+        else
+        {
+            // 邮箱落空计数供调试判断落空频率，单次落空沿用上一条命令，持续超时才失能
             shoot.command_miss_count++;
-            memset(&shoot_command, 0, sizeof(shoot_command));
+            if (now_us - command_time_us > SHOOT_COMMAND_TIMEOUT_US)
+            {
+                memset(&shoot_command, 0, sizeof(shoot_command));
+            }
         }
 
         // 模块集中校验本周期输入并计算电流，失能时清除控制历史并由唯一输出闸门撤驱

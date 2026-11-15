@@ -13,7 +13,7 @@ extern "C"
  * shoot_speed_feedforward_gain_a_per_rpm 为目标逐周期差分前馈系数，零表示关闭
  * shoot_command 为本周期实际提交模块的命令，不作为跨任务裸全局命令入口
  * 上位安全档立即关闭速度环并撤驱，中位备弹和下位开火请求 8000 rpm
- * 外部命令必须周期写入 task_runtime.msgq.shoot_command，缺新命令时两轮失能
+ * 外部命令必须周期写入 task_runtime.msgq.shoot_command，超过 100 ms 无新命令时两轮失能
  */
 extern Shoot_t shoot;
 extern Shoot_Command_t shoot_command;
