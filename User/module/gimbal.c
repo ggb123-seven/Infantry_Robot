@@ -16,6 +16,10 @@
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
 
+// 机械边界减速增益，单位 1/s，允许的朝边界速度 = 增益 × 到边界的距离（rad），边界处连续降为零
+// 取值为估计起点，增益越大越晚减速，越小越早减速，需按实测的冲限位量整定
+#define GIMBAL_LIMIT_SPEED_GAIN (20.0f)
+
 /*
  * yaw 撤驱保护阈值，均为待实物确认的起点：
  * - DRAG_RAD_S、DRAG_IMU_STILL_RAD_S、DRAG_TIME_S：底盘离线时编码器与惯性转速差超过 1 rad/s
@@ -562,10 +566,10 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     {
         axis->target_angle_deg = NAN;
     }
-    // 速度模式及前馈同样受机械边界约束，越界时只允许零速或向行程内部运动
+    // 速度模式及前馈同样受机械边界约束，朝边界的速度随距离线性减小，越界时只允许零速或向行程内部运动
     if (config->mechanical_limit_enabled)
     {
-        const float scale = M_DEG2RAD_MULT / period_s;
+        const float scale = M_DEG2RAD_MULT * GIMBAL_LIMIT_SPEED_GAIN;
         const float min_speed = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
         const float max_speed = fmaxf(0.0f, (config->max_angle_deg - axis->mechanical_angle_deg) * scale);
         const float requested_speed = target_speed_rad_s;
@@ -573,7 +577,6 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
     // 速度环输出电流，非有限结果视为计算异常
-    const float previous_speed_integral = internal->speed_pid.i;
     float current_a = PID_Calc(&internal->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
     // yaw 使用相对底盘的编码器转速补偿摩擦，小陀螺保持世界朝向时仍可识别实际机械运动
     if (yaw_friction)
@@ -588,18 +591,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     }
     axis->target_speed_rad_s = target_speed_rad_s;
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
-    // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
-    if (config->mechanical_limit_enabled &&
-        ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
-         (axis->mechanical_angle_deg <= config->min_angle_deg && axis->output_current_a < 0.0f)))
-    {
-        axis->output_current_a = 0.0f;
-        internal->speed_pid.i = previous_speed_integral;
-        mechanically_limited = true;
-    }
+    // 被边界限制时角度环积分保持原值，速度环积分清零，避免靠限位时残留积分持续顶向行程外侧
+    // 边界附近电流只由连续的速度夹限决定，机械角在限位两侧读数跳动也不会产生电流突变
     if (mechanically_limited)
     {
         internal->angle_pid.i = previous_angle_integral;
+        PID_ResetIntegral(&internal->speed_pid);
     }
     // 在合成计算链出口检查候选电流，防止限幅掩盖非有限结果，输出仍由状态闸门放行
     return isfinite(current_a) && isfinite(internal->speed_pid.i);
