@@ -67,6 +67,8 @@ typedef struct
  * ramp_rate_rpm_s[0~1] 为各轮本次过渡的非负变化率，单位 rpm/s，重复命令不重置斜坡
  * current_a[0~1] 为叠加前馈后的候选转子电流 A，非运行时由 DumpOutput 输出零
  * speed_pid[0~1] 保存两个独立速度控制器的积分、微分与滤波历史
+ * command_miss_count 为任务读命令邮箱落空的累计周期数，仅供 EmberProbe 诊断，初始化清零，回绕不处理
+ * active_drop_count 为运行或过渡状态被打断退回非运行状态的累计次数，仅供 EmberProbe 诊断，初始化清零
  */
 typedef struct
 {
@@ -84,6 +86,8 @@ typedef struct
     KPID_t speed_pid[SHOOT_MOTOR_COUNT];
     float ramp_target_rpm[SHOOT_MOTOR_COUNT];
     float ramp_rate_rpm_s[SHOOT_MOTOR_COUNT];
+    uint32_t command_miss_count;
+    uint32_t active_drop_count;
 } Shoot_t;
 
 /**

@@ -166,6 +166,11 @@ void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_
     // 停机与异常入口清除两轮控制历史，避免下一次恢复沿用旧积分
     if (shoot->state != SHOOT_RUNNING)
     {
+        // 记录运行中被打断的次数，用于区分命令缺失与命令层失能
+        if (was_active)
+        {
+            shoot->active_drop_count++;
+        }
         memset(shoot->target_speed_rpm, 0, sizeof(shoot->target_speed_rpm));
         memset(shoot->ramp_target_rpm, 0, sizeof(shoot->ramp_target_rpm));
         memset(shoot->ramp_rate_rpm_s, 0, sizeof(shoot->ramp_rate_rpm_s));

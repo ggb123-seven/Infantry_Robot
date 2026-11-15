@@ -51,6 +51,8 @@ void Task_motor_shoot(void *argument)
             osMessageQueueGet(task_runtime.msgq.shoot_command, &shoot_command, NULL, 0U) == osOK;
         if (!command_received)
         {
+            // 邮箱落空计数供调试判断撤驱是否由命令缺失引起
+            shoot.command_miss_count++;
             memset(&shoot_command, 0, sizeof(shoot_command));
         }
 
