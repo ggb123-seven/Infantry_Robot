@@ -1,0 +1,605 @@
+{
+  "source": "data\\emberprobe-live-20261116-202650.csv",
+  "source_sha256": "760cf6fb9ed8d03820983a86391d8a339ebac0ee592d9dcbf3cca28281f3e179",
+  "rows": 1333,
+  "columns": 379,
+  "start_local": "2026-11-16T20:25:28.020825+08:00",
+  "end_local": "2026-11-16T20:26:56.667378+08:00",
+  "duration_s": 88.646553,
+  "interval_s": {
+    "n": 1332,
+    "mean": 0.06655146621621622,
+    "std": 0.01558707070964316,
+    "rms": 0.06835242811221548,
+    "min": 0.044837000000001126,
+    "max": 0.23421300000000045,
+    "p95_abs": 0.09386465000000187,
+    "max_abs": 0.23421300000000045
+  },
+  "gimbal_config_values": {
+    "gimbal.config.yaw.enabled": [
+      1.0
+    ],
+    "gimbal.config.yaw.reversed": [
+      0.0
+    ],
+    "gimbal.config.yaw.mechanical_limit_enabled": [
+      0.0
+    ],
+    "gimbal.config.yaw.zero_encoder_deg": [
+      97.07520294189453
+    ],
+    "gimbal.config.yaw.min_angle_deg": [
+      0.0
+    ],
+    "gimbal.config.yaw.max_angle_deg": [
+      360.0
+    ],
+    "gimbal.config.yaw.max_speed_rad_s": [
+      33.51032257080078
+    ],
+    "gimbal.config.yaw.max_current_a": [
+      10.0
+    ],
+    "gimbal.config.yaw.angle_pid.k": [
+      20.0
+    ],
+    "gimbal.config.yaw.angle_pid.p": [
+      1.0
+    ],
+    "gimbal.config.yaw.angle_pid.i": [
+      0.0
+    ],
+    "gimbal.config.yaw.angle_pid.d": [
+      0.05000000074505806
+    ],
+    "gimbal.config.yaw.angle_pid.i_limit": [
+      0.0
+    ],
+    "gimbal.config.yaw.angle_pid.out_limit": [
+      10.0
+    ],
+    "gimbal.config.yaw.angle_pid.d_cutoff_freq": [
+      -1.0
+    ],
+    "gimbal.config.yaw.angle_pid.range": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.k": [
+      0.44999998807907104
+    ],
+    "gimbal.config.yaw.speed_pid.p": [
+      1.0
+    ],
+    "gimbal.config.yaw.speed_pid.i": [
+      0.0
+    ],
+    "gimbal.config.yaw.speed_pid.d": [
+      7.999999797903001e-05
+    ],
+    "gimbal.config.yaw.speed_pid.i_limit": [
+      1.0
+    ],
+    "gimbal.config.yaw.speed_pid.out_limit": [
+      1.0
+    ],
+    "gimbal.config.yaw.speed_pid.d_cutoff_freq": [
+      -1.0
+    ],
+    "gimbal.config.yaw.speed_pid.range": [
+      0.0
+    ],
+    "gimbal.config.pitch.enabled": [
+      1.0
+    ],
+    "gimbal.config.pitch.reversed": [
+      0.0
+    ],
+    "gimbal.config.pitch.mechanical_limit_enabled": [
+      1.0
+    ],
+    "gimbal.config.pitch.zero_encoder_deg": [
+      238.93067932128906
+    ],
+    "gimbal.config.pitch.min_angle_deg": [
+      -20.0
+    ],
+    "gimbal.config.pitch.max_angle_deg": [
+      20.0
+    ],
+    "gimbal.config.pitch.max_speed_rad_s": [
+      33.51032257080078
+    ],
+    "gimbal.config.pitch.max_current_a": [
+      1.0
+    ],
+    "gimbal.config.pitch.angle_pid.k": [
+      2.0
+    ],
+    "gimbal.config.pitch.angle_pid.p": [
+      5.0
+    ],
+    "gimbal.config.pitch.angle_pid.i": [
+      0.0
+    ],
+    "gimbal.config.pitch.angle_pid.d": [
+      0.0
+    ],
+    "gimbal.config.pitch.angle_pid.i_limit": [
+      0.0
+    ],
+    "gimbal.config.pitch.angle_pid.out_limit": [
+      6.0
+    ],
+    "gimbal.config.pitch.angle_pid.d_cutoff_freq": [
+      -1.0
+    ],
+    "gimbal.config.pitch.angle_pid.range": [
+      6.2831854820251465
+    ],
+    "gimbal.config.pitch.speed_pid.k": [
+      0.44999998807907104
+    ],
+    "gimbal.config.pitch.speed_pid.p": [
+      1.0
+    ],
+    "gimbal.config.pitch.speed_pid.i": [
+      0.5
+    ],
+    "gimbal.config.pitch.speed_pid.d": [
+      0.0
+    ],
+    "gimbal.config.pitch.speed_pid.i_limit": [
+      1.399999976158142
+    ],
+    "gimbal.config.pitch.speed_pid.out_limit": [
+      1.0
+    ],
+    "gimbal.config.pitch.speed_pid.d_cutoff_freq": [
+      -1.0
+    ],
+    "gimbal.config.pitch.speed_pid.range": [
+      -1.0
+    ],
+    "gimbal.config.feedback_timeout_s": [
+      0.09000000357627869
+    ],
+    "gimbal.config.imu_timeout_s": [
+      0.009999999776482582
+    ],
+    "gimbal.config.yaw_friction_current_a": [
+      0.0
+    ],
+    "gimbal.config.yaw_friction_smoothing_rad_s": [
+      0.20000000298023224
+    ],
+    "gimbal.config.yaw_friction_linear_a_per_rad_s": [
+      0.0
+    ],
+    "gimbal.config.yaw_friction_quadratic_a_per_rad_s2": [
+      0.0
+    ],
+    "gimbal.config.yaw_friction_max_speed_rad_s": [
+      0.0
+    ]
+  },
+  "state_counts": {
+    "gimbal.config_valid": {
+      "1": 1333
+    },
+    "gimbal.mode": {
+      "2": 1333
+    },
+    "gimbal.yaw.state": {
+      "1": 1333
+    },
+    "gimbal.pitch.state": {
+      "1": 1333
+    },
+    "gimbal.imu_state": {
+      "2": 1333
+    }
+  },
+  "windows": [
+    {
+      "start_s": 0,
+      "end_exclusive_s": 39.04,
+      "n": 568,
+      "yaw_error_deg": {
+        "n": 568,
+        "mean": -0.003253668126925616,
+        "std": 6.529031453082328,
+        "rms": 6.52903226379642,
+        "min": -30.44281005859375,
+        "max": 31.86846923828125,
+        "p95_abs": 15.517051696777328,
+        "max_abs": 31.86846923828125
+      },
+      "pitch_error_deg": {
+        "n": 568,
+        "mean": -0.5309089373429896,
+        "std": 1.1009774291022083,
+        "rms": 1.2222993083296623,
+        "min": -3.9017562866210938,
+        "max": 1.7011190205812454,
+        "p95_abs": 2.962319016456603,
+        "max_abs": 3.9017562866210938
+      },
+      "yaw_output_current_a": {
+        "n": 568,
+        "mean": 0.012489622982889479,
+        "std": 0.5588150892296616,
+        "rms": 0.558954644522263,
+        "min": -1.0,
+        "max": 1.0,
+        "p95_abs": 1.0,
+        "max_abs": 1.0
+      },
+      "pitch_output_current_a": {
+        "n": 568,
+        "mean": -0.3887041363025635,
+        "std": 0.10212682462719418,
+        "rms": 0.401896496485296,
+        "min": -0.8180680274963379,
+        "max": -0.026087261736392975,
+        "p95_abs": 0.5341347843408584,
+        "max_abs": 0.8180680274963379
+      },
+      "yaw_saturation_samples": 120,
+      "yaw_encoder_zero_samples": 111,
+      "pitch_integral_current_estimate_a": {
+        "n": 568,
+        "mean": -0.34569378702428466,
+        "std": 0.11253590436901804,
+        "rms": 0.3635498922559932,
+        "min": -0.4776086412370205,
+        "max": -0.00027096401900050804,
+        "p95_abs": 0.44983816365711393,
+        "max_abs": 0.4776086412370205
+      }
+    },
+    {
+      "start_s": 39.04,
+      "end_exclusive_s": 42,
+      "n": 48,
+      "yaw_error_deg": {
+        "n": 48,
+        "mean": -1.280993143717448,
+        "std": 1.121826970716761,
+        "rms": 1.7027739681116383,
+        "min": -6.0770263671875,
+        "max": 0.1627197265625,
+        "p95_abs": 2.4033355712890625,
+        "max_abs": 6.0770263671875
+      },
+      "pitch_error_deg": {
+        "n": 48,
+        "mean": -2.942333390315374,
+        "std": 1.042486020797593,
+        "rms": 3.121554561964785,
+        "min": -3.609116554260254,
+        "max": 0.1685328483581543,
+        "p95_abs": 3.5972469806671143,
+        "max_abs": 3.609116554260254
+      },
+      "yaw_output_current_a": {
+        "n": 48,
+        "mean": -0.18413552294562882,
+        "std": 0.16702525476734417,
+        "rms": 0.24860274845736605,
+        "min": -1.0,
+        "max": 0.0953507348895073,
+        "p95_abs": 0.36127039343118666,
+        "max_abs": 1.0
+      },
+      "pitch_output_current_a": {
+        "n": 48,
+        "mean": -0.3468680198614796,
+        "std": 0.10165698601412057,
+        "rms": 0.36145755768568305,
+        "min": -0.7222867608070374,
+        "max": -0.21309414505958557,
+        "p95_abs": 0.5311842024326324,
+        "max_abs": 0.7222867608070374
+      },
+      "yaw_saturation_samples": 1,
+      "yaw_encoder_zero_samples": 35,
+      "pitch_integral_current_estimate_a": {
+        "n": 48,
+        "mean": -0.08971569274666154,
+        "std": 0.11659641466320611,
+        "rms": 0.1471177400496884,
+        "min": -0.3755496263504028,
+        "max": -0.00023152530193329413,
+        "p95_abs": 0.3596195891872048,
+        "max_abs": 0.3755496263504028
+      }
+    },
+    {
+      "start_s": 44,
+      "end_exclusive_s": 65,
+      "n": 322,
+      "yaw_error_deg": {
+        "n": 322,
+        "mean": -0.3634745911781832,
+        "std": 0.040790079737404554,
+        "rms": 0.36575621530895586,
+        "min": -0.48065185546875,
+        "max": -0.293701171875,
+        "p95_abs": 0.44891357421875,
+        "max_abs": 0.48065185546875
+      },
+      "pitch_error_deg": {
+        "n": 322,
+        "mean": -2.2239671316206087,
+        "std": 1.2210338611157159,
+        "rms": 2.5371151910230543,
+        "min": -3.3447113037109375,
+        "max": -0.21540069580078125,
+        "p95_abs": 3.258632183074951,
+        "max_abs": 3.3447113037109375
+      },
+      "yaw_output_current_a": {
+        "n": 322,
+        "mean": -0.057075989357432966,
+        "std": 0.008703215623878909,
+        "rms": 0.05773573004063888,
+        "min": -0.08032071590423584,
+        "max": -0.036777641624212265,
+        "p95_abs": 0.07199363335967064,
+        "max_abs": 0.08032071590423584
+      },
+      "pitch_output_current_a": {
+        "n": 322,
+        "mean": -0.4875929597186746,
+        "std": 0.10464693664640515,
+        "rms": 0.49869617575904246,
+        "min": -0.6669448018074036,
+        "max": -0.2387050986289978,
+        "p95_abs": 0.6258689671754837,
+        "max_abs": 0.6669448018074036
+      },
+      "yaw_saturation_samples": 0,
+      "yaw_encoder_zero_samples": 322,
+      "pitch_integral_current_estimate_a": {
+        "n": 322,
+        "mean": -0.31471684425860463,
+        "std": 0.17205732014636627,
+        "rms": 0.35867870507746064,
+        "min": -0.5505420135799796,
+        "max": -0.00023844297975300632,
+        "p95_abs": 0.5409153336953023,
+        "max_abs": 0.5505420135799796
+      }
+    },
+    {
+      "start_s": 65,
+      "end_exclusive_s": 80,
+      "n": 241,
+      "yaw_error_deg": {
+        "n": 241,
+        "mean": -0.2747926830750778,
+        "std": 0.053605401835487856,
+        "rms": 0.27997242324476224,
+        "min": -0.3695068359375,
+        "max": -0.1685791015625,
+        "p95_abs": 0.3533935546875,
+        "max_abs": 0.3695068359375
+      },
+      "pitch_error_deg": {
+        "n": 241,
+        "mean": -0.0366757658012675,
+        "std": 0.05803874021472257,
+        "rms": 0.06865571471349984,
+        "min": -0.2297830581665039,
+        "max": 0.04731464385986328,
+        "p95_abs": 0.18592262268066406,
+        "max_abs": 0.2297830581665039
+      },
+      "yaw_output_current_a": {
+        "n": 241,
+        "mean": -0.04320424529279416,
+        "std": 0.009894492808061334,
+        "rms": 0.04432276840686628,
+        "min": -0.06345076858997345,
+        "max": -0.013642469421029091,
+        "p95_abs": 0.05717223510146141,
+        "max_abs": 0.06345076858997345
+      },
+      "pitch_output_current_a": {
+        "n": 241,
+        "mean": -0.5695772900620931,
+        "std": 0.004840158512924873,
+        "rms": 0.5695978550599606,
+        "min": -0.5824260711669922,
+        "max": -0.5549193024635315,
+        "p95_abs": 0.5770865678787231,
+        "max_abs": 0.5824260711669922
+      },
+      "yaw_saturation_samples": 0,
+      "yaw_encoder_zero_samples": 241,
+      "pitch_integral_current_estimate_a": {
+        "n": 241,
+        "mean": -0.5671442373211752,
+        "std": 0.00502288571009437,
+        "rms": 0.5671664793581106,
+        "min": -0.5849723503459245,
+        "max": -0.5511401294730603,
+        "p95_abs": 0.5704320881748572,
+        "max_abs": 0.5849723503459245
+      }
+    },
+    {
+      "start_s": 80,
+      "end_exclusive_s": 89,
+      "n": 124,
+      "yaw_error_deg": {
+        "n": 124,
+        "mean": -0.09981315366683467,
+        "std": 0.034857987776520105,
+        "rms": 0.10572485496205317,
+        "min": -0.1839599609375,
+        "max": -0.015625,
+        "p95_abs": 0.16147766113281248,
+        "max_abs": 0.1839599609375
+      },
+      "pitch_error_deg": {
+        "n": 124,
+        "mean": -0.004730932174190398,
+        "std": 0.024377105262526,
+        "rms": 0.02483193468534143,
+        "min": -0.07087898254394531,
+        "max": 0.056160926818847656,
+        "p95_abs": 0.04913840293884277,
+        "max_abs": 0.07087898254394531
+      },
+      "yaw_output_current_a": {
+        "n": 124,
+        "mean": -0.01688542154536868,
+        "std": 0.007343011454582107,
+        "rms": 0.01841296494285819,
+        "min": -0.03168675675988197,
+        "max": 0.00027948012575507164,
+        "p95_abs": 0.02860194202512502,
+        "max_abs": 0.03168675675988197
+      },
+      "pitch_output_current_a": {
+        "n": 124,
+        "mean": -0.5707421115329189,
+        "std": 0.004926329375206919,
+        "rms": 0.5707633718084648,
+        "min": -0.5845953822135925,
+        "max": -0.5596656203269958,
+        "p95_abs": 0.5784282267093659,
+        "max_abs": 0.5845953822135925
+      },
+      "yaw_saturation_samples": 0,
+      "yaw_encoder_zero_samples": 124,
+      "pitch_integral_current_estimate_a": {
+        "n": 124,
+        "mean": -0.571320627694196,
+        "std": 0.0019079374637142419,
+        "rms": 0.5713238134843108,
+        "min": -0.5862478543072939,
+        "max": -0.5622126039583236,
+        "p95_abs": 0.5718316369329113,
+        "max_abs": 0.5862478543072939
+      }
+    },
+    {
+      "start_s": 85,
+      "end_exclusive_s": 89,
+      "n": 58,
+      "yaw_error_deg": {
+        "n": 58,
+        "mean": -0.07229088092672414,
+        "std": 0.020622440543814673,
+        "rms": 0.07517483966823593,
+        "min": -0.10369873046875,
+        "max": -0.015625,
+        "p95_abs": 0.0951202392578125,
+        "max_abs": 0.10369873046875
+      },
+      "pitch_error_deg": {
+        "n": 58,
+        "mean": 0.0013046100221831224,
+        "std": 0.02367742397417968,
+        "rms": 0.023713338300691437,
+        "min": -0.07087898254394531,
+        "max": 0.056160926818847656,
+        "p95_abs": 0.04511070251464844,
+        "max_abs": 0.07087898254394531
+      },
+      "yaw_output_current_a": {
+        "n": 58,
+        "mean": -0.013522024801330128,
+        "std": 0.006765223320658235,
+        "rms": 0.015119966974374153,
+        "min": -0.03127691522240639,
+        "max": 0.00027948012575507164,
+        "p95_abs": 0.021993694361299276,
+        "max_abs": 0.03127691522240639
+      },
+      "pitch_output_current_a": {
+        "n": 58,
+        "mean": -0.5704914937759268,
+        "std": 0.005046867602511805,
+        "rms": 0.5705138169608914,
+        "min": -0.5798341035842896,
+        "max": -0.5596656203269958,
+        "p95_abs": 0.5785801023244858,
+        "max_abs": 0.5798341035842896
+      },
+      "yaw_saturation_samples": 0,
+      "yaw_encoder_zero_samples": 58,
+      "pitch_integral_current_estimate_a": {
+        "n": 58,
+        "mean": -0.5710411841175741,
+        "std": 0.0013744218256639363,
+        "rms": 0.5710428381424251,
+        "min": -0.5716686218045652,
+        "max": -0.5622126039583236,
+        "p95_abs": 0.5716581572091672,
+        "max_abs": 0.5716686218045652
+      }
+    }
+  ],
+  "yaw_peak_error": {
+    "t_s": 18.921822,
+    "error_deg": 31.86846923828125,
+    "target_speed_rad_s": 10.0,
+    "speed_rad_s": 0.2217172235250473,
+    "output_current_a": 1.0
+  },
+  "pitch_integral_current_estimate_formula": "output_current_a - 0.45*(target_speed_rad_s-speed_rad_s); sampled estimate, not direct integral observation",
+  "pitch_reset_candidates": [
+    {
+      "t_s": 39.439928,
+      "previous_current_estimate_a": -0.3755496263504028,
+      "current_estimate_a": -0.00023152530193329413,
+      "previous_target_deg": -6.9547576904296875,
+      "target_deg": -15.207839965820312
+    },
+    {
+      "t_s": 40.467523,
+      "previous_current_estimate_a": -0.11369589986279605,
+      "current_estimate_a": -0.0004939958453178406,
+      "previous_target_deg": -14.515108108520508,
+      "target_deg": -14.416114807128906
+    },
+    {
+      "t_s": 43.856143,
+      "previous_current_estimate_a": -0.32553412001579995,
+      "current_estimate_a": -0.0007082069292664583,
+      "previous_target_deg": -14.514389038085938,
+      "target_deg": -14.471443176269531
+    },
+    {
+      "t_s": 47.202705,
+      "previous_current_estimate_a": -0.387818174995482,
+      "current_estimate_a": -0.0002830771729350201,
+      "previous_target_deg": -14.455047607421875,
+      "target_deg": -14.423982620239258
+    },
+    {
+      "t_s": 50.82994,
+      "previous_current_estimate_a": -0.4204813614487648,
+      "current_estimate_a": -0.0065183058381080294,
+      "previous_target_deg": -14.379203796386719,
+      "target_deg": -14.370880126953125
+    },
+    {
+      "t_s": 54.813402,
+      "previous_current_estimate_a": -0.445535010099411,
+      "current_estimate_a": -0.011317911464720942,
+      "previous_target_deg": -14.318244934082031,
+      "target_deg": -14.296443939208984
+    }
+  ],
+  "limitations": [
+    "All friction model coefficients and maximum speed are zero throughout; compensation disabled",
+    "No firmware hash/match metadata in this CSV",
+    "Fields are sampled asynchronously; no single-control-cycle inference",
+    "No direct Yaw motor feedback current, original pitch command or mechanical limit flag"
+  ]
+}
