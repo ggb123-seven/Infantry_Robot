@@ -419,6 +419,89 @@ static bool Gimbal_IsAxisConfigValid(const Gimbal_AxisConfig_t *config, bool all
            Gimbal_IsPidConfigValid(&config->speed_pid, false);
 }
 
+/**
+ * @brief 求二次摩擦模型幅值，调用方保证参数已校验或正在配置入口校验
+ *
+ * @param[in] config 本周期整体配置，调用方保证非空
+ * @param[in] speed_rad_s 非负机械速度，单位 rad/s
+ * @return 摩擦模型电流幅值，单位 A
+ */
+static float Gimbal_FrictionMagnitude(const Gimbal_Config_t *config, float speed_rad_s)
+{
+    return (config->yaw_friction_quadratic_a_per_rad_s2 * speed_rad_s +
+            config->yaw_friction_linear_a_per_rad_s) * speed_rad_s + config->yaw_friction_current_a;
+}
+
+/**
+ * @brief 在配置入口校验摩擦参数及二次曲线的端点与区间内极值
+ *
+ * @param[in] config 待校验的整体配置，调用方保证轴配置已校验且指针非空
+ * @return 参数与整个启用区间合法时返回 true，否则返回 false
+ */
+static bool Gimbal_IsFrictionConfigValid(const Gimbal_Config_t *config)
+{
+    // 在线写入可能产生非有限系数或错误尺度，集中拒绝后再允许控制链读取
+    if (!isfinite(config->yaw_friction_current_a) || config->yaw_friction_current_a < 0.0f ||
+        config->yaw_friction_current_a > config->yaw.max_current_a ||
+        !isfinite(config->yaw_friction_smoothing_rad_s) || config->yaw_friction_smoothing_rad_s <= 0.0f ||
+        !isfinite(config->yaw_friction_linear_a_per_rad_s) ||
+        !isfinite(config->yaw_friction_quadratic_a_per_rad_s2) ||
+        !isfinite(config->yaw_friction_max_speed_rad_s) || config->yaw_friction_max_speed_rad_s < 0.0f)
+    {
+        return false;
+    }
+    // 上限为零明确关闭补偿，兼容原配置中缺省为零的新增字段
+    if (config->yaw_friction_max_speed_rad_s == 0.0f)
+    {
+        return true;
+    }
+    if (config->yaw_friction_max_speed_rad_s < config->yaw_friction_smoothing_rad_s)
+    {
+        return false;
+    }
+
+    // 二次曲线的极值只可能位于端点或顶点，过渡段是零点与首端点的线性连接
+    const float start_a = Gimbal_FrictionMagnitude(config, config->yaw_friction_smoothing_rad_s);
+    const float end_a = Gimbal_FrictionMagnitude(config, config->yaw_friction_max_speed_rad_s);
+    if (!isfinite(start_a) || start_a < 0.0f || start_a > config->yaw.max_current_a ||
+        !isfinite(end_a) || end_a < 0.0f || end_a > config->yaw.max_current_a)
+    {
+        return false;
+    }
+    if (config->yaw_friction_quadratic_a_per_rad_s2 != 0.0f)
+    {
+        const float vertex_rad_s = (-0.5f * config->yaw_friction_linear_a_per_rad_s) /
+                                   config->yaw_friction_quadratic_a_per_rad_s2;
+        if (vertex_rad_s > config->yaw_friction_smoothing_rad_s &&
+            vertex_rad_s < config->yaw_friction_max_speed_rad_s)
+        {
+            const float vertex_a = Gimbal_FrictionMagnitude(config, vertex_rad_s);
+            return isfinite(vertex_a) && vertex_a >= 0.0f && vertex_a <= config->yaw.max_current_a;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief 用相对底盘目标速度计算连续且有界的 yaw 摩擦前馈
+ *
+ * @param[in] config 已通过入口校验且补偿已启用的整体配置，调用方保证非空
+ * @param[in] target_rad_s 相对底盘的目标机械速度，单位 rad/s，计算链出口统一检查有限性
+ * @return 带方向的补偿电流，单位 A
+ */
+static float Gimbal_CalcYawFriction(const Gimbal_Config_t *config, float target_rad_s)
+{
+    // 零速附近线性连接，保证静止为零且换向连续
+    const float width_rad_s = config->yaw_friction_smoothing_rad_s;
+    if (fabsf(target_rad_s) < width_rad_s)
+    {
+        return Gimbal_FrictionMagnitude(config, width_rad_s) * (target_rad_s / width_rad_s);
+    }
+    // 超出实测范围后固定使用边界模型值，避免高阶外推放大电流
+    const float speed_rad_s = fminf(fabsf(target_rad_s), config->yaw_friction_max_speed_rad_s);
+    return copysignf(Gimbal_FrictionMagnitude(config, speed_rad_s), target_rad_s);
+}
+
 static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_hz)
 {
     return isfinite(frequency_hz) && frequency_hz >= 10.0f && frequency_hz <= 2000.0f &&
@@ -426,9 +509,7 @@ static bool Gimbal_IsConfigValid(const Gimbal_Config_t *config, float frequency_
         config->feedback_timeout_s <= 1.0f && isfinite(config->imu_timeout_s) &&
         config->imu_timeout_s >= 1.0e-6f && config->imu_timeout_s <= 0.1f &&
         Gimbal_IsAxisConfigValid(&config->yaw, false) && Gimbal_IsAxisConfigValid(&config->pitch, true) &&
-        isfinite(config->yaw_friction_current_a) && config->yaw_friction_current_a >= 0.0f &&
-        config->yaw_friction_current_a <= config->yaw.max_current_a &&
-        isfinite(config->yaw_friction_smoothing_rad_s) && config->yaw_friction_smoothing_rad_s > 0.0f &&
+        Gimbal_IsFrictionConfigValid(config) &&
         config->yaw.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
         config->yaw.speed_pid.d_cutoff_freq < frequency_hz * 0.5f &&
         config->pitch.angle_pid.d_cutoff_freq < frequency_hz * 0.5f &&
@@ -578,12 +659,14 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     }
     // 速度环输出电流，非有限结果视为计算异常
     float current_a = PID_Calc(&internal->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
-    // yaw 使用相对底盘的编码器转速补偿摩擦，小陀螺保持世界朝向时仍可识别实际机械运动
-    if (yaw_friction)
+    // 近水平底座下，编码器转速减大地系反馈可估计底座反向转速，再叠加闭环目标
+    // 静止起步按目标给出补偿，世界目标为零而底盘自旋时仍保留相对机械运动方向
+    const Gimbal_Config_t *control_config = &gimbal_internal.control_config;
+    float friction_target_rad_s = 0.0f;
+    if (yaw_friction && control_config->yaw_friction_max_speed_rad_s != 0.0f)
     {
-        const Gimbal_Config_t *control_config = &gimbal_internal.control_config;
-        current_a += control_config->yaw_friction_current_a *
-            tanhf(axis->motor_speed_rad_s / control_config->yaw_friction_smoothing_rad_s);
+        friction_target_rad_s = axis->motor_speed_rad_s + (target_speed_rad_s - axis->speed_rad_s);
+        current_a += Gimbal_CalcYawFriction(control_config, friction_target_rad_s);
     }
     if (!isfinite(target_speed_rad_s))
     {
@@ -599,7 +682,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
         PID_ResetIntegral(&internal->speed_pid);
     }
     // 在合成计算链出口检查候选电流，防止限幅掩盖非有限结果，输出仍由状态闸门放行
-    return isfinite(current_a) && isfinite(internal->speed_pid.i);
+    return isfinite(current_a) && isfinite(friction_target_rad_s) && isfinite(internal->speed_pid.i);
 }
 
 /**

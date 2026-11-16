@@ -123,9 +123,15 @@ typedef struct
  * - feedback_timeout_s：反馈帧最大间隔，单位 s，超过时视为失联并断开连续角
  *   须保证最高转速下该时间内转动小于半圈，才能唯一展开编码器角度
  * - imu_timeout_s：惯性反馈源采样时刻的最大帧龄及相邻帧间隔，单位 s，范围 (0, 0.1]
- * - yaw_friction_current_a：仅 yaw 使用的平滑库仑摩擦补偿幅值，单位 A，范围 [0, yaw.max_current_a]，零表示关闭
- * - yaw_friction_smoothing_rad_s：仅 yaw 使用的零速平滑尺度，单位 rad/s，须为有限正数
- *   补偿方向使用电机相对底盘的编码器角速度，两字段随周期快照集中校验，不影响 pitch
+ * - yaw_friction_current_a：仅 yaw 使用的二次摩擦模型常数项 a0，单位 A，范围 [0, yaw.max_current_a]
+ * - yaw_friction_smoothing_rad_s：零速线性过渡半宽，单位 rad/s，须为有限正数
+ * - yaw_friction_linear_a_per_rad_s：一次项 a1，单位 A/(rad/s)，允许负数
+ * - yaw_friction_quadratic_a_per_rad_s2：二次项 a2，单位 A/(rad/s)^2，允许负数
+ * - yaw_friction_max_speed_rad_s：拟合机械速度绝对值上限，单位 rad/s，零表示关闭补偿
+ *   启用时上限不得小于过渡半宽，区间内 a0+a1*v+a2*v² 须有限且位于 [0, yaw.max_current_a]
+ *   过渡区连接零点与半宽处模型值，上限外保持边界值，不外推
+ *   相对底盘目标转速近似为编码器转速加大地系目标与反馈之差，适用于底座近水平的 yaw 运动
+ *   所有字段随周期快照集中校验，不影响 pitch；新增字段缺省为零，补偿保持关闭
  */
 typedef struct
 {
@@ -135,6 +141,9 @@ typedef struct
     float imu_timeout_s;
     float yaw_friction_current_a;
     float yaw_friction_smoothing_rad_s;
+    float yaw_friction_linear_a_per_rad_s;
+    float yaw_friction_quadratic_a_per_rad_s2;
+    float yaw_friction_max_speed_rad_s;
 } Gimbal_Config_t;
 
 // 两轴独立选择目标来源：遥控使用增量，自瞄及调试轨迹使用绝对角度
