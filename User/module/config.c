@@ -1,4 +1,5 @@
 #include "module/config.h"
+#include <stdbool.h>
 
 /*
  * 拨弹默认配置独立定义，初始化只复制本配置，不再从底盘或云台覆盖参数
@@ -15,13 +16,13 @@ const Feeder_Config_t feeder_config =
     .feed_hz = 20.0f,
     .direction = -1.0f,
     .max_speed_rpm = 300.0f,
-    .max_current_a = 4.0f,
+    .max_current_a = 10.0f,
     .position_pid =
     {
         .k = 1.0f,
-        .p = 15.0f,
-        .i = 0.005f,
-        .d = 0.0f,
+        .p = 25.0f,
+        .i = 2.4f,
+        .d = 0.4f,
         .i_limit = 1.0f,
         .out_limit = 300.0f * (M_2PI / 60.0f),
         .d_cutoff_freq = 0.0f,
@@ -34,7 +35,7 @@ const Feeder_Config_t feeder_config =
         .i = 0.12f,
         .d = 0.0f,
         .i_limit = 20.0f,
-        .out_limit = 4.0f,
+        .out_limit = 10.0f,
         .d_cutoff_freq = 20.0f,
         .range = 0.0f,
     },
@@ -105,22 +106,22 @@ const Chassis_Config_t chassis_config =
     .wheel_speed_pid =
     {
         .k = 1.0F,
-        .p = 0.20F,
+        .p = 0.16F,
         .i = 0.0F,
         .d = 0.0F,
-        .i_limit = 20.0F,
+        .i_limit = 0.0F,
         .out_limit = 10.0F,
-        .d_cutoff_freq = 20.0F,
+        .d_cutoff_freq = -1.0F,
         .range = 0.0F,
     },
     .follow_pid =
     {
         .k = 1.0F,
-        .p = 0.5F,
+        .p = 0.6F,
         .i = 0.0F,
         .d = 0.0F,
-        .i_limit = 0.0F,
-        .out_limit = 0.3F,
+        .i_limit = 1.0F,
+        .out_limit = 1.0F,
         .d_cutoff_freq = -1.0F,
         .range = M_2PI,
     },
@@ -137,16 +138,19 @@ const Chassis_Config_t chassis_config =
  * - 角度环输出为目标角速度，单位 rad/s；速度环输出为电流候选，单位 A，最终另按 max_current_a 限幅
  * - PID 增益、积分限幅和输出限幅保留各轴独立配置，参数副本支持在线调参，控制周期使用已校验快照
  * - yaw 摩擦补偿默认 0 A，即关闭；平滑尺度初值 0.2 rad/s，运行中修改整体配置内的两个 yaw_friction 参数
- * - yaw 按编码器相对底盘转速计算平滑库仑补偿，与速度环电流相加后统一限流，pitch 不使用摩擦补偿
+ * - yaw 按限幅与机械约束后的目标角速度计算平滑库仑补偿，与速度环电流相加后统一限流，pitch 不使用摩擦补偿
+ * - yaw 角度环 k=20、p=1、i=d=0，速度环 k=0.45、p=1、i=6、d=0.0008
+ * - yaw 角度环输出限幅 10 rad/s，速度环输出限幅 1 A；速度环积分限幅 1，微分截止频率 -1 Hz
+ * - yaw 两环 range 沿用原配置 0，不启用角度误差环绕；pitch 参数说明见下方
  * - pitch 机械零点 238.93068° 由用户于 2026-11-07 确认，沿用当前 reversed=false 的编码器方向
- * - pitch 编码器机械范围沿用当前确认参数，为机械零点两侧各 20°，即 [-20°, 20°]
+ * - pitch 编码器机械范围沿用当前确认参数，相对机械零点为 [-30°, 20°]
+ * - pitch 采用用户提供的 PID 参数，角度环 k=2、p=5、i=2.5，速度环 k=0.25、p=1、i=0
+ * - pitch 角度环输出限幅 10 rad/s，速度环输出限幅 1 A；两环微分关闭，负截止频率表示不滤波
+ * - pitch 角度环积分限幅为零，沿用现有 PID 的积分处理，角度误差按 2π 弧度环绕，速度误差不环绕
  * - 两轴均启用并独立输出电流，默认命令为 RELAX，上电保持零电流
  * - 编码器仅用于机械角、限位与在线检测，pitch 使用有符号角，yaw 保留连续展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  * - IMU 独立超时初始取 10 ms，以源采样时间校验，后续须通过实机调度抖动核定
- * - pitch 采用用户提供的 PID 参数，角度环 k=2、p=5、i=2.5，速度环 k=0.25、p=1、i=0
- * - pitch 角度环输出限幅 10 rad/s，速度环输出限幅 1 A；两环微分关闭，负截止频率表示不滤波
- * - pitch 角度环积分限幅为零，沿用现有 PID 的积分处理，角度误差按 2π 弧度环绕，速度误差不环绕
  */
 const Gimbal_Config_t gimbal_config =
 {
@@ -159,27 +163,27 @@ const Gimbal_Config_t gimbal_config =
         .min_angle_deg = 0.0f,
         .max_angle_deg = 360.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
-        .max_current_a = 1.0f,
+        .max_current_a = 10.0f,
         .angle_pid =
         {
-            .k = 1.0f,
-            .p = 15.0f,
+            .k = 20.0f,
+            .p = 1.0f,
             .i = 0.0f,
-            .d = 0.0f,
-            .i_limit = 1.0f,
-            .out_limit = 1.0f,
-            .d_cutoff_freq = 0.0f,
+            .d = 0.05f,
+            .i_limit = 0.0f,
+            .out_limit = 10.0f,
+            .d_cutoff_freq = -1.0f,
             .range = 0.0f,
         },
         .speed_pid =
         {
-            .k = 1.0f,
+            .k = 0.45f,
             .p = 1.0f,
-            .i = 0.177f,
-            .d = 0.0f,
+            .i = 0.0f,
+            .d = 0.00008f,
             .i_limit = 1.0f,
-            .out_limit = 10.0f,
-            .d_cutoff_freq = 0.0f,
+            .out_limit = 1.0f,
+            .d_cutoff_freq = -1.0f,
             .range = 0.0f,
         },
     },
@@ -197,20 +201,20 @@ const Gimbal_Config_t gimbal_config =
         {
             .k = 2.0f,
             .p = 5.0f,
-            .i = 2.5f,
+            .i = 0.0f,
             .d = 0.0f,
             .i_limit = 0.0f,
-            .out_limit = 10.0f,
+            .out_limit = 6.0f,
             .d_cutoff_freq = -1.0f,
             .range = M_2PI,
         },
         .speed_pid =
         {
-            .k = 0.25f,
+            .k = 0.45f,
             .p = 1.0f,
-            .i = 0.0f,
+            .i = 0.5f,
             .d = 0.0f,
-            .i_limit = 1.0f,
+            .i_limit = 1.4f,
             .out_limit = 1.0f,
             .d_cutoff_freq = -1.0f,
             .range = -1.0f,
