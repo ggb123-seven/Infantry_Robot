@@ -1,0 +1,3841 @@
+{
+  "date": "2026-11-16",
+  "timezone": "Asia/Shanghai",
+  "requestedIntervalMs": 25,
+  "variables": [
+    "gimbal.yaw.state",
+    "gimbal.yaw.motor_speed_rad_s",
+    "gimbal.yaw.speed_rad_s",
+    "gimbal.yaw.target_speed_rad_s",
+    "gimbal.yaw.output_current_a",
+    "gimbal.yaw.mechanical_angle_deg",
+    "motor_rm.c::can_managers[0]->motors[4]->feedback.torque_current",
+    "motor_rm.c::can_managers[0]->motors[4]->feedback.rotor_speed",
+    "gimbal_output_status"
+  ],
+  "segments": [
+    {
+      "name": "yaw_baseline",
+      "count": 100,
+      "from": 1794826476006,
+      "to": 1794826485212,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      }
+    },
+    {
+      "name": "yaw_plus1",
+      "count": 80,
+      "from": 1794826548266,
+      "to": 1794826554532,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_debug_enabled",
+            "resolvedName": "gimbal_debug_enabled",
+            "address": "0x20006860",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal.config.pitch.enabled",
+            "resolvedName": "gimbal.config.pitch.enabled",
+            "address": "0x2000678C",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.pitch.rate_rad_s",
+            "resolvedName": "gimbal_command.pitch.rate_rad_s",
+            "address": "0x20006858",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus1",
+      "count": 120,
+      "from": 1794826600076,
+      "to": 1794826609173,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -1,
+            "writtenText": null,
+            "readBack": -1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus2p5",
+      "count": 120,
+      "from": 1794826625446,
+      "to": 1794826634449,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 2.5,
+            "writtenText": null,
+            "readBack": 2.5,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 2.5,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus2p5",
+      "count": 120,
+      "from": 1794826650197,
+      "to": 1794826659369,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -2.5,
+            "writtenText": null,
+            "readBack": -2.5,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -2.5,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus4",
+      "count": 120,
+      "from": 1794826675254,
+      "to": 1794826684244,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 4,
+            "writtenText": null,
+            "readBack": 4,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 4,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus4",
+      "count": 120,
+      "from": 1794826703055,
+      "to": 1794826713542,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -4,
+            "writtenText": null,
+            "readBack": -4,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -4,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus1_repeat",
+      "count": 120,
+      "from": 1794826818080,
+      "to": 1794826827547,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus1_repeat",
+      "count": 120,
+      "from": 1794826828043,
+      "to": 1794826837156,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -1,
+            "writtenText": null,
+            "readBack": -1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus2p5_repeat",
+      "count": 120,
+      "from": 1794826837663,
+      "to": 1794826847177,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 2.5,
+            "writtenText": null,
+            "readBack": 2.5,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 2.5,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus2p5_repeat",
+      "count": 120,
+      "from": 1794826864036,
+      "to": 1794826873275,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -2.5,
+            "writtenText": null,
+            "readBack": -2.5,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -2.5,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus4_repeat",
+      "count": 120,
+      "from": 1794826873790,
+      "to": 1794826883324,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 4,
+            "writtenText": null,
+            "readBack": 4,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 4,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus4_repeat",
+      "count": 120,
+      "from": 1794826883814,
+      "to": 1794826893292,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -4,
+            "writtenText": null,
+            "readBack": -4,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -4,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus1p75_validation",
+      "count": 120,
+      "from": 1794826914233,
+      "to": 1794826923892,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 1.75,
+            "writtenText": null,
+            "readBack": 1.75,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 1.75,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus1p75_validation",
+      "count": 120,
+      "from": 1794826924393,
+      "to": 1794826934403,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -1.75,
+            "writtenText": null,
+            "readBack": -1.75,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -1.75,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus3p25_validation",
+      "count": 120,
+      "from": 1794826955786,
+      "to": 1794826965714,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 3.25,
+            "writtenText": null,
+            "readBack": 3.25,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 3.25,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus3p25_validation",
+      "count": 120,
+      "from": 1794826966208,
+      "to": 1794826975897,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -3.25,
+            "writtenText": null,
+            "readBack": -3.25,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -3.25,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_plus1_long",
+      "count": 400,
+      "from": 1794827225769,
+      "to": 1794827257444,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_debug_enabled",
+            "resolvedName": "gimbal_debug_enabled",
+            "address": "0x20006860",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal.config.pitch.enabled",
+            "resolvedName": "gimbal.config.pitch.enabled",
+            "address": "0x2000678C",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    },
+    {
+      "name": "yaw_minus1_long",
+      "count": 400,
+      "from": 1794827291499,
+      "to": 1794827323558,
+      "elf": {
+        "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "mtimeMs": 1794823477483.2324,
+        "size": 1965900,
+        "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "machine": 40,
+        "elfClass": 1,
+        "encoding": 1
+      },
+      "firmwareConsistency": {
+        "status": "match",
+        "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+        "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+        "flashedAt": "2026-11-16T10:06:57.224Z",
+        "target": "stm32f4x.cfg"
+      },
+      "write": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": -1,
+            "writtenText": null,
+            "readBack": -1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      },
+      "stop": {
+        "source": "active-sampling",
+        "elf": {
+          "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "mtimeMs": 1794823477483.2324,
+          "size": 1965900,
+          "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "machine": 40,
+          "elfClass": 1,
+          "encoding": 1
+        },
+        "results": [
+          {
+            "name": "gimbal_command.mode",
+            "resolvedName": "gimbal_command.mode",
+            "address": "0x20006844",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.yaw.rate_rad_s",
+            "resolvedName": "gimbal_command.yaw.rate_rad_s",
+            "address": "0x2000684C",
+            "type": "f32",
+            "previous": -1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_command.pitch.rate_rad_s",
+            "resolvedName": "gimbal_command.pitch.rate_rad_s",
+            "address": "0x20006858",
+            "type": "f32",
+            "previous": 0,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal.config.pitch.enabled",
+            "resolvedName": "gimbal.config.pitch.enabled",
+            "address": "0x2000678C",
+            "type": "u8",
+            "previous": 0,
+            "previousText": null,
+            "written": 1,
+            "writtenText": null,
+            "readBack": 1,
+            "readBackText": null,
+            "verified": true
+          },
+          {
+            "name": "gimbal_debug_enabled",
+            "resolvedName": "gimbal_debug_enabled",
+            "address": "0x20006860",
+            "type": "u8",
+            "previous": 1,
+            "previousText": null,
+            "written": 0,
+            "writtenText": null,
+            "readBack": 0,
+            "readBackText": null,
+            "verified": true
+          }
+        ],
+        "halted": true,
+        "firmwareConsistency": {
+          "status": "match",
+          "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+          "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+          "flashedAt": "2026-11-16T10:06:57.224Z",
+          "target": "stm32f4x.cfg"
+        },
+        "permission": {
+          "mode": "full",
+          "trusted": false
+        }
+      }
+    }
+  ],
+  "original": {
+    "source": "active-sampling",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794823477483.2324,
+      "size": 1965900,
+      "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-16T10:06:57.224Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794826437773,
+    "values": {
+      "gimbal_debug_enabled": {
+        "requestedName": "gimbal_debug_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006860"
+      },
+      "gimbal_remote_speed_loop_enabled": {
+        "requestedName": "gimbal_remote_speed_loop_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20000078"
+      },
+      "gimbal_remote_angle_loop_enabled": {
+        "requestedName": "gimbal_remote_angle_loop_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20000079"
+      },
+      "gimbal_sine_test_enabled": {
+        "requestedName": "gimbal_sine_test_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006861"
+      },
+      "chassis_state_cache": {
+        "requestedName": "chassis_state_cache",
+        "value": 1,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200068A8"
+      },
+      "gimbal_output_status": {
+        "requestedName": "gimbal_output_status",
+        "value": 0,
+        "valueText": null,
+        "type": "i8",
+        "address": "0x20000076"
+      },
+      "gimbal.config": {
+        "requestedName": "gimbal.config",
+        "tree": {
+          "name": "config",
+          "kind": "struct",
+          "typeName": "Gimbal_Config_t",
+          "byteSize": 192,
+          "offset": 0,
+          "members": [
+            {
+              "name": "yaw",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisConfig_t",
+              "byteSize": 88,
+              "offset": 0,
+              "members": [
+                {
+                  "name": "enabled",
+                  "offset": 0,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "reversed",
+                  "offset": 1,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "mechanical_limit_enabled",
+                  "offset": 2,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "zero_encoder_deg",
+                  "offset": 4,
+                  "value": 97.07520294189453,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "min_angle_deg",
+                  "offset": 8,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_angle_deg",
+                  "offset": 12,
+                  "value": 360,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_speed_rad_s",
+                  "offset": 16,
+                  "value": 33.51032257080078,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_current_a",
+                  "offset": 20,
+                  "value": 10,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 24,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 24,
+                      "value": 20,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 28,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 32,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 36,
+                      "value": 0.05000000074505806,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 40,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 44,
+                      "value": 10,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 48,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 52,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                },
+                {
+                  "name": "speed_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 56,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 56,
+                      "value": 0.44999998807907104,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 60,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 64,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 68,
+                      "value": 0.00007999999797903001,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 72,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 76,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 80,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 84,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "pitch",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisConfig_t",
+              "byteSize": 88,
+              "offset": 88,
+              "members": [
+                {
+                  "name": "enabled",
+                  "offset": 88,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "reversed",
+                  "offset": 89,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "mechanical_limit_enabled",
+                  "offset": 90,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "zero_encoder_deg",
+                  "offset": 92,
+                  "value": 238.93067932128906,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "min_angle_deg",
+                  "offset": 96,
+                  "value": -20,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_angle_deg",
+                  "offset": 100,
+                  "value": 20,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_speed_rad_s",
+                  "offset": 104,
+                  "value": 33.51032257080078,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_current_a",
+                  "offset": 108,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 112,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 112,
+                      "value": 2,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 116,
+                      "value": 5,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 120,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 124,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 128,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 132,
+                      "value": 6,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 136,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 140,
+                      "value": 6.2831854820251465,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                },
+                {
+                  "name": "speed_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 144,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 144,
+                      "value": 0.44999998807907104,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 148,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 152,
+                      "value": 0.5,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 156,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 160,
+                      "value": 1.399999976158142,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 164,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 168,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 172,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "feedback_timeout_s",
+              "offset": 176,
+              "value": 0.09000000357627869,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "imu_timeout_s",
+              "offset": 180,
+              "value": 0.009999999776482582,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "yaw_friction_current_a",
+              "offset": 184,
+              "value": 0,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "yaw_friction_smoothing_rad_s",
+              "offset": 188,
+              "value": 0.20000000298023224,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20006734"
+      },
+      "gimbal_command": {
+        "requestedName": "gimbal_command",
+        "tree": {
+          "kind": "struct",
+          "typeName": "Gimbal_Command_t",
+          "byteSize": 28,
+          "offset": 0,
+          "members": [
+            {
+              "name": "mode",
+              "offset": 0,
+              "value": 0,
+              "valueText": null,
+              "enumText": "GIMBAL_MODE_RELAX(0)",
+              "type": "u8",
+              "typeName": "Gimbal_Mode_t"
+            },
+            {
+              "name": "yaw",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisCommand_t",
+              "byteSize": 12,
+              "offset": 4,
+              "members": [
+                {
+                  "name": "source",
+                  "offset": 4,
+                  "value": 0,
+                  "valueText": null,
+                  "enumText": "GIMBAL_TARGET_INCREMENT(0)",
+                  "type": "u8",
+                  "typeName": "Gimbal_TargetSource_t"
+                },
+                {
+                  "name": "rate_rad_s",
+                  "offset": 8,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_deg",
+                  "offset": 12,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                }
+              ]
+            },
+            {
+              "name": "pitch",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisCommand_t",
+              "byteSize": 12,
+              "offset": 16,
+              "members": [
+                {
+                  "name": "source",
+                  "offset": 16,
+                  "value": 0,
+                  "valueText": null,
+                  "enumText": "GIMBAL_TARGET_INCREMENT(0)",
+                  "type": "u8",
+                  "typeName": "Gimbal_TargetSource_t"
+                },
+                {
+                  "name": "rate_rad_s",
+                  "offset": 20,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_deg",
+                  "offset": 24,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20006844"
+      }
+    }
+  },
+  "context": {
+    "source": "active-sampling",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794823477483.2324,
+      "size": 1965900,
+      "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-16T10:06:57.224Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794826786207,
+    "values": {
+      "gimbal_internal.imu.angle_deg[0]": {
+        "requestedName": "gimbal_internal.imu.angle_deg[0]",
+        "value": -1.5621064901351929,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20005F98"
+      },
+      "gimbal_internal.imu.angle_deg[1]": {
+        "requestedName": "gimbal_internal.imu.angle_deg[1]",
+        "value": 33.467227935791016,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20005F9C"
+      },
+      "chassis.wheel[0].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[0].filtered_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200063E4"
+      },
+      "chassis.wheel[1].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[1].filtered_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006478"
+      },
+      "chassis.wheel[2].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[2].filtered_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000650C"
+      },
+      "chassis.wheel[3].filtered_speed_rpm": {
+        "requestedName": "chassis.wheel[3].filtered_speed_rpm",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x200065A0"
+      }
+    }
+  },
+  "final": {
+    "source": "active-sampling",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794823477483.2324,
+      "size": 1965900,
+      "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-16T10:06:57.224Z",
+      "target": "stm32f4x.cfg"
+    },
+    "timestamp": 1794827324196,
+    "values": {
+      "gimbal_debug_enabled": {
+        "requestedName": "gimbal_debug_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006860"
+      },
+      "gimbal_remote_speed_loop_enabled": {
+        "requestedName": "gimbal_remote_speed_loop_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20000078"
+      },
+      "gimbal_remote_angle_loop_enabled": {
+        "requestedName": "gimbal_remote_angle_loop_enabled",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20000079"
+      },
+      "gimbal_command.mode": {
+        "requestedName": "gimbal_command.mode",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x20006844"
+      },
+      "gimbal.config": {
+        "requestedName": "gimbal.config",
+        "tree": {
+          "name": "config",
+          "kind": "struct",
+          "typeName": "Gimbal_Config_t",
+          "byteSize": 192,
+          "offset": 0,
+          "members": [
+            {
+              "name": "yaw",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisConfig_t",
+              "byteSize": 88,
+              "offset": 0,
+              "members": [
+                {
+                  "name": "enabled",
+                  "offset": 0,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "reversed",
+                  "offset": 1,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "mechanical_limit_enabled",
+                  "offset": 2,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "zero_encoder_deg",
+                  "offset": 4,
+                  "value": 97.07520294189453,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "min_angle_deg",
+                  "offset": 8,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_angle_deg",
+                  "offset": 12,
+                  "value": 360,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_speed_rad_s",
+                  "offset": 16,
+                  "value": 33.51032257080078,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_current_a",
+                  "offset": 20,
+                  "value": 10,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 24,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 24,
+                      "value": 20,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 28,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 32,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 36,
+                      "value": 0.05000000074505806,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 40,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 44,
+                      "value": 10,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 48,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 52,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                },
+                {
+                  "name": "speed_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 56,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 56,
+                      "value": 0.44999998807907104,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 60,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 64,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 68,
+                      "value": 0.00007999999797903001,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 72,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 76,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 80,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 84,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "pitch",
+              "kind": "struct",
+              "typeName": "Gimbal_AxisConfig_t",
+              "byteSize": 88,
+              "offset": 88,
+              "members": [
+                {
+                  "name": "enabled",
+                  "offset": 88,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "reversed",
+                  "offset": 89,
+                  "value": 0,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "mechanical_limit_enabled",
+                  "offset": 90,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "u8",
+                  "typeName": "_Bool"
+                },
+                {
+                  "name": "zero_encoder_deg",
+                  "offset": 92,
+                  "value": 238.93067932128906,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "min_angle_deg",
+                  "offset": 96,
+                  "value": -20,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_angle_deg",
+                  "offset": 100,
+                  "value": 20,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_speed_rad_s",
+                  "offset": 104,
+                  "value": 33.51032257080078,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "max_current_a",
+                  "offset": 108,
+                  "value": 1,
+                  "valueText": null,
+                  "type": "f32",
+                  "typeName": "float"
+                },
+                {
+                  "name": "angle_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 112,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 112,
+                      "value": 2,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 116,
+                      "value": 5,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 120,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 124,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 128,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 132,
+                      "value": 6,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 136,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 140,
+                      "value": 6.2831854820251465,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                },
+                {
+                  "name": "speed_pid",
+                  "kind": "struct",
+                  "typeName": "KPID_Params_t",
+                  "byteSize": 32,
+                  "offset": 144,
+                  "members": [
+                    {
+                      "name": "k",
+                      "offset": 144,
+                      "value": 0.44999998807907104,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "p",
+                      "offset": 148,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i",
+                      "offset": 152,
+                      "value": 0.5,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d",
+                      "offset": 156,
+                      "value": 0,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "i_limit",
+                      "offset": 160,
+                      "value": 1.399999976158142,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "out_limit",
+                      "offset": 164,
+                      "value": 1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "d_cutoff_freq",
+                      "offset": 168,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    },
+                    {
+                      "name": "range",
+                      "offset": 172,
+                      "value": -1,
+                      "valueText": null,
+                      "type": "f32",
+                      "typeName": "float"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "feedback_timeout_s",
+              "offset": 176,
+              "value": 0.09000000357627869,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "imu_timeout_s",
+              "offset": 180,
+              "value": 0.009999999776482582,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "yaw_friction_current_a",
+              "offset": 184,
+              "value": 0,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            },
+            {
+              "name": "yaw_friction_smoothing_rad_s",
+              "offset": 188,
+              "value": 0.20000000298023224,
+              "valueText": null,
+              "type": "f32",
+              "typeName": "float"
+            }
+          ]
+        },
+        "type": "composite",
+        "address": "0x20006734"
+      },
+      "gimbal.yaw.state": {
+        "requestedName": "gimbal.yaw.state",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x200067F8"
+      },
+      "gimbal.yaw.output_current_a": {
+        "requestedName": "gimbal.yaw.output_current_a",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x20006818"
+      },
+      "gimbal.pitch.state": {
+        "requestedName": "gimbal.pitch.state",
+        "value": 0,
+        "valueText": null,
+        "type": "u8",
+        "address": "0x2000681C"
+      },
+      "gimbal.pitch.output_current_a": {
+        "requestedName": "gimbal.pitch.output_current_a",
+        "value": 0,
+        "valueText": null,
+        "type": "f32",
+        "address": "0x2000683C"
+      }
+    }
+  },
+  "restore": {
+    "source": "active-sampling",
+    "elf": {
+      "path": "f:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "mtimeMs": 1794823477483.2324,
+      "size": 1965900,
+      "sha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "machine": 40,
+      "elfClass": 1,
+      "encoding": 1
+    },
+    "results": [
+      {
+        "name": "gimbal_command.mode",
+        "resolvedName": "gimbal_command.mode",
+        "address": "0x20006844",
+        "type": "u8",
+        "previous": 1,
+        "previousText": null,
+        "written": 0,
+        "writtenText": null,
+        "readBack": 0,
+        "readBackText": null,
+        "verified": true
+      },
+      {
+        "name": "gimbal_command.yaw.rate_rad_s",
+        "resolvedName": "gimbal_command.yaw.rate_rad_s",
+        "address": "0x2000684C",
+        "type": "f32",
+        "previous": -1,
+        "previousText": null,
+        "written": 0,
+        "writtenText": null,
+        "readBack": 0,
+        "readBackText": null,
+        "verified": true
+      },
+      {
+        "name": "gimbal_command.pitch.rate_rad_s",
+        "resolvedName": "gimbal_command.pitch.rate_rad_s",
+        "address": "0x20006858",
+        "type": "f32",
+        "previous": 0,
+        "previousText": null,
+        "written": 0,
+        "writtenText": null,
+        "readBack": 0,
+        "readBackText": null,
+        "verified": true
+      },
+      {
+        "name": "gimbal.config.pitch.enabled",
+        "resolvedName": "gimbal.config.pitch.enabled",
+        "address": "0x2000678C",
+        "type": "u8",
+        "previous": 0,
+        "previousText": null,
+        "written": 1,
+        "writtenText": null,
+        "readBack": 1,
+        "readBackText": null,
+        "verified": true
+      },
+      {
+        "name": "gimbal_debug_enabled",
+        "resolvedName": "gimbal_debug_enabled",
+        "address": "0x20006860",
+        "type": "u8",
+        "previous": 1,
+        "previousText": null,
+        "written": 0,
+        "writtenText": null,
+        "readBack": 0,
+        "readBackText": null,
+        "verified": true
+      }
+    ],
+    "halted": true,
+    "firmwareConsistency": {
+      "status": "match",
+      "elfSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedSha256": "b059709af541ebbcf9cbfc867495044e9c990bca0fe10abe3c42a86c6ef92a11",
+      "flashedElf": "F:/RM/Infantry_Robot/build/Debug/Infantry_Robot.elf",
+      "flashedAt": "2026-11-16T10:06:57.224Z",
+      "target": "stm32f4x.cfg"
+    },
+    "permission": {
+      "mode": "full",
+      "trusted": false
+    }
+  },
+  "changes": {
+    "sourceChanged": false,
+    "configCChanged": false,
+    "ramChanged": [
+      "gimbal_debug_enabled",
+      "gimbal.config.pitch.enabled",
+      "gimbal_command.yaw.rate_rad_s",
+      "gimbal_command.pitch.rate_rad_s",
+      "gimbal_command.mode"
+    ],
+    "pidChanged": false,
+    "frictionChanged": false,
+    "writeMode": "full workspace permission reported by EmberProbe",
+    "writesHaltedTarget": true
+  }
+}
