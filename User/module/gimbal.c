@@ -483,10 +483,10 @@ static bool Gimbal_IsFrictionConfigValid(const Gimbal_Config_t *config)
 }
 
 /**
- * @brief 用相对底盘目标速度计算连续且有界的 yaw 摩擦前馈
+ * @brief 用闭环目标速度计算连续且有界的 yaw 摩擦前馈
  *
  * @param[in] config 已通过入口校验且补偿已启用的整体配置，调用方保证非空
- * @param[in] target_rad_s 相对底盘的目标机械速度，单位 rad/s，计算链出口统一检查有限性
+ * @param[in] target_rad_s 限幅与机械约束后的闭环目标速度，单位 rad/s，计算链出口统一检查有限性
  * @return 带方向的补偿电流，单位 A
  */
 static float Gimbal_CalcYawFriction(const Gimbal_Config_t *config, float target_rad_s)
@@ -659,14 +659,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     }
     // 速度环输出电流，非有限结果视为计算异常
     float current_a = PID_Calc(&internal->speed_pid, target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
-    // 近水平底座下，编码器转速减大地系反馈可估计底座反向转速，再叠加闭环目标
-    // 静止起步按目标给出补偿，世界目标为零而底盘自旋时仍保留相对机械运动方向
+    // 摩擦方向只取限幅与机械约束后的闭环目标速度，编码器差分速度量化粗且静止时跳变，
+    // 参与方向判断会在零速附近让补偿电流逐周期翻转并反过来激励电机
     const Gimbal_Config_t *control_config = &gimbal_internal.control_config;
-    float friction_target_rad_s = 0.0f;
     if (yaw_friction && control_config->yaw_friction_max_speed_rad_s != 0.0f)
     {
-        friction_target_rad_s = axis->motor_speed_rad_s + (target_speed_rad_s - axis->speed_rad_s);
-        current_a += Gimbal_CalcYawFriction(control_config, friction_target_rad_s);
+        current_a += Gimbal_CalcYawFriction(control_config, target_speed_rad_s);
     }
     if (!isfinite(target_speed_rad_s))
     {
@@ -682,7 +680,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
         PID_ResetIntegral(&internal->speed_pid);
     }
     // 在合成计算链出口检查候选电流，防止限幅掩盖非有限结果，输出仍由状态闸门放行
-    return isfinite(current_a) && isfinite(friction_target_rad_s) && isfinite(internal->speed_pid.i);
+    return isfinite(current_a) && isfinite(internal->speed_pid.i);
 }
 
 /**
