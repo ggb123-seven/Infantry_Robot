@@ -38,3 +38,6 @@ BMI088 与 INS 移植处于 EXECUTE：第 1 轮 SPI1 10.5 Mbit/s 和 PF6/TIM10_C
 
 ## #13  task=yaw系统辨识与pid整定  phase=REVIEW
 本次结论与踩坑已沉淀：局部 AGENTS.md 新增系统辨识与整定章节（采样上限、输入不可含前馈、闭环辨识、直流增益硬约束、验证工况、i_limit 规则、构建烧录），全局 AGENTS.md 新增闭环辨识通用章节，提交 debd556；分析报告 docs/analysis/yaw_id_final_result_20261117.md 补至 §12。下一步可选：①角度指令 gimbal_command.yaw.angle_deg 不在侧栏采样集，需加入后才能做指令级闭环拟合 ②拟合度冲 95% 需压到 2 变量 67 Hz 或目标侧 1 kHz 环形缓冲 ③角度环若要更快可试 Kp 24–28，但必须按规则实测后再改 config.c
+
+## #14  task=云台小陀螺抖动滤波  phase=EXECUTE
+按 docs/validation/gimbal_spin_jitter_20261117.md 第 3 节在 User/module/gimbal.c 实现惯性角速度陷波+低通：Gimbal_Internal_t 增加 yaw/pitch 角速度低通与陷波状态，Init 按控制频率初始化系数，UpdateImu 未就绪时复位滤波器并输出 NAN，就绪时先带阻后低通；未改 config.c、filter.c、BSP 与 CubeMX。A 组（30 Hz/5 Hz）与 B 组（20 Hz/8 Hz）两轮均构建（RAM 50840 B、FLASH 133736 B，Gimbal_UpdateImu 静态帧 144 B）、烧录（J-Link 602710286，Programming Finished + Verified OK，firmwareConsistency match）并以 47~73 Hz 采样复测。静止 yaw 角速度峰峰 0.066→0.0153（A）→0.0099 rad/s（B）；小陀螺同扰动下角度峰峰 A 0.745° 对 B 0.804°（持平），最好窗口 0.487°，均未达 0.2° 目标；起动小陀螺瞬时观察到一次 yaw 被带转约 470°、电流 ±1 A 限幅，需重复验证。已提交 77a9f09、9833de7，板上最终为 B 组。下一步优先机械治理 13.5 Hz 结构共振，或把滤波参数改成 static 可写副本做在线扫参。
