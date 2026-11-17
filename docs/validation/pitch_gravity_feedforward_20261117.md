@@ -399,3 +399,46 @@ A + |i₀| = 0.47 ≤ max_current_a = 1.0
   `pitch_gravity_bias_a = 0`、`config_valid = 1`
 - 复位后默认状态：`gimbal.mode = 0`（RELAX）、两轴 `state = 0`、`imu_state = 2`，
   与"上电保持零电流"的设计一致
+
+## 13. 开环用法与失能语义（14:44-15:05）
+
+### 13.1 失能后并非开环
+
+遥控失能或失联时 `Cmd_ParseGimbal` 把命令整体初始化为 `GIMBAL_MODE_RELAX` 并返回 false，
+`run_requested` 为 false，`Gimbal_StopAxis` 把 `output_current_a` 清 0，
+`Gimbal_DumpOutput` 只对 `GIMBAL_AXIS_RUNNING` 放行。`Gimbal_RunAxis` 不被调用，
+写在它内部的重力前馈连计算都不会发生。失能零输出是刻意安全设计，不放宽此闸门
+
+### 13.2 真开环做法
+
+`gimbal_command.mode = GIMBAL_MODE_SPEED`（`rate_rad_s = 0`）保持 RUNNING，
+再把 `gimbal.config.pitch.speed_pid` 的 `k/p/i` 全写 0。`PID_Calc` 在 `k=0` 时
+`k_err = 0`、`i_out = pid->i × 0 = 0`，输出恒 0，`output_current_a` 只剩 `-0.47·cosθ`
+
+配置校验允许零增益：`Gimbal_IsGainValid` 只要求 `isfinite && gain >= 0 && <= GIMBAL_MAX_GAIN`，
+`out_limit` 仍须大于 0，因此清零不会让 `config_valid` 转假
+
+### 13.3 实测
+
+| 世界角 | 输出电流 | 理论 `-0.47·cosθ` |
+|---|---|---|
+| 24.53° | -0.4276 A | -0.4276 A |
+| 29.25° | -0.410 A | -0.410 A |
+
+10 s 内角度漂移小于 0.01°，前馈单独即可托住云台
+
+### 13.4 任意位置都是平衡点
+
+| 角度 | 前馈 | 实测重力负载 | 残差 |
+|---|---|---|---|
+| 0° | -0.470 | -0.469 | 0.001 |
+| ±10° | -0.463 | -0.469 | 0.006 |
+| ±20° | -0.442 | -0.469 | 0.027 |
+
+残差最大 0.027 A，远小于静摩擦带 0.09～0.15 A，摩擦把轴粘在原地
+
+### 13.5 固有代价
+
+- 无阻尼：快速推动后松手会滑行一段才被摩擦停住
+- 顶住机械限位时前馈仍持续输出约 0.44 A 且无退让，长时间顶死会发热
+- 增益只在 RAM 修改，断电重启恢复 Flash 的 0.45/1/0.5，不改固件

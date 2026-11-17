@@ -25,7 +25,7 @@
 - `gimbal.h` 新增 `pitch_gravity_enabled`、`pitch_gravity_current_a`、`pitch_gravity_angle_deg`、`pitch_gravity_bias_a`；全零即关闭，接入阶段 `config.c` 未改、改动前后行为逐位一致
 - `gimbal.c` 新增入口集中校验与 `Gimbal_CalcPitchGravity`，前馈叠在速度环输出后、`max_current_a` 限幅前，与 yaw 摩擦补偿并列；输出仍由 `DumpOutput` 唯一闸门放行
 - 标定用线性最小二乘解 `(a, b, c)` 再换算 `A/θ₀/i₀`：±20° 行程内 `(cos, sin, 1)` 条件数 9833，参数不可辨识但预测可辨识（σ=0.01 A 时预测误差约 4%），不得做非线性迭代
-- 现有关环中 pitch 角度环 `i=2.5` 因 `i_limit=0` 积分永不累积，重力实际由速度环积分承担，上限 `1.4×0.5=0.7 A`；历史 `pitch_hold_torque_20261111` 的一阶模型不可辨识源于积分饱和右截断，那批数据不能复用
+- 现有关环中 pitch 角度环 `i=0` 且 `i_limit=0` 积分永不累积，重力实际由速度环积分承担，上限 `1.4×0.5=0.7 A`；历史 `pitch_hold_torque_20261111` 的一阶模型不可辨识源于积分饱和右截断，那批数据不能复用
 - 证据：ARM `-Wall -Wextra -Werror` 零警告，User 层 35 个翻译单元重编 0 失败，链接 ELF 1,950,096 B、RAM 50704 B、FLASH 132848 B；排版 0 违规；ARCH/HW/SPEC 通过；最坏控制链静态栈约 960 B 对 3072 B
 - 上板标定完成：正反向平均后重力负载 **-0.469±0.011 A**（-6°…+19°），在 ±20° 行程内基本恒定；同一批点拟合 cos 的 RMS 相对常数模型只改善 3.5%，A 与 i₀ 的分配对区间内预测影响不超过 0.028 A，**cos 形状不可辨识**
 - 静摩擦主导误差：单点保持电流不确定度 ±0.15 A 量级，且纯 P 角度环下速度环积分由逼近历史决定，同一角度可并存多个静摩擦平衡点；正反向平均是唯一可用的抵消手段
@@ -33,7 +33,20 @@
 - 最终固化 `A=0.47 A、θ₀=180°、i₀=0`（等价 `i_ff=-0.47·cosθ`，满足 `A+|i₀|≤max_current_a`），已追加进 `config.c` 的 `gimbal_config` 并烧录；复位后从 Flash 载入实测 `enabled=1`、`A=0.47`、`config_valid=1`、两轴 RELAX
 - 前馈的实际收益是恢复积分余量而非修正角度曲线：同向逼近下速度环积分占用从 `i_limit` 的 80-89% 降到 0-34%，可用余量从约 0.16 A 恢复到约 0.92 A
 - 固化后 ELF 1,969,116 B、RAM 50704 B / 38.68%、FLASH 132848 B / 12.67%（与改动前一致，只改常量内容未改布局）；运行时栈高水位仍未实测
+- 空转判据：`output_current_a` 应严格等于 `-0.47·cos(angle_deg)`；实测 24.53° 时 -0.4276 A、29.25° 时 -0.410 A，与公式逐位吻合即说明 PID 贡献为零
 - 证据见 docs/validation/pitch_gravity_feedforward_20261117.md 第 10-12 节，原始数据 pitch_gravity_sweep/ramp/constspeed_20261117.csv
+
+## 2026-11-17 pitch 重力前馈的开环用法与失能语义
+
+- 澄清一个易误判点：**遥控失能或失联后云台不是开环，而是零电流**。`Cmd_ParseGimbal` 在 `!rc_valid`、`!rc->header.online` 或超过 `DR16_RECEIVER_OFFLINE_TIMEOUT_US` 时把命令整体初始化为 `GIMBAL_MODE_RELAX` 并返回 false，`run_requested` 随之为 false，`Gimbal_StopAxis` 把 `output_current_a` 清 0，`Gimbal_DumpOutput` 只对 `GIMBAL_AXIS_RUNNING` 放行
+- 因此 RELAX 下 `Gimbal_RunAxis` 根本不被调用，写在它内部的重力前馈连计算都不会发生；失能零输出是刻意安全设计，不是缺陷，不要为让前馈在失能时出力而放宽 `Gimbal_StopAxis` 的输出闸门
+- 真正的开环重力补偿做法：`gimbal_command.mode = GIMBAL_MODE_SPEED`（`rate_rad_s = 0`）让轴保持 RUNNING，再把 `gimbal.config.pitch.speed_pid` 的 `k/p/i` 全部写 0。`PID_Calc` 在 `k=0` 时 `k_err = 0`、`i_out = pid->i × 0 = 0`，输出恒 0，于是 `output_current_a` 只剩 `-0.47·cosθ`
+- 配置校验允许零增益：`Gimbal_IsGainValid` 只要求 `isfinite && gain >= 0 && gain <= GIMBAL_MAX_GAIN`，`out_limit` 仍须大于 0，所以清零 `k/p/i` 不会让 `config_valid` 转假
+- 开环实测（2026-11-17）：24.53° 时 `I = -0.4276 A`、29.25° 时 `I = -0.410 A`，10 s 内角度漂移小于 0.01°，说明前馈单独就能托住云台
+- 任意角度都是平衡点的原因：前馈在整个行程内近似常数，0° 时 -0.470、±10° 时 -0.463、±20° 时 -0.442，与实测重力负载 -0.469 的残差最大只有 0.027 A，远小于静摩擦带 0.09～0.15 A，摩擦把它粘在原地
+- 开环的固有代价：没有任何阻尼，快速推一下松手会滑行一段才被摩擦停住；顶住机械限位时前馈仍持续输出约 0.44 A 且没有退让，长时间顶死会让电机和驱动发热
+- 开环增益只在 RAM 修改，断电重启自动恢复 Flash 里的 `0.45/1/0.5`，不会改坏固件；退出时把 `gimbal_debug_enabled` 置 0 交还遥控
+- 该节结论来自只读代码加 RAM 写入实测，未改变任何源码或 `config.c`
 
 ## 2026-11-11 拨弹五齿完成撤驱与未完成恢复重计
 
