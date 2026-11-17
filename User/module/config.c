@@ -137,7 +137,8 @@ const Chassis_Config_t chassis_config =
  * - 电流控制码按 ±3 A 对应 ±16384 换算，±0.5 A、±1 A、±3 A 取整后分别对应 ±2730、±5461、±16384
  * - 角度环输出为目标角速度，单位 rad/s；速度环输出为电流候选，单位 A，最终另按 max_current_a 限幅
  * - PID 增益、积分限幅和输出限幅保留各轴独立配置，参数副本支持在线调参，控制周期使用已校验快照
- * - yaw 摩擦补偿默认 0 A，即关闭；平滑尺度初值 0.2 rad/s，运行中修改整体配置内的两个 yaw_friction 参数
+ * - yaw 摩擦补偿采用已完成软件回归的二次模型，a0=0.2648070877 A、a1=-0.0055278781 A/(rad/s)、a2=0.00195745266 A/(rad/s)^2
+ * - yaw 摩擦补偿平滑尺度为 0.2 rad/s，模型速度上限为 3.4 rad/s，复位后默认启用；运行中仍可修改整体配置内的五个 yaw_friction 参数
  * - yaw 按限幅与机械约束后的目标角速度计算平滑库仑补偿，与速度环电流相加后统一限流，pitch 不使用摩擦补偿
  * - yaw 角度环 k=20、p=1、i=d=0，速度环 k=0.45、p=1、i=6、d=0.0008
  * - yaw 角度环输出限幅 10 rad/s，速度环输出限幅 1 A；速度环积分限幅 1，微分截止频率 -1 Hz
@@ -222,6 +223,9 @@ const Gimbal_Config_t gimbal_config =
     },
     .feedback_timeout_s = 0.09f,
     .imu_timeout_s = 0.01f,
-    .yaw_friction_current_a = 0.0f,
+    .yaw_friction_current_a = 0.2648070877f,
     .yaw_friction_smoothing_rad_s = 0.2f,
+    .yaw_friction_linear_a_per_rad_s = -0.0055278781f,
+    .yaw_friction_quadratic_a_per_rad_s2 = 0.00195745266f,
+    .yaw_friction_max_speed_rad_s = 3.4f,
 };
