@@ -212,7 +212,7 @@ const Gimbal_Config_t gimbal_config =
         {
             .k = 0.45f,
             .p = 1.0f,
-            .i = 0.0f,
+            .i = 2.0f,
             .d = 0.00008f,
             .i_limit = 1.0f,
             .out_limit = 1.0f,
