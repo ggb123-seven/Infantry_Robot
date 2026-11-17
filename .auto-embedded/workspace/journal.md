@@ -28,3 +28,13 @@ BMI088 与 INS 移植处于 EXECUTE：第 1 轮 SPI1 10.5 Mbit/s 和 PF6/TIM10_C
 
 ## #10  task=移除GM6020电机代码  phase=REVIEW
 2026-10-18 按用户明确确认删除 GM6020 专用 task/module 四个文件，清理初始化、独立邮箱、Ozone、CANDevices 和 RM 共用驱动中的专属分支，保留 M3508/M2006 八路槽位与原底盘控制行为。Debug 全量构建、ARCH/HW/SPEC、真实源码前后版本主机回归通过，ELF 无 GM6020/Gimbal 符号，INS/BMI088/BSP/component/.ioc 未改。详细证据见 docs/workflows/2026-10/18_remove_gm6020.md。Keil 原有 RVDS port.c 缺失单独记录，不扩大修复；未提交、未烧录，不据此宣称 Yaw 漂移已解决
+
+
+## #11  task=yaw系统辨识与pid整定  phase=REVIEW
+完成 yaw 速度环系统辨识：探针链路实测上限 73.2/67.3/49.9 Hz，200 Hz 不可达；开环辨识因把含摩擦前馈的 output_current_a 当输入锁死 58.3%，改闭环辨识后拟合 90.1%（T=a/(s+a)，a=33.684 rad/s，被控对象 K=74.853），并按模型整定积分项；上机后大幅动作出现过冲回弹，已回退 i=0 至提交 d870c96，根因是 i_limit=1.0 等于 out_limit，积分可独占全部输出
+
+## #12  task=yaw系统辨识与pid整定  phase=REVIEW
+完成 yaw 角度环辨识：对象由速度环闭环级联构造 G=a/(s(s+a))，控制器 C=20+1.0s；闭环为过阻尼（极点 −55.15、−12.21 rad/s，阻尼比 1.30），带宽 3.0 Hz、相位裕度 88.6 度、幅值裕度 9.4 dB、超调 0；实测 ±10/±20/±40 度交替阶跃上升 102–164 ms、稳定 290–550 ms、稳态误差 0.2–0.35 度，与模型一致，角度环参数维持 Kp=20、Kd=1.0、i=0 不动
+
+## #13  task=yaw系统辨识与pid整定  phase=REVIEW
+本次结论与踩坑已沉淀：局部 AGENTS.md 新增系统辨识与整定章节（采样上限、输入不可含前馈、闭环辨识、直流增益硬约束、验证工况、i_limit 规则、构建烧录），全局 AGENTS.md 新增闭环辨识通用章节，提交 debd556；分析报告 docs/analysis/yaw_id_final_result_20261117.md 补至 §12。下一步可选：①角度指令 gimbal_command.yaw.angle_deg 不在侧栏采样集，需加入后才能做指令级闭环拟合 ②拟合度冲 95% 需压到 2 变量 67 Hz 或目标侧 1 kHz 环形缓冲 ③角度环若要更快可试 Kp 24–28，但必须按规则实测后再改 config.c
