@@ -24,10 +24,11 @@
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)     /* 俯仰角绝对上限，单位：度 */
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)    /* 相邻帧跳变余量，单位：度 */
 
-/* 惯性角速度滤波参数：小陀螺时底盘与云台结构共振约 13.5 Hz、振动峰峰值约 0.6 g，落在云台控制环带宽之外 */
-#define GIMBAL_RATE_LPF_HZ (30.0f)           /* 大地系角速度低通截止频率，单位：Hz */
+/* 惯性角速度滤波参数：小陀螺时结构共振主峰 13.5 Hz、次峰 11.0/14.1/19.0 Hz，均落在云台控制环带宽之外 */
+/* 宽带阻覆盖约 9.5~17.5 Hz，低通进一步下压 19 Hz 与更高频段的残余振动 */
+#define GIMBAL_RATE_LPF_HZ (20.0f)           /* 大地系角速度低通截止频率，单位：Hz */
 #define GIMBAL_RATE_NOTCH_HZ (13.5f)         /* 结构共振带阻中心频率，单位：Hz */
-#define GIMBAL_RATE_NOTCH_BW_HZ (5.0f)       /* 结构共振带阻带宽，单位：Hz */
+#define GIMBAL_RATE_NOTCH_BW_HZ (8.0f)       /* 结构共振带阻带宽，单位：Hz */
 
 #define GIMBAL_FULL_TURN_DEG (360.0f)        /* 整圈角度，单位：度 */
 #define GIMBAL_AXIS_COUNT (2U)               /* 云台轴数 */
