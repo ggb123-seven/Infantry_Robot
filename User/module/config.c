@@ -152,6 +152,11 @@ const Chassis_Config_t chassis_config =
  * - 编码器仅用于机械角、限位与在线检测，pitch 使用有符号角，yaw 保留连续展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
  * - IMU 独立超时初始取 10 ms，以源采样时间校验，后续须通过实机调度抖动核定
+ * - pitch 重力前馈于 2026-11-17 上板标定，取 A=0.47 A、θ₀=180°、i₀=0，等价 i_ff=-0.47·cosθ
+ * - 标定区间 -6°…+19°，实测重力负载 -0.469±0.011 A 基本恒定；cos 形状在 ±20° 行程内不可辨识，
+ *   A 与 i₀ 的分配对区间内预测的影响不超过 0.028 A
+ * - 幅值与常值项绝对值之和须不大于 pitch.max_current_a，标定过程与数据见
+ *   docs/validation/pitch_gravity_feedforward_20261117.md
  */
 const Gimbal_Config_t gimbal_config =
 {
@@ -228,4 +233,8 @@ const Gimbal_Config_t gimbal_config =
     .yaw_friction_linear_a_per_rad_s = -0.0055278781f,
     .yaw_friction_quadratic_a_per_rad_s2 = 0.00195745266f,
     .yaw_friction_max_speed_rad_s = 3.4f,
+    .pitch_gravity_enabled = true,
+    .pitch_gravity_current_a = 0.47f,
+    .pitch_gravity_angle_deg = 180.0f,
+    .pitch_gravity_bias_a = 0.0f,
 };

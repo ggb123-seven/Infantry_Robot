@@ -22,12 +22,18 @@
 ## 2026-11-17 pitch 重力前馈接入与标定方案
 
 - 用户要求按现有关环效果拟合重力前馈、不单独辨识负载质量：采用 `A·cos(θ - θ₀) + i₀`，θ 取 IMU 大地系俯仰角，质量与重力加速度、质心力臂、力矩常数、减速比合并为唯一幅值 A
-- `gimbal.h` 新增 `pitch_gravity_enabled`、`pitch_gravity_current_a`、`pitch_gravity_angle_deg`、`pitch_gravity_bias_a`；`config.c` 未改，全零即关闭，改动前后行为逐位一致
+- `gimbal.h` 新增 `pitch_gravity_enabled`、`pitch_gravity_current_a`、`pitch_gravity_angle_deg`、`pitch_gravity_bias_a`；全零即关闭，接入阶段 `config.c` 未改、改动前后行为逐位一致
 - `gimbal.c` 新增入口集中校验与 `Gimbal_CalcPitchGravity`，前馈叠在速度环输出后、`max_current_a` 限幅前，与 yaw 摩擦补偿并列；输出仍由 `DumpOutput` 唯一闸门放行
 - 标定用线性最小二乘解 `(a, b, c)` 再换算 `A/θ₀/i₀`：±20° 行程内 `(cos, sin, 1)` 条件数 9833，参数不可辨识但预测可辨识（σ=0.01 A 时预测误差约 4%），不得做非线性迭代
 - 现有关环中 pitch 角度环 `i=2.5` 因 `i_limit=0` 积分永不累积，重力实际由速度环积分承担，上限 `1.4×0.5=0.7 A`；历史 `pitch_hold_torque_20261111` 的一阶模型不可辨识源于积分饱和右截断，那批数据不能复用
 - 证据：ARM `-Wall -Wextra -Werror` 零警告，User 层 35 个翻译单元重编 0 失败，链接 ELF 1,950,096 B、RAM 50704 B、FLASH 132848 B；排版 0 违规；ARCH/HW/SPEC 通过；最坏控制链静态栈约 960 B 对 3072 B
-- 未烧录、未标定、运行时栈高水位未实测；标定流程与验收判据见 docs/validation/pitch_gravity_feedforward_20261117.md 第 5 节
+- 上板标定完成：正反向平均后重力负载 **-0.469±0.011 A**（-6°…+19°），在 ±20° 行程内基本恒定；同一批点拟合 cos 的 RMS 相对常数模型只改善 3.5%，A 与 i₀ 的分配对区间内预测影响不超过 0.028 A，**cos 形状不可辨识**
+- 静摩擦主导误差：单点保持电流不确定度 ±0.15 A 量级，且纯 P 角度环下速度环积分由逼近历史决定，同一角度可并存多个静摩擦平衡点；正反向平均是唯一可用的抵消手段
+- 恒速方案只有 ANGLE 模式 INCREMENT 慢速斜坡（1°/s，正反向各 30 s）可行；SPEED 模式恒速因 P 增益仅 `k·p`=0.45 A/(rad/s) 没有刚度而跑飞，把 `speed_pid.i` 提到 2.0 也无效；改 `gimbal_command.mode` 会触发 `Gimbal_EnterRunning` 清积分，预置积分必须在切换之后单独写
+- 最终固化 `A=0.47 A、θ₀=180°、i₀=0`（等价 `i_ff=-0.47·cosθ`，满足 `A+|i₀|≤max_current_a`），已追加进 `config.c` 的 `gimbal_config` 并烧录；复位后从 Flash 载入实测 `enabled=1`、`A=0.47`、`config_valid=1`、两轴 RELAX
+- 前馈的实际收益是恢复积分余量而非修正角度曲线：同向逼近下速度环积分占用从 `i_limit` 的 80-89% 降到 0-34%，可用余量从约 0.16 A 恢复到约 0.92 A
+- 固化后 ELF 1,969,116 B、RAM 50704 B / 38.68%、FLASH 132848 B / 12.67%（与改动前一致，只改常量内容未改布局）；运行时栈高水位仍未实测
+- 证据见 docs/validation/pitch_gravity_feedforward_20261117.md 第 10-12 节，原始数据 pitch_gravity_sweep/ramp/constspeed_20261117.csv
 
 ## 2026-11-11 拨弹五齿完成撤驱与未完成恢复重计
 
