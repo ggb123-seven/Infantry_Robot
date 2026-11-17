@@ -1,17 +1,21 @@
 /*
-  自定义的数学运算。
-*/
+ * 通用数学工具实现
+ *
+ * 提供快速倒数平方根、限幅、循环量运算与摩擦轮转速换算，供控制层直接调用
+ */
 
+/* Includes ----------------------------------------------------------------- */
 #include "user_math.h"
 #include <string.h>
+
 /* USER INCLUDE BEGIN */
 
 /* USER INCLUDE END */
 
+/* Exported functions ------------------------------------------------------- */
 inline float InvSqrt(float x) {
 //#if 0
-  /* Fast inverse square-root */
-  /* See: http://en.wikipedia.org/wiki/Fast_inverse_square_root */
+  /* 快速倒数平方根近似，原理见 https://en.wikipedia.org/wiki/Fast_inverse_square_root */
 	float halfx = 0.5f * x;
 	float y = x;
 	long i = *(long*)&y;
@@ -19,12 +23,19 @@ inline float InvSqrt(float x) {
 	y = *(float*)&i;
 	y = y * (1.5f - (halfx * y * y));
 	y = y * (1.5f - (halfx * y * y));
-	return y;	
+	return y;
 //#else
 //  return 1.0f / sqrtf(x);
 //#endif
 }
 
+/**
+ * @brief 按对称限幅截断数值
+ *
+ * @param in 输入值
+ * @param limit 限幅绝对值
+ * @return float 截断后的值
+ */
 inline float AbsClip(float in, float limit) {
   return (in < -limit) ? -limit : ((in > limit) ? limit : in);
 }
@@ -32,10 +43,10 @@ inline float AbsClip(float in, float limit) {
 /**
  * @brief 按单周期最大步长逼近目标值
  *
- * @param[in] current 当前值，与目标值单位一致
- * @param[in] target 目标值
- * @param[in] max_step 单周期允许的最大变化量，须为有限非负值
- * @return 更新后的数值，步长非法时保持当前值
+ * @param current 当前值
+ * @param target 目标值
+ * @param max_step 单周期允许的最大变化量
+ * @return float 更新后的值
  */
 float RampTo(float current, float target, float max_step)
 {
@@ -56,31 +67,53 @@ float RampTo(float current, float target, float max_step)
     return target;
 }
 
+/**
+ * @brief 取浮点数的绝对值
+ *
+ * @param in 输入值
+ * @return float 绝对值
+ */
 float fAbs(float in){
   return (in > 0) ? in : -in;
 }
 
+/**
+ * @brief 将数值限制在指定区间内
+ *
+ * @param origin 待限制的数值
+ * @param min 区间下限
+ * @param max 区间上限
+ */
 inline void Clip(float *origin, float min, float max) {
   if (*origin > max) *origin = max;
   if (*origin < min) *origin = min;
 }
 
+/**
+ * @brief 取数值的符号
+ *
+ * @param in 输入值
+ * @return float 非负返回 1，负值返回 0
+ */
 inline float Sign(float in) { return (in > 0) ? 1.0f : 0.0f; }
 
 /**
- * \brief 将运动向量置零
+ * @brief 将运动向量置零
  *
- * \param mv 被操作的值
+ * @param mv 待清零的运动向量
  */
 inline void ResetMoveVector(MoveVector_t *mv) { memset(mv, 0, sizeof(*mv)); }
 
 /**
- * \brief 计算循环值的误差，适用于设定值与反馈值均在（x,y）范围内循环的情况，range应设定为y-x
- * 例如：（-M_PI,M_PI）range=M_2PI;(0,M_2PI)range=M_2PI;（a,a+b）range=b;
- * \param sp 设定值
- * \param fb 反馈值
- * \param range 被操作的值变化范围，正数时起效
- * \return 函数运行结果
+ * @brief 计算循环量误差
+ *
+ * 设定值与反馈值位于同一循环区间时按最短路径取差，range 取该区间宽度，
+ * 为 0 时退化为线性误差
+ *
+ * @param sp 设定值
+ * @param fb 反馈值
+ * @param range 循环区间宽度，与输入同单位
+ * @return float 误差，落在区间宽度的一半以内
  */
 inline float CircleError(float sp, float fb, float range) {
   float error = sp - fb;
@@ -96,10 +129,13 @@ inline float CircleError(float sp, float fb, float range) {
 }
 
 /**
- * \brief 循环加法，适用于被操作的值在（0,range）范围内循环的情况
- * \param origin 被操作的值
- * \param delta 变化量
- * \param range 被操作的值变化范围，正数时起效
+ * @brief 在循环区间内累加增量
+ *
+ * 被操作的值始终保持在 [0, range) 内，越过边界时回卷
+ *
+ * @param origin 被操作的循环量
+ * @param delta 增量
+ * @param range 循环区间宽度，与输入同单位
  */
 inline void CircleAdd(float *origin, float delta, float range) {
   float out = *origin + delta;
@@ -113,19 +149,21 @@ inline void CircleAdd(float *origin, float delta, float range) {
 }
 
 /**
- * @brief 循环值取反
+ * @brief 对以 2π 为周期的角度取反
  *
- * @param origin 被操作的值
+ * @param origin 被操作的角度，单位：rad
  */
 inline void CircleReverse(float *origin) { *origin = -(*origin) + M_2PI; }
 
 /**
- * @brief 根据目标弹丸速度计算摩擦轮转速
+ * @brief 根据目标弹丸速度换算摩擦轮转速
  *
- * @param bullet_speed 弹丸速度
- * @param fric_radius 摩擦轮半径
- * @param is17mm 是否为17mm
- * @return 摩擦轮转速
+ * 裁判系统给定的速度直接映射到标定转速档位，其余速度按线速度与摩擦轮周长换算
+ *
+ * @param bullet_speed 弹丸速度，单位：m/s
+ * @param fric_radius 摩擦轮半径，单位：m
+ * @param is17mm 是否为 17 mm 弹丸
+ * @return float 摩擦轮转速，单位：rpm
  */
 inline float CalculateRpm(float bullet_speed, float fric_radius, bool is17mm) {
   if (bullet_speed == 0.0f) return 0.f;
@@ -138,7 +176,7 @@ inline float CalculateRpm(float bullet_speed, float fric_radius, bool is17mm) {
     if (bullet_speed == 16.0f) return 5800.f;
   }
 
-  /* 不为裁判系统设定值时,计算转速 */
+  /* 非标定档位时按线速度与摩擦轮周长换算 */
   return 60.0f * (float)bullet_speed / (M_2PI * fric_radius);
 }
 

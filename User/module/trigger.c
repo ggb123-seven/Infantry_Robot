@@ -1,21 +1,30 @@
+/*
+ * 拨弹速度模块
+ *
+ * 消费单路 M2006 反馈与连续速度命令，按速度闭环输出转子电流，失联与故障由输出闸门撤驱
+ */
+
+/* Includes ----------------------------------------------------------------- */
 #include "module/trigger.h"
 
 #include <math.h>
 #include <stddef.h>
 #include <string.h>
 
-// 与现有电机在线窗口保持一致，反馈超过 100 ms 或控制周期超过 0.1 s 时撤驱
-#define TRIGGER_TIMEOUT_US (100000U)
-#define TRIGGER_MAX_PERIOD_S (0.1f)
+/* Private define ----------------------------------------------------------- */
+/* 与现有电机在线窗口保持一致，反馈超过 100 ms 或控制周期超过 0.1 s 时撤驱 */
+#define TRIGGER_TIMEOUT_US (100000U) /* 反馈超时上限，单位：us */
+#define TRIGGER_MAX_PERIOD_S (0.1f)  /* 控制周期合法上限，单位：s */
 
+/* Private function --------------------------------------------------------- */
 static bool Trigger_ConfigValid(const Trigger_Config_t *config, float frequency_hz);
 
 /**
  * @brief 校验拨弹速度环配置与协议电流上限
  *
- * @param[in] config 待校验的配置，调用方保证非空
- * @param[in] frequency_hz 控制频率，单位 Hz
- * @return 全部参数合法返回 true，否则返回 false
+ * @param config 待校验的配置
+ * @param frequency_hz 控制频率，单位：Hz
+ * @return bool 全部参数合法返回 true
  */
 static bool Trigger_ConfigValid(const Trigger_Config_t *config, float frequency_hz)
 {
@@ -30,17 +39,18 @@ static bool Trigger_ConfigValid(const Trigger_Config_t *config, float frequency_
         isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq < frequency_hz * 0.5f && pid->range == 0.0f;
 }
 
+/* Exported functions ------------------------------------------------------- */
 /**
  * @brief 复制拨弹配置并初始化速度控制器
  *
- * @param[out] trigger 拨弹实例，初始化后不得整体复制
- * @param[in] config 默认配置，调用方保证非空
- * @param[in] frequency_hz 控制频率，单位 Hz，须为有限正值
- * @return 成功返回 0，失败返回 -1 并保留零输出
+ * @param trigger 拨弹实例，初始化后不得整体复制
+ * @param config 默认配置
+ * @param frequency_hz 控制频率，单位：Hz
+ * @return int8_t 成功返回 0，失败返回 -1 并保留零输出
  */
 int8_t Trigger_Init(Trigger_t *trigger, const Trigger_Config_t *config, float frequency_hz)
 {
-    // 清空旧实例，所有失败路径均从未初始化、无反馈和零电流开始
+    /* 清空旧实例，所有失败路径均从未初始化、无反馈和零电流开始 */
     memset(trigger, 0, sizeof(*trigger));
     trigger->feedback_time_us = UINT64_MAX;
     trigger->state = TRIGGER_FAULT;
@@ -49,7 +59,7 @@ int8_t Trigger_Init(Trigger_t *trigger, const Trigger_Config_t *config, float fr
         return -1;
     }
 
-    // 控制器引用实例内持久参数副本，后续调参只在 Control 同步
+    /* 控制器引用实例内持久参数副本，后续调参只在 Control 同步 */
     trigger->config = *config;
     trigger->frequency_hz = frequency_hz;
     trigger->applied_speed_pid = config->speed_pid;
@@ -66,14 +76,14 @@ int8_t Trigger_Init(Trigger_t *trigger, const Trigger_Config_t *config, float fr
 /**
  * @brief 接纳拨弹新反馈并检查缓存时效
  *
- * @param[in,out] trigger 拨弹实例
- * @param[in] feedback 本周期新反馈，空指针时仅检查缓存是否超过 100 ms
- * @param[in] now_us 读取反馈后的完整单调时刻，单位微秒
+ * @param trigger 拨弹实例
+ * @param feedback 本周期新反馈，空指针时仅检查缓存是否超时
+ * @param now_us 读取反馈后的完整单调时刻，单位：us
  * @return 无返回值
  */
 void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedback, uint64_t now_us)
 {
-    // 只在取得新帧时恢复完整源时间，禁止对历史缓存持续做低位时间模减
+    /* 只在取得新帧时恢复完整源时间，禁止对历史缓存持续做低位时间模减 */
     if (feedback != NULL)
     {
         const uint32_t age_us = (uint32_t)now_us - feedback->last_update_time;
@@ -87,7 +97,7 @@ void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedb
         }
     }
 
-    // 时间回退或源反馈超时均撤销有效标志，只有后续新帧能够恢复
+    /* 时间回退或源反馈超时均撤销有效标志，只有后续新帧能够恢复 */
     if (trigger->feedback_time_us == UINT64_MAX || now_us < trigger->feedback_time_us ||
         now_us - trigger->feedback_time_us > TRIGGER_TIMEOUT_US)
     {
@@ -98,14 +108,14 @@ void Trigger_UpdateFeedback(Trigger_t *trigger, const MOTOR_RM_Feedback_t *feedb
 /**
  * @brief 推进拨弹状态机并执行速度闭环
  *
- * @param[in,out] trigger 拨弹实例
- * @param[in] command 连续速度命令，空指针按失能处理
- * @param[in] period_s 实测控制周期，单位 s，须在 (0, 0.1] 内
+ * @param trigger 拨弹实例
+ * @param command 连续速度命令，空指针按失能处理
+ * @param period_s 实测控制周期，单位：s
  * @return 无返回值
  */
 void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float period_s)
 {
-    // EmberProbe 可在计算期间修改 config，本周期只校验并使用入口快照
+    /* EmberProbe 可在计算期间修改 config，本周期只校验并使用入口快照 */
     const Trigger_Config_t snapshot = *(const volatile Trigger_Config_t *)&trigger->config;
     trigger->config_valid = Trigger_ConfigValid(&snapshot, trigger->frequency_hz);
     const bool enabled = command != NULL && command->enabled;
@@ -114,7 +124,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
         (!enabled || isfinite(command->target_speed_rpm));
     const Trigger_State_t previous_state = trigger->state;
 
-    // 状态转换集中于此：失联可随新反馈恢复，故障须先失能才能解除
+    /* 状态转换集中于此：失联可随新反馈恢复，故障须先失能才能解除 */
     switch (trigger->state)
     {
     case TRIGGER_RELAX:
@@ -137,7 +147,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
         break;
     }
 
-    // 停止、失联与故障入口清除控制历史，零电流保持到状态机允许运行
+    /* 停止、失联与故障入口清除控制历史，零电流保持到状态机允许运行 */
     if (trigger->state != TRIGGER_RUNNING)
     {
         trigger->target_speed_rpm = 0.0f;
@@ -148,7 +158,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
         return;
     }
 
-    // 调参和重新起控时清除历史，并按实测转速预置微分，避免恢复瞬间的微分冲击
+    /* 调参和重新起控时清除历史，并按实测转速预置微分，避免恢复瞬间的微分冲击 */
     const bool pid_changed = memcmp(&trigger->applied_speed_pid, &snapshot.speed_pid,
                                     sizeof(trigger->applied_speed_pid)) != 0;
     if (pid_changed || previous_state != TRIGGER_RUNNING)
@@ -160,7 +170,7 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
             trigger->applied_speed_pid.k * trigger->feedback.rotor_speed);
     }
 
-    // 目标与最终电流分别限幅，输出单位始终为转子侧安培
+    /* 目标与最终电流分别限幅，输出单位始终为转子侧安培 */
     trigger->target_speed_rpm = AbsClip(command->target_speed_rpm, snapshot.max_speed_rpm);
     const float current_a = PID_Calc(&trigger->speed_pid, trigger->target_speed_rpm,
                                      trigger->feedback.rotor_speed, 0.0f, period_s);
@@ -170,8 +180,8 @@ void Trigger_Control(Trigger_t *trigger, const Trigger_Command_t *command, float
 /**
  * @brief 按拨弹运行状态导出本周期电流或零
  *
- * @param[in] trigger 已调用 Init 或 Control 的拨弹实例，须非空
- * @param[out] output 拨弹电流输出，单位 A，须非空
+ * @param trigger 已初始化或已运行的拨弹实例
+ * @param output 拨弹电流输出，单位：A
  * @return 无返回值
  */
 void Trigger_DumpOutput(const Trigger_t *trigger, Trigger_Output_t *output)

@@ -1,22 +1,32 @@
+/*
+ * 故障检测模块
+ *
+ * 汇合 CAN 设备快照、底盘实例与 DR16 状态，按位域生成系统级、逐电机和链路故障快照
+ */
+
+/* Includes ----------------------------------------------------------------- */
 #include "module/fault_detect.h"
 
 #include <stddef.h>
 
+/* 编译期确认故障检测数量与 CAN 设备、底盘轮数一致 */
 _Static_assert(FAULT_DETECT_MOTOR_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "故障检测与 CAN 设备数量必须一致");
 _Static_assert(FAULT_DETECT_MOTOR_COUNT == CHASSIS_WHEEL_COUNT, "故障检测与底盘控制电机数量必须一致");
 
+/* Private function prototypes ---------------------------------------------- */
 static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_snapshot);
 static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis);
 static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_snapshot, uint32_t motor_index);
 static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_t *chassis, uint32_t motor_index);
 static void FaultDetect_UpdateMotorCounters(FaultDetect_Snapshot_t *fault_snapshot, uint32_t motor_fault_flags);
 
+/* Exported functions ------------------------------------------------------- */
 /**
  * @brief 汇总底盘 CAN 设备快照与控制实例中的故障状态
  *
- * @param[in] can_snapshot 本周期 CAN 设备快照，允许为 NULL
- * @param[in] chassis 本周期底盘控制实例，允许为 NULL
- * @param[out] fault_snapshot 待写入的故障检测快照
+ * @param can_snapshot 本周期 CAN 设备快照
+ * @param chassis 本周期底盘控制实例
+ * @param fault_snapshot 待写入的故障检测快照
  * @return 无返回值
  */
 void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
@@ -28,7 +38,7 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
         return;
     }
 
-    // 每周期从空快照重新汇总，避免历史故障在故障源恢复后残留
+    /* 每周期从空快照重新汇总，避免历史故障在故障源恢复后残留 */
     *fault_snapshot = (FaultDetect_Snapshot_t)
     {
         .evaluated = true,
@@ -36,7 +46,7 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
     fault_snapshot->system_fault_flags = FaultDetect_EvaluateCanSystem(can_snapshot) |
                                          FaultDetect_EvaluateChassisSystem(chassis);
 
-    // 逐电机合并设备、反馈、输出和控制状态，供调试器直接定位故障槽位
+    /* 逐电机合并设备、反馈、输出和控制状态，供调试器直接定位故障槽位 */
     for (uint32_t motor_index = 0U; motor_index < FAULT_DETECT_MOTOR_COUNT; motor_index++)
     {
         const uint32_t motor_fault_flags = FaultDetect_EvaluateCanMotor(can_snapshot, motor_index) |
@@ -55,9 +65,9 @@ void FaultDetect_UpdateMotorChassis(const CANDevices_Snapshot_t *can_snapshot,
 /**
  * @brief 汇总 DR16 在线状态与 UART 字节流状态
  *
- * @param[in] dr16_state DR16 接收器状态快照，允许为 NULL
- * @param[in] stream_running UART 字节流当前运行时为 true
- * @param[out] fault_snapshot 待写入的 DR16 故障检测快照
+ * @param dr16_state DR16 接收器状态快照
+ * @param stream_running UART 字节流当前运行时为 true
+ * @param fault_snapshot 待写入的 DR16 故障检测快照
  * @return 无返回值
  */
 void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
@@ -68,7 +78,7 @@ void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
         return;
     }
 
-    // 每周期从空快照重新判断，使链路和设备恢复后能够立即清除当前故障
+    /* 每周期从空快照重新判断，使链路和设备恢复后能够立即清除当前故障 */
     *fault_snapshot = (FaultDetect_DR16Snapshot_t)
     {
         .evaluated = true,
@@ -95,11 +105,12 @@ void FaultDetect_UpdateDR16(const DR16_State_t *dr16_state, bool stream_running,
     fault_snapshot->has_fault = fault_snapshot->fault_flags != FAULT_DETECT_DR16_NONE;
 }
 
+/* Private functions -------------------------------------------------------- */
 /**
  * @brief 汇总 CAN 设备集合的系统级故障位
  *
- * @param[in] can_snapshot 本周期 CAN 设备快照，允许为 NULL
- * @return 系统级 CAN 故障位
+ * @param can_snapshot 本周期 CAN 设备快照
+ * @return uint32_t 系统级 CAN 故障位
  */
 static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_snapshot)
 {
@@ -131,8 +142,8 @@ static uint32_t FaultDetect_EvaluateCanSystem(const CANDevices_Snapshot_t *can_s
 /**
  * @brief 汇总底盘速度控制的系统级故障位
  *
- * @param[in] chassis 本周期底盘控制实例，允许为 NULL
- * @return 系统级底盘控制故障位
+ * @param chassis 本周期底盘控制实例
+ * @return uint32_t 系统级底盘控制故障位
  */
 static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis)
 {
@@ -152,6 +163,7 @@ static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis)
     }
     for (uint32_t i = 0U; i < CHASSIS_WHEEL_COUNT; i++)
     {
+        /* 待机模式允许轮子离线，非待机时任一离线即记控制故障 */
         if (chassis->mode != CHASSIS_MODE_RELAX && chassis->wheel[i].state == CHASSIS_WHEEL_OFFLINE)
         {
             fault_flags |= FAULT_DETECT_SYSTEM_CHASSIS_CONTROL;
@@ -163,9 +175,9 @@ static uint32_t FaultDetect_EvaluateChassisSystem(const Chassis_t *chassis)
 /**
  * @brief 汇总单路 CAN 设备、反馈和输出故障位
  *
- * @param[in] can_snapshot 本周期 CAN 设备快照，允许为 NULL
- * @param[in] motor_index 电机索引，范围 0~3
- * @return 单电机 CAN 相关故障位
+ * @param can_snapshot 本周期 CAN 设备快照
+ * @param motor_index 电机索引
+ * @return uint32_t 单电机 CAN 相关故障位
  */
 static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_snapshot, uint32_t motor_index)
 {
@@ -201,9 +213,9 @@ static uint32_t FaultDetect_EvaluateCanMotor(const CANDevices_Snapshot_t *can_sn
 /**
  * @brief 汇总单路底盘速度控制故障位
  *
- * @param[in] chassis 本周期底盘控制实例，允许为 NULL
- * @param[in] motor_index 电机索引，范围 0~3
- * @return 单电机控制相关故障位
+ * @param chassis 本周期底盘控制实例
+ * @param motor_index 电机索引
+ * @return uint32_t 单电机控制相关故障位
  */
 static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_t *chassis, uint32_t motor_index)
 {
@@ -231,8 +243,8 @@ static uint32_t FaultDetect_EvaluateChassisMotor(const Chassis_t *chassis, uint3
 /**
  * @brief 根据单电机故障位更新故障计数
  *
- * @param[in,out] fault_snapshot 待更新的故障检测快照
- * @param[in] motor_fault_flags 单电机故障位
+ * @param fault_snapshot 待更新的故障检测快照
+ * @param motor_fault_flags 单电机故障位
  * @return 无返回值
  */
 static void FaultDetect_UpdateMotorCounters(FaultDetect_Snapshot_t *fault_snapshot, uint32_t motor_fault_flags)

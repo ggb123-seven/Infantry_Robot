@@ -1,3 +1,10 @@
+/*
+ * 底盘任务
+ *
+ * 每周期消费 CAN 反馈与遥控命令，计算四轮运动并输出电流
+ * 同时发布底盘在线状态给云台，并汇总设备与控制故障
+ */
+
 #include "task/motor_chassis.h"
 
 #include "bsp/time.h"
@@ -11,49 +18,50 @@
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
 
-// 调试观测入口，字段职责见头文件；运动请求每周期由 DR16 生成
+/* 调试观测入口，字段职责见头文件；运动请求每周期由 DR16 生成 */
 Chassis_t chassis;
 Chassis_Command_t chassis_command;
 FaultDetect_Snapshot_t fault_detect_snapshot;
 
 /*
- * 架空测速的异步调试输入，每周期读取一次，不由任务回写：
- * - chassis_debug_speed_enabled：启动为零，仅值为 1 时在遥控有效自旋档接管速度
- * - chassis_debug_speed_rpm：四轮同向输出轴转速，单位 rpm，启动为零
- * - 测试时先写速度再使能，结束先关闭使能；有限性和速度上限由既有模块入口处理
+ * 架空测速的异步调试输入，每周期读取一次，不由任务回写
+ * 测试时先写速度再使能，结束先关闭使能
+ * 有限性和速度上限由既有模块入口处理
  */
 volatile uint32_t chassis_debug_speed_enabled = 0U;
 volatile float chassis_debug_speed_rpm = 0.0f;
 
 /*
  * 底盘任务私有状态：
- * - can_feedback_cache：本周期从反馈邮箱取得的 CAN 快照，读取失败时不使用缓存
- * - dr16_state_cache：最近一次从 DR16 邮箱取得的状态，按完整微秒时间检查时效
- * - dr16_state_cache_valid：至少取得过一帧 DR16 状态时为 true
+ * can_feedback_cache 为本周期 CAN 快照，读取失败时不使用缓存
+ * dr16_state_cache 为最近一帧遥控状态，按完整微秒时间检查时效
+ * dr16_state_cache_valid 表示至少取得过一帧遥控状态
  */
 static CANDevices_Snapshot_t can_feedback_cache;
 static DR16_State_t dr16_state_cache;
 static bool dr16_state_cache_valid;
-// yaw 缓存由底盘任务独占，源时间不因重复读取而刷新
+/* yaw 缓存由底盘任务独占，源时间不因重复读取而刷新 */
 static MOTOR_RM_Feedback_t yaw_feedback_cache;
 static bool yaw_feedback_received;
 
+/* Private function --------------------------------------------------------- */
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
 static bool MotorChassis_PublishState(void);
 
+/* Exported functions ------------------------------------------------------- */
 /**
  * @brief 初始化底盘模块并周期执行反馈读取、控制计算和电流发布
  *
- * @param[in] argument 任务参数，本任务不使用
- * @return 本任务不会返回
+ * @param argument 任务参数，本任务不使用
+ * @return 无返回值
  */
 void Task_motor_chassis(void *argument)
 {
     (void)argument;
 
-    // 固定节拍约束在编译期检查，此处直接按配置建立控制周期
+    /* 固定节拍约束在编译期检查，此处直接按配置建立控制周期 */
     const uint32_t tick_frequency = osKernelGetTickFreq();
     const uint32_t delay_tick = tick_frequency / MOTOR_CHASSIS_FREQ;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
@@ -63,21 +71,21 @@ void Task_motor_chassis(void *argument)
         FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
     }
 
-    // 首周期使用一个名义间隔，后续周期按实际节拍差计算，并支持无符号节拍回绕
+    /* 首周期使用一个名义间隔，后续周期按实际节拍差计算，并支持无符号节拍回绕 */
     uint32_t tick = osKernelGetTickCount();
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
-        // 获取本周期节拍，计算实际控制间隔
+        /* 获取本周期节拍，计算实际控制间隔 */
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
 
-        // 消费最新 CAN 快照，没有新快照时由模块将四轮反馈标记为无效
+        /* 消费最新 CAN 快照，没有新快照时由模块将四轮反馈标记为无效 */
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
         Chassis_UpdateFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL);
 
-        // 独立消费 yaw 最新帧，空邮箱沿用源时间，队列错误撤销缓存
+        /* 独立消费 yaw 最新帧，空邮箱沿用源时间，队列错误撤销缓存 */
         MOTOR_RM_Feedback_t yaw_feedback;
         const osStatus_t yaw_status = osMessageQueueGet(task_runtime.msgq.chassis_yaw_feedback,
                                                         &yaw_feedback, NULL, 0U);
@@ -91,13 +99,13 @@ void Task_motor_chassis(void *argument)
             yaw_feedback_received = false;
         }
 
-        // 遥控先决定运行许可，邮箱为空时保留缓存并持续检查 100 ms 时效
+        /* 遥控先决定运行许可，邮箱为空时保留缓存并持续检查 100 ms 时效 */
         MotorChassis_ReadLatestDR16();
-        // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
+        /* 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间 */
         const uint64_t remote_time_us = BSP_TIME_Get();
         Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
 
-        // 仅接管已获遥控许可的自旋请求，清除平移分量以单独验证四轮速度前馈
+        /* 仅接管已获遥控许可的自旋请求，清除平移分量以单独验证四轮速度前馈 */
         const uint32_t debug_enabled = chassis_debug_speed_enabled;
         const float debug_speed_rpm = chassis_debug_speed_rpm;
         if (debug_enabled == 1U && chassis_command.mode == CHASSIS_MODE_SPIN)
@@ -108,11 +116,11 @@ void Task_motor_chassis(void *argument)
             chassis_command.wheel_speed_scale_rpm = fabsf(debug_speed_rpm);
         }
 
-        // 反馈边界用已标定零点更新机械观测，跟随计算和坐标转换统一交给控制入口
+        /* 反馈边界用已标定零点更新机械观测，跟随计算和坐标转换统一交给控制入口 */
         Chassis_UpdateGimbalFeedback(&chassis, yaw_feedback_received ? &yaw_feedback_cache : NULL,
                                        remote_time_us, gimbal_config.yaw.zero_encoder_deg, gimbal_config.yaw.reversed);
 
-        // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
+        /* 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流 */
         CANDevices_Command_t output =
         {
             .sequence = feedback_received ? can_feedback_cache.sequence : 0U,
@@ -121,32 +129,33 @@ void Task_motor_chassis(void *argument)
         Chassis_DumpOutput(&chassis, &output);
         if (!MotorChassis_PublishCommand(&output))
         {
-            // 发布失败时 CAN 任务空邮箱归零，本地同步复位，避免未执行电流期间积累控制历史
+            /* 发布失败时 CAN 任务空邮箱归零，本地同步复位，避免未执行电流期间积累控制历史 */
             Chassis_Control(&chassis, NULL, period_s);
         }
 
-        // 将底盘在线与已采纳的自旋标志合并发布，云台不读取跨任务裸全局变量
+        /* 将底盘在线与已采纳的自旋标志合并发布，云台不读取跨任务裸全局变量 */
         MotorChassis_PublishState();
 
-        // 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源
+        /* 汇总本周期设备与控制诊断，不复用缺失 CAN 快照的历史故障源 */
         FaultDetect_UpdateMotorChassis(feedback_received ? &can_feedback_cache : NULL, &chassis,
                                        &fault_detect_snapshot);
 
-        // 错过节拍时跳过补算，防止追赶循环连续发布同一时刻的控制结果
+        /* 错过节拍时跳过补算，防止追赶循环连续发布同一时刻的控制结果 */
         if ((uint32_t)(now_tick - tick) >= delay_tick)
         {
             tick = now_tick;
         }
         tick += delay_tick;
-        // 等待绝对周期边界，保持底盘控制的发布节拍
+        /* 等待绝对周期边界，保持底盘控制的发布节拍 */
         osDelayUntil(tick);
     }
 }
 
+/* Private function --------------------------------------------------------- */
 /**
  * @brief 从 DR16 最新状态邮箱取得一帧并更新底盘本地缓存
  *
- * @return 取得新状态时返回 true，否则返回 false
+ * @return bool 取得新状态时返回 true，否则返回 false
  */
 static bool MotorChassis_ReadLatestDR16(void)
 {
@@ -164,7 +173,7 @@ static bool MotorChassis_ReadLatestDR16(void)
 /**
  * @brief 从容量为 1 的反馈邮箱读取最新 CAN 设备快照
  *
- * @return 成功取得新快照时返回 true，否则返回 false
+ * @return bool 成功取得新快照时返回 true，否则返回 false
  */
 static bool MotorChassis_ReadLatestFeedback(void)
 {
@@ -174,12 +183,12 @@ static bool MotorChassis_ReadLatestFeedback(void)
 /**
  * @brief 向容量为 1 的命令邮箱发布最新底盘电流
  *
- * @param[in] command 已由底盘模块填写的四轮电流和任务填写的序号
- * @return 邮箱重置并写入成功时返回 true，否则返回 false
+ * @param command 已由底盘模块填写的四轮电流和任务填写的序号
+ * @return bool 邮箱重置并写入成功时返回 true，否则返回 false
  */
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 {
-    // 最新值邮箱不保存历史电流，重置或写入失败时由 CAN 任务默认零命令兜底
+    /* 最新值邮箱不保存历史电流，重置或写入失败时由 CAN 任务默认零命令兜底 */
     return osMessageQueueReset(task_runtime.msgq.can_command) == osOK &&
            osMessageQueuePut(task_runtime.msgq.can_command, command, 0U, 0U) == osOK;
 }
@@ -187,11 +196,11 @@ static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command)
 /**
  * @brief 发布仅供云台消费的底盘在线及小陀螺状态
  *
- * @return 邮箱覆盖写入成功时为真，失败时云台按邮箱为空保留上次状态
+ * @return bool 邮箱覆盖写入成功时返回 true，失败时云台按邮箱为空保留上次状态
  */
 static bool MotorChassis_PublishState(void)
 {
-    // 命令已由命令层校验，当前非零旋转分量只来自左拨杆下位的小陀螺映射
+    /* 命令已由命令层校验，当前非零旋转分量只来自左拨杆下位的小陀螺映射 */
     const bool spinning = chassis.mode == CHASSIS_MODE_SPIN && chassis_command.move.wz != 0.0f;
     const Gimbal_ChassisState_t state = !Chassis_HasOnlineWheel(&chassis) ? GIMBAL_CHASSIS_OFFLINE :
         (spinning ? GIMBAL_CHASSIS_SPINNING : GIMBAL_CHASSIS_ONLINE);

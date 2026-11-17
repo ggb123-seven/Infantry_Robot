@@ -1,28 +1,26 @@
 /*
-   Modified from
-   https://github.com/PX4/Firmware/blob/master/src/lib/pid/pid.cpp
+ * PID 控制器实现
+ *
+ * 移植自 PX4 Firmware pid，k/p/i/d 可组合作并行式或标准式，D 项先经二阶低通
+ * 参考：https://github.com/PX4/Firmware/blob/master/src/lib/pid/pid.cpp
+ */
 
-   参考资料：
-   https://github.com/PX4/Firmware/issues/12362
-   https://dev.px4.io/master/en/flight_stack/controller_diagrams.html
-   https://docs.px4.io/master/en/config_mc/pid_tuning_guide_multicopter.html#standard_form
-   https://www.controleng.com/articles/not-all-pid-controllers-are-the-same/
-   https://en.wikipedia.org/wiki/PID_controller
-   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
-*/
-
+/* Includes ----------------------------------------------------------------- */
 #include "pid.h"
 
+/* Private define ----------------------------------------------------------- */
+/* 积分增益与输出限幅低于该阈值时视为未启用 */
 #define SIGMA 0.000001f
 
+/* Exported functions ------------------------------------------------------- */
 /**
- * @brief 初始化PID
+ * @brief 初始化 PID，校验参数并复位内部状态
  *
- * @param pid PID结构体
- * @param mode PID模式
- * @param sample_freq 采样频率
- * @param param PID参数
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @param mode 微分项计算方式
+ * @param sample_freq 采样频率，单位：Hz
+ * @param param PID 参数，须在实例生命周期内有效
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_Init(KPID_t *pid, KPID_Mode_t mode, float sample_freq,
                 const KPID_Params_t *param) {
@@ -49,13 +47,13 @@ int8_t PID_Init(KPID_t *pid, KPID_Mode_t mode, float sample_freq,
 }
 
 /**
- * @brief PID计算
+ * @brief 执行一次 PID 计算
  *
- * @param pid PID结构体
+ * @param pid PID 实例
  * @param sp 设定值
  * @param fb 反馈值
  * @param fb_dot 反馈值微分
- * @param dt 间隔时间
+ * @param dt 本次调用间隔，单位：s
  * @return float 计算的输出
  */
 float PID_Calc(KPID_t *pid, float sp, float fb, float fb_dot, float dt) {
@@ -63,21 +61,20 @@ float PID_Calc(KPID_t *pid, float sp, float fb, float fb_dot, float dt) {
     return pid->last.out;
   }
 
-  /* 计算误差值 */
+  /* 计算循环误差 */
   const float err = CircleError(sp, fb, pid->param->range);
 
-  /* 计算P项 */
+  /* 计算 P 项 */
   const float k_err = err * pid->param->k;
 
-  /* 计算D项 */
+  /* 计算 D 项 */
   const float k_fb = pid->param->k * fb;
   const float filtered_k_fb = LowPassFilter2p_Apply(&(pid->dfilter), k_fb);
 
   float d;
   switch (pid->mode) {
     case KPID_MODE_CALC_D:
-      /* 通过fb计算D，避免了由于sp变化导致err突变的问题 */
-      /* 当sp不变时，err的微分等于负的fb的微分 */
+      /* 用反馈值微分代替误差微分，避免设定值突变引入微分冲击 */
       d = (filtered_k_fb - pid->last.k_fb) / fmaxf(dt, pid->dt_min);
       break;
 
@@ -94,28 +91,27 @@ float PID_Calc(KPID_t *pid, float sp, float fb, float fb_dot, float dt) {
 
   if (!isfinite(d)) d = 0.0f;
 
-  /* 计算PD输出 */
+  /* 合成 PD 输出 */
   float output = (k_err * pid->param->p) - (d * pid->param->d);
 
-  /* 计算I项 */
+  /* 计算 I 项 */
   const float i = pid->i + (k_err * dt);
   const float i_out = i * pid->param->i;
-  
+
   if (pid->param->i > SIGMA) {
-    /* 检查是否饱和 */
+    /* 输出与积分均在限幅内才接受新积分，实现抗饱和 */
     if (isfinite(i)) {
       if ((fabsf(output + i_out) <= pid->param->out_limit) &&
           (fabsf(i) <= pid->param->i_limit)) {
-        /* 未饱和，使用新积分 */
         pid->i = i;
       }
     }
   }
-  
-  /* 计算PID输出 */
+
+  /* 合成 PID 输出 */
   output += i_out;
- 
-  /* 限制输出 */
+
+  /* 输出限幅 */
   if (isfinite(output)) {
     if (pid->param->out_limit > SIGMA) {
       output = AbsClip(output, pid->param->out_limit);
@@ -126,10 +122,10 @@ float PID_Calc(KPID_t *pid, float sp, float fb, float fb_dot, float dt) {
 }
 
 /**
- * @brief 重置微分项
+ * @brief 只重置积分项
  *
- * @param pid PID结构体
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_ResetIntegral(KPID_t *pid) {
   if (pid == NULL) return -1;
@@ -140,10 +136,10 @@ int8_t PID_ResetIntegral(KPID_t *pid) {
 }
 
 /**
- * @brief 重置PID
+ * @brief 重置 PID 全部内部状态
  *
- * @param pid PID结构体
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_Reset(KPID_t *pid) {
   if (pid == NULL) return -1;

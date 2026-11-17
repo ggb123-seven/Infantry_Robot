@@ -1,17 +1,21 @@
 /*
-  各类滤波器。
-*/
+ * 二阶低通与带阻滤波器实现
+ *
+ * 系数在初始化时按采样频率与截止频率一次算出，Apply 只做两次乘加和延迟单元移位
+ */
 
+/* Includes ----------------------------------------------------------------- */
 #include "filter.h"
 
 #include "user_math.h"
 
+/* Exported functions ------------------------------------------------------- */
 /**
- * @brief 初始化滤波器
+ * @brief 初始化二阶低通滤波器系数
  *
- * @param f 滤波器
- * @param sample_freq 采样频率
- * @param cutoff_freq 截止频率
+ * @param f 滤波器实例
+ * @param sample_freq 采样频率，单位：Hz
+ * @param cutoff_freq 截止频率，单位：Hz
  */
 void LowPassFilter2p_Init(LowPassFilter2p_t *f, float sample_freq,
                           float cutoff_freq) {
@@ -23,7 +27,7 @@ void LowPassFilter2p_Init(LowPassFilter2p_t *f, float sample_freq,
   f->delay_element_2 = 0.0f;
 
   if (f->cutoff_freq <= 0.0f) {
-    /* no filtering */
+    /* 截止频率非正，退化为直通 */
     f->b0 = 1.0f;
     f->b1 = 0.0f;
     f->b2 = 0.0f;
@@ -46,21 +50,21 @@ void LowPassFilter2p_Init(LowPassFilter2p_t *f, float sample_freq,
 }
 
 /**
- * @brief 施加一次滤波计算
+ * @brief 对单个采样值执行一次低通滤波
  *
- * @param f 滤波器
- * @param sample 采样的值
+ * @param f 滤波器实例
+ * @param sample 输入采样值
  * @return float 滤波后的值
  */
 float LowPassFilter2p_Apply(LowPassFilter2p_t *f, float sample) {
   if (f == NULL) return 0.0f;
 
-  /* do the filtering */
+  /* 按直接 II 型计算本拍中间状态与输出 */
   float delay_element_0 =
       sample - f->delay_element_1 * f->a1 - f->delay_element_2 * f->a2;
 
   if (isinf(delay_element_0)) {
-    /* don't allow bad values to propagate via the filter */
+    /* 异常值不进入反馈链，用原始采样代替 */
     delay_element_0 = sample;
   }
 
@@ -70,16 +74,16 @@ float LowPassFilter2p_Apply(LowPassFilter2p_t *f, float sample) {
   f->delay_element_2 = f->delay_element_1;
   f->delay_element_1 = delay_element_0;
 
-  /* return the value. Should be no need to check limits */
+  /* 输出由输入与系数决定，此处不再限幅 */
   return output;
 }
 
 /**
- * @brief 重置滤波器
+ * @brief 按当前采样值重置低通滤波器延迟单元
  *
- * @param f 滤波器
- * @param sample 采样的值
- * @return float 滤波后的值
+ * @param f 滤波器实例
+ * @param sample 用于重置的采样值
+ * @return float 重置后对该采样值的滤波输出
  */
 float LowPassFilter2p_Reset(LowPassFilter2p_t *f, float sample) {
   if (f == NULL) return 0.0f;
@@ -99,12 +103,12 @@ float LowPassFilter2p_Reset(LowPassFilter2p_t *f, float sample) {
 }
 
 /**
- * @brief 初始化滤波器
+ * @brief 初始化带阻滤波器系数
  *
- * @param f 滤波器
- * @param sample_freq 采样频率
- * @param notch_freq 中心频率
- * @param bandwidth 带宽
+ * @param f 滤波器实例
+ * @param sample_freq 采样频率，单位：Hz
+ * @param notch_freq 中心频率，单位：Hz
+ * @param bandwidth 带宽，单位：Hz
  */
 void NotchFilter_Init(NotchFilter_t *f, float sample_freq, float notch_freq,
                       float bandwidth) {
@@ -117,7 +121,7 @@ void NotchFilter_Init(NotchFilter_t *f, float sample_freq, float notch_freq,
   f->delay_element_2 = 0.0f;
 
   if (notch_freq <= 0.0f) {
-    /* no filtering */
+    /* 中心频率非正，退化为直通 */
     f->b0 = 1.0f;
     f->b1 = 0.0f;
     f->b2 = 0.0f;
@@ -141,16 +145,16 @@ void NotchFilter_Init(NotchFilter_t *f, float sample_freq, float notch_freq,
 }
 
 /**
- * @brief 施加一次滤波计算
+ * @brief 对单个采样值执行一次带阻滤波
  *
- * @param f 滤波器
- * @param sample 采样的值
+ * @param f 滤波器实例
+ * @param sample 输入采样值
  * @return float 滤波后的值
  */
 inline float NotchFilter_Apply(NotchFilter_t *f, float sample) {
   if (f == NULL) return 0.0f;
 
-  /* Direct Form II implementation */
+  /* 直接 II 型实现，延迟单元保存中间状态 */
   const float delay_element_0 =
       sample - f->delay_element_1 * f->a1 - f->delay_element_2 * f->a2;
   const float output = delay_element_0 * f->b0 + f->delay_element_1 * f->b1 +
@@ -163,11 +167,11 @@ inline float NotchFilter_Apply(NotchFilter_t *f, float sample) {
 }
 
 /**
- * @brief 重置滤波器
+ * @brief 按当前采样值重置带阻滤波器延迟单元
  *
- * @param f 滤波器
- * @param sample 采样的值
- * @return float 滤波后的值
+ * @param f 滤波器实例
+ * @param sample 用于重置的采样值
+ * @return float 重置后对该采样值的滤波输出
  */
 float NotchFilter_Reset(NotchFilter_t *f, float sample) {
   if (f == NULL) return 0.0f;

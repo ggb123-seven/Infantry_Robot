@@ -1,7 +1,9 @@
 /*
-  Modified from
-  https://github.com/PX4/Firmware/blob/master/src/lib/pid/pid.h
-*/
+ * PID 控制器接口
+ *
+ * 移植自 PX4 Firmware pid，支持并行式与标准式整定、D 项低通和循环误差处理
+ * 上游：https://github.com/PX4/Firmware/blob/master/src/lib/pid/pid.h
+ */
 
 #pragma once
 
@@ -9,6 +11,7 @@
 extern "C" {
 #endif
 
+/* Includes ----------------------------------------------------------------- */
 #include <stdint.h>
 
 #include "filter.h"
@@ -22,79 +25,81 @@ extern "C" {
 
 /* USER DEFINE END */
 
-/* PID模式 */
+/* Exported types ----------------------------------------------------------- */
+/* PID 微分项计算方式：CALC_D 忽略 fb_dot，SET_D 直接使用调用方微分值 */
 typedef enum {
-  KPID_MODE_NO_D = 0, /* 不使用微分项，PI控制器 */
-  KPID_MODE_CALC_D, /* 根据反馈的值计算离散微分，忽略PID_Calc中的fb_dot */
-  KPID_MODE_SET_D /* 直接提供微分值，PID_Calc中的fb_dot将被使用，(Gyros) */
+  KPID_MODE_NO_D = 0, /* 无微分项，即 PI 控制 */
+  KPID_MODE_CALC_D,   /* 由反馈值离散微分 */
+  KPID_MODE_SET_D     /* 使用调用方微分值 */
 } KPID_Mode_t;
 
-/* PID参数 */
+/* PID 参数，k 取 1 为并行式，p 取 1 为标准式 */
 typedef struct {
-  float k;             /* 控制器增益，设置为1用于并行模式 */
-  float p;             /* 比例项增益，设置为1用于标准形式 */
+  float k;             /* 控制器增益 */
+  float p;             /* 比例项增益 */
   float i;             /* 积分项增益 */
   float d;             /* 微分项增益 */
-  float i_limit;       /* 积分项上限 */
-  float out_limit;     /* 输出绝对值限制 */
-  float d_cutoff_freq; /* D项低通截止频率 */
-  float range;         /* 计算循环误差时使用，大于0时启用 */
+  float i_limit;       /* 积分项限幅 */
+  float out_limit;     /* 输出限幅 */
+  float d_cutoff_freq; /* 截止频率，单位：Hz */
+  float range;         /* 循环误差范围 */
 } KPID_Params_t;
 
-/* PID主结构体 */
+/* PID 主结构体 */
 typedef struct {
-  KPID_Mode_t mode;
-  const KPID_Params_t *param;
+  KPID_Mode_t mode;           /* 微分项计算方式 */
+  const KPID_Params_t *param; /* 指向控制参数 */
 
-  float dt_min; /* 最小PID_Calc调用间隔 */
-  float i;      /* 积分 */
+  float dt_min; /* 最短调用间隔，单位：s */
+  float i;      /* 积分累计值 */
 
   struct {
     float err;  /* 上次误差 */
-    float k_fb; /* 上次反馈值 */
+    float k_fb; /* 上次 D 项输入 */
     float out;  /* 上次输出 */
   } last;
 
-  LowPassFilter2p_t dfilter; /* D项低通滤波器 */
+  LowPassFilter2p_t dfilter; /* D 项低通滤波器 */
 } KPID_t;
 
+/* Exported functions ------------------------------------------------------- */
 /**
- * @brief 初始化PID
+ * @brief 初始化 PID，校验参数并复位内部状态
  *
- * @param pid PID结构体
- * @param mode PID模式
- * @param sample_freq 采样频率
- * @param param PID参数
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @param mode 微分项计算方式
+ * @param sample_freq 采样频率，单位：Hz
+ * @param param PID 参数，须在实例生命周期内有效
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_Init(KPID_t *pid, KPID_Mode_t mode, float sample_freq,
                 const KPID_Params_t *param);
 
 /**
- * @brief PID计算
+ * @brief 执行一次 PID 计算
  *
- * @param pid PID结构体
+ * @param pid PID 实例
  * @param sp 设定值
  * @param fb 反馈值
  * @param fb_dot 反馈值微分
- * @param dt 间隔时间
+ * @param dt 本次调用间隔，单位：s
  * @return float 计算的输出
  */
 float PID_Calc(KPID_t *pid, float sp, float fb, float fb_dot, float dt);
 
 /**
- * @brief 重置微分项
+ * @brief 只重置积分项
  *
- * @param pid PID结构体
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_ResetIntegral(KPID_t *pid);
 
 /**
- * @brief 重置PID
+ * @brief 重置 PID 全部内部状态
  *
- * @param pid PID结构体
- * @return int8_t 0对应没有错误
+ * @param pid PID 实例
+ * @return int8_t 0 表示成功，负值表示失败
  */
 int8_t PID_Reset(KPID_t *pid);
 

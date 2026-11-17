@@ -1,18 +1,27 @@
+/*
+ * 底盘运动学混合器实现
+ *
+ * 先按布局把 vx、vy、wz 分解为各轮相对转速，再按最大绝对值等比缩放到 scale_rpm
+ */
+
+/* Includes ----------------------------------------------------------------- */
 #include "component/mixer.h"
 
 #include <math.h>
 #include <stddef.h>
 
+/* Private function --------------------------------------------------------- */
 static void Mixer_ResetOutput(float *output, uint32_t output_count);
 static bool Mixer_IsModeValid(Mixer_Mode_t mode);
 static uint32_t Mixer_GetOutputCount(Mixer_Mode_t mode);
 
+/* Exported functions ------------------------------------------------------- */
 /**
  * @brief 初始化底盘运动学混合器
  *
- * @param[out] mixer 待初始化的混合器上下文
- * @param[in] mode 底盘机械布局
- * @return 成功返回 MIXER_OK，失败返回对应状态码
+ * @param mixer 待初始化的混合器上下文
+ * @param mode 底盘机械布局
+ * @return int8_t 成功返回 MIXER_OK，失败返回对应状态码
  */
 int8_t Mixer_Init(Mixer_t *mixer, Mixer_Mode_t mode)
 {
@@ -32,12 +41,15 @@ int8_t Mixer_Init(Mixer_t *mixer, Mixer_Mode_t mode)
 /**
  * @brief 将归一化底盘运动向量转换为各轮输出轴目标转速
  *
- * @param[in] mixer 已初始化的混合器上下文
- * @param[in] move_vector 归一化底盘运动向量，各分量必须为有限值
- * @param[out] output_rpm 各轮输出轴目标转速数组，单位 rpm
- * @param[in] output_count 输出数组元素数量，必须与当前布局的轮数一致
- * @param[in] scale_rpm 归一化输出对应的转速尺度，单位 rpm，必须为有限非负值
- * @return 成功返回 MIXER_OK，失败返回对应状态码并清零可访问输出
+ * 输入采用前向为正的 vx、左向为正的 vy 和俯视逆时针为正的 wz，
+ * 输出超过单位范围时按最大绝对值整体缩放，再乘以目标转速尺度
+ *
+ * @param mixer 已初始化的混合器上下文
+ * @param move_vector 归一化底盘运动向量
+ * @param output_rpm 各轮输出轴目标转速数组，单位：rpm
+ * @param output_count 输出数组元素数量，须与当前布局的轮数一致
+ * @param scale_rpm 归一化输出对应的转速尺度，单位：rpm
+ * @return int8_t 成功返回 MIXER_OK，失败返回对应状态码并清零可访问输出
  */
 int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float *output_rpm,
                    uint32_t output_count, float scale_rpm)
@@ -47,7 +59,7 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
         return MIXER_NULL_ERROR;
     }
 
-    // 先建立整组零输出，保证后续任一校验或计算失败时保持安全状态
+    /* 先清零输出，后续任一校验或计算失败都保持安全状态 */
     Mixer_ResetOutput(output_rpm, output_count);
     if (mixer == NULL || move_vector == NULL)
     {
@@ -67,7 +79,7 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
         return MIXER_INVALID_VALUE;
     }
 
-    // 按底盘机械布局计算相对轮速，数组顺序与对应布局约定保持一致
+    /* 按布局计算相对轮速，数组顺序与布局约定一致 */
     switch (mixer->mode)
     {
         case MIXER_MECANUM:
@@ -90,7 +102,7 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
             break;
 
         case MIXER_OMNICROSS:
-            // 轮序依次为左前、左后、右后、右前，正转动为俯视逆时针
+            /* 轮序依次为左前、左后、右后、右前，正转动为俯视逆时针 */
             output_rpm[0] = -move_vector->vx + move_vector->vy + move_vector->wz;
             output_rpm[1] = -move_vector->vx - move_vector->vy + move_vector->wz;
             output_rpm[2] = move_vector->vx - move_vector->vy + move_vector->wz;
@@ -108,7 +120,7 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
             return MIXER_MODE_ERROR;
     }
 
-    // 拒绝溢出结果并确定四轮共同使用的缩放比例
+    /* 拒绝溢出结果并求取整组缩放比例 */
     float maximum_absolute_output = 0.0F;
     for (uint32_t output_index = 0U; output_index < output_count; output_index++)
     {
@@ -124,7 +136,7 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
         }
     }
 
-    // 超过单位范围时整体等比例缩放，避免改变平动与转动的合成方向
+    /* 超过单位范围时整体等比缩放，保持平动与转动的合成方向 */
     const float normalization = maximum_absolute_output > 1.0F ? maximum_absolute_output : 1.0F;
     for (uint32_t output_index = 0U; output_index < output_count; output_index++)
     {
@@ -141,8 +153,8 @@ int8_t Mixer_Apply(const Mixer_t *mixer, const MoveVector_t *move_vector, float 
 /**
  * @brief 清零调用方声明可访问的混合器输出
  *
- * @param[out] output 待清零的输出数组
- * @param[in] output_count 调用方声明的数组元素数量
+ * @param output 待清零的输出数组
+ * @param output_count 调用方声明的数组元素数量
  * @return 无返回值
  */
 static void Mixer_ResetOutput(float *output, uint32_t output_count)
@@ -162,8 +174,8 @@ static void Mixer_ResetOutput(float *output, uint32_t output_count)
 /**
  * @brief 检查混合器模式是否属于公开枚举范围
  *
- * @param[in] mode 待检查的混合器模式
- * @return 模式合法时返回 true，否则返回 false
+ * @param mode 待检查的混合器模式
+ * @return bool 模式合法时返回 true，否则返回 false
  */
 static bool Mixer_IsModeValid(Mixer_Mode_t mode)
 {
@@ -173,8 +185,8 @@ static bool Mixer_IsModeValid(Mixer_Mode_t mode)
 /**
  * @brief 获取指定底盘布局的输出数量
  *
- * @param[in] mode 混合器模式
- * @return 对应布局的输出数量，模式非法时返回 0
+ * @param mode 混合器模式
+ * @return uint32_t 对应布局的输出数量，模式非法时返回 0
  */
 static uint32_t Mixer_GetOutputCount(Mixer_Mode_t mode)
 {

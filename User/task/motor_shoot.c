@@ -1,3 +1,10 @@
+/*
+ * 双摩擦轮任务
+ *
+ * 消费两路电机反馈与命令邮箱，推进速度闭环后发布两轮电流
+ * 命令持续超时后清除命令并撤驱，输出失败时同步复位控制历史
+ */
+
 #include "task/motor_shoot.h"
 
 #include "bsp/time.h"
@@ -7,42 +14,40 @@
 #include <stddef.h>
 #include <string.h>
 
-// 命令邮箱容忍的最长无新命令时间，单位微秒，与反馈超时口径一致，覆盖两任务节拍抖动造成的单周期落空
+/* Private define ----------------------------------------------------------- */
+/* 命令邮箱容忍的最长无新命令时间，单位微秒，与反馈超时口径一致 */
 #define SHOOT_COMMAND_TIMEOUT_US (100000U)
 
-/*
- * 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱
- * shoot.config.speed_pid 为复制 shoot_config 的可调转子 rpm 速度参数
- * shoot_speed_feedforward_gain_a_per_rpm 为既有目标差分前馈入口，单位 A/rpm
- * shoot_command 为本周期新命令，安全档立即失能撤驱，备弹和开火档保持运行
- */
+/* Private variables -------------------------------------------------------- */
+/* 双摩擦轮实例及最近消费的命令由本任务独占，跨任务交互只经过邮箱 */
 Shoot_t shoot;
 Shoot_Command_t shoot_command;
 static uint64_t command_time_us;
 
+/* Exported functions ------------------------------------------------------- */
 /**
  * @brief 周期编排双摩擦轮反馈、速度控制与电流邮箱发布
  *
- * @param[in] argument 任务参数，本任务不使用
- * @return 本任务不会返回
+ * @param argument 任务参数，本任务不使用
+ * @return 无返回值
  */
 void Task_motor_shoot(void *argument)
 {
     (void)argument;
 
-    // 固定频率由编译期断言保证可表达，运行期只记录实际控制周期
+    /* 固定频率由编译期断言保证可表达，运行期只记录实际控制周期 */
     const uint32_t tick_frequency = osKernelGetTickFreq();
     const uint32_t delay_tick = tick_frequency / MOTOR_SHOOT_FREQ;
     osDelay(MOTOR_SHOOT_INIT_DELAY);
-    // 摩擦轮 PID 直接沿用 config.c 的独立默认值，模块再复制为实例内在线可调配置
+    /* 摩擦轮 PID 直接沿用 config.c 的独立默认值，模块再复制为实例内可调配置 */
     Shoot_Init(&shoot, &shoot_config, (float)MOTOR_SHOOT_FREQ);
 
-    // 首周期使用名义间隔，后续使用实际无符号节拍差
+    /* 首周期使用名义间隔，后续使用实际无符号节拍差 */
     uint32_t tick = osKernelGetTickCount();
     uint32_t previous_tick = tick - delay_tick;
     while (true)
     {
-        // 两路反馈分别消费后再取时刻，模块独立检查各轮反馈时效
+        /* 两路反馈分别消费后再取时刻，模块独立检查各轮反馈时效 */
         MOTOR_RM_Feedback_t fric1;
         MOTOR_RM_Feedback_t fric2;
         const bool received1 = osMessageQueueGet(task_runtime.msgq.shoot_fric1_feedback, &fric1, NULL, 0U) == osOK;
@@ -50,7 +55,7 @@ void Task_motor_shoot(void *argument)
         const uint64_t now_us = BSP_TIME_Get();
         Shoot_UpdateFeedback(&shoot, received1 ? &fric1 : NULL, received2 ? &fric2 : NULL, now_us);
 
-        // 只采用本周期新命令，失去命令时两轮一起失能
+        /* 只采用本周期新命令，失去命令时两轮一起失能 */
         const bool command_received =
             osMessageQueueGet(task_runtime.msgq.shoot_command, &shoot_command, NULL, 0U) == osOK;
         if (command_received)
@@ -59,7 +64,7 @@ void Task_motor_shoot(void *argument)
         }
         else
         {
-            // 邮箱落空计数供调试判断落空频率，单次落空沿用上一条命令，持续超时才失能
+            /* 邮箱落空计数供调试判断落空频率，单次落空沿用上一条命令，持续超时才失能 */
             shoot.command_miss_count++;
             if (now_us - command_time_us > SHOOT_COMMAND_TIMEOUT_US)
             {
@@ -67,7 +72,7 @@ void Task_motor_shoot(void *argument)
             }
         }
 
-        // 模块集中校验本周期输入并计算电流，失能时清除控制历史并由唯一输出闸门撤驱
+        /* 模块集中校验本周期输入并计算电流，失能时清除控制历史并由唯一输出闸门撤驱 */
         const uint32_t now_tick = osKernelGetTickCount();
         const float period_s = (float)(now_tick - previous_tick) / (float)tick_frequency;
         previous_tick = now_tick;
@@ -75,20 +80,20 @@ void Task_motor_shoot(void *argument)
         Shoot_Control(&shoot, &shoot_command, period_s);
         Shoot_DumpOutput(&shoot, &output);
 
-        // 双轮电流保持同一消息，发布失败时清除本地控制历史
+        /* 双轮电流保持同一消息，发布失败时清除本地控制历史 */
         if (osMessageQueueReset(task_runtime.msgq.shoot_output) != osOK ||
             osMessageQueuePut(task_runtime.msgq.shoot_output, &output, 0U, 0U) != osOK)
         {
             Shoot_Control(&shoot, NULL, period_s);
         }
 
-        // 延迟时跳过错过的周期，禁止连续补算历史输出
+        /* 延迟时跳过错过的周期，禁止连续补算历史输出 */
         if ((uint32_t)(now_tick - tick) >= delay_tick)
         {
             tick = now_tick;
         }
         tick += delay_tick;
-        // 等待绝对周期边界，保持与总线通信相同的运行频率
+        /* 等待绝对周期边界，保持与总线通信相同的运行频率 */
         osDelayUntil(tick);
     }
 }
