@@ -25,3 +25,14 @@
 - 拨弹任务静态栈 1024 B；本次构建 `.su` 显示 `Task_motor_trigger=192 B`、`Feeder_Control=216 B`、`Feeder_UpdateSingle=32 B`、`PID_Calc=72 B`
 - 未取得运行时栈高水位，未烧录或进行真实机构单发验收；编译与 ELF 初值检查不代表机械到位、弹丸出膛或完整运行时栈峰值已验证
 - 本次没有创建临时测试源码或可执行程序
+
+## 后续按用户要求反转进给方向
+
+- 用户随后明确要求反转拨弹电机方向，授权修改拨弹方向配置；`feeder_config.direction` 从 -1 改为 +1，同步配置表和 `feeder.h` 中的方向说明
+- 使用模块现有方向字段同时反转逐齿目标和连续进给速度，不修改 CAN2 ID7 的 `reverse=false`，避免同时反转命令和反馈映射
+- 仅提交方向相关差异，原有 yaw 摩擦补偿改动仍留在工作区；前文 direction=-1 为本次反转之前的核对记录
+- `config.c` 使用当前 ARM 编译参数添加 `-fsyntax-only -Wextra -Werror` 检查通过；Debug 配置与构建成功，ARCH/HW/SPEC 全部通过，新增源码行的 120 列及行尾空白检查通过
+- GDB 离线核对新 ELF：`feeder_remote_fire_mode=1`、`feeder_config.direction=1`、单齿角度为 +45 度、`can_devices_shoot_param[2].reverse=false`
+- 分层、控制状态机、PID 参数、RAM 配置副本、周期快照和输出闸门保持既有实现；无新增或删除的判空、isfinite、范围检查或保护性 return，无新增结构体、RTOS 对象、ISR 共享数据或临界区
+- 静态栈配置仍为 1024 B，本次构建 `.su` 中任务入口 192 B、Feeder_Control 216 B、Feeder_UpdateSingle 32 B、PID_Calc 72 B，未新增调用层级或局部变量
+- 未烧录、未写板上 RAM、未取得运行时高水位，实际拨弹方向与闭环机械响应仍未完成上板验证；本次无临时测试程序需要清理
