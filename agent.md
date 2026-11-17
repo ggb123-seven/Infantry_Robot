@@ -1,4 +1,4 @@
-﻿# 项目规则
+# 项目规则
 
 ## 用户确认约定
 
@@ -9,6 +9,15 @@
 
 - 云台任务 `motor_gimbal` 使用 3072 字节静态栈，来源于历史现场中原 1024 字节栈不足的证据；修改云台控制、姿态解算、滤波或调用链后必须重新核对栈开销
 - 栈检查至少覆盖编译器 `.su` 静态栈报告、任务属性中的 `stack_size` 和已有的运行时高水位或调试采样证据；静态构建通过不等于栈安全验收
+
+## 2026-11-17 云台业务层 gimbal.c 两轮精简
+
+- 纯重构 `User/module/gimbal.c`：HEAD 969 行 → 第一轮 912 行 → 另一会话加入 pitch 重力前馈 983 行 → 本轮 910 行；接口、结构体字段、config.c 参数、任务层与底层未改
+- 本轮压缩 11 个私有辅助函数的 Doxygen 块、前馈选择 switch 改等价 if、IMU 首帧就绪改三目、本地 relax 命令单行初始化；未新增判空/isfinite/范围检查/保护性 return
+- 主机差分回归（基线 983 行对精简版 910 行，驱动启用 pitch 重力前馈，种子 1～3 各 2 万周期 + 边界序列共 61361 行输出）逐字节一致，均 19,110,802 字节、SHA256 前缀 441fab8714d79763
+- ARM `-Wall -Wextra -Werror -fsyntax-only` 零警告；Debug 链接通过 RAM 50704 B、FLASH 132848 B；排版 0 违规；HW/SPEC PASS，ARCH 经 Bypass 单跑 0 violations
+- 已知差异：非法 `imu_state` 枚举值不再归一为 FAULT（不可达）；`frame_time_us` 哨兵理论碰撞；均未烧录、未实物验收
+- `gimbal.h` 的 `pitch_gravity_*` 字段与实现来自另一会话的未提交改动，本轮未修改其语义；证据见 docs/validation/gimbal_simplify_20261117.md
 
 ## 2026-11-11 拨弹五齿完成撤驱与未完成恢复重计
 

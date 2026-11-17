@@ -132,6 +132,13 @@ typedef struct
  *   过渡区连接零点与半宽处模型值，上限外保持边界值，不外推
  *   相对底盘目标转速近似为编码器转速加大地系目标与反馈之差，适用于底座近水平的 yaw 运动
  *   所有字段随周期快照集中校验，不影响 pitch；新增字段缺省为零，补偿保持关闭
+ * - pitch_gravity_enabled：false 时 pitch 重力前馈恒为零，缺省零初始化即为关闭
+ * - pitch_gravity_current_a：重力前馈幅值，单位 A，为负载质量、重力加速度、质心力臂与力矩常数的合并结果
+ *   范围 [0, pitch.max_current_a]，非零时按 A·cos(θ - pitch_gravity_angle_deg) + pitch_gravity_bias_a 计算
+ * - pitch_gravity_angle_deg：重力前馈相位，即重力力矩最大处的大地系俯仰角，单位度，范围 [-180, 180]
+ * - pitch_gravity_bias_a：与角度无关的常值前馈，单位 A，吸收线束与装配偏置，范围 [-max, max]
+ *   幅值与常值项绝对值之和须不大于 pitch.max_current_a
+ *   前馈角取 IMU 大地系俯仰角，不用编码器机械角；标定值先经 EmberProbe 写入 RAM 副本，是否固化由用户决定
  */
 typedef struct
 {
@@ -144,6 +151,10 @@ typedef struct
     float yaw_friction_linear_a_per_rad_s;
     float yaw_friction_quadratic_a_per_rad_s2;
     float yaw_friction_max_speed_rad_s;
+    bool pitch_gravity_enabled;
+    float pitch_gravity_current_a;
+    float pitch_gravity_angle_deg;
+    float pitch_gravity_bias_a;
 } Gimbal_Config_t;
 
 // 两轴独立选择目标来源：遥控使用增量，自瞄及调试轨迹使用绝对角度
