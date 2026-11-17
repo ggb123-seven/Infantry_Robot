@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "component/filter.h"
 #include "component/user_math.h"
 
 /* Private define ----------------------------------------------------------- */
@@ -22,6 +23,12 @@
 #define GIMBAL_IMU_MAX_RAD_S (40.0f)         /* 惯性角速度上限，单位：rad/s */
 #define GIMBAL_IMU_MAX_PITCH_DEG (89.0f)     /* 俯仰角绝对上限，单位：度 */
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)    /* 相邻帧跳变余量，单位：度 */
+
+/* 惯性角速度滤波参数：小陀螺时底盘与云台结构共振约 13.5 Hz、振动峰峰值约 0.6 g，落在云台控制环带宽之外 */
+#define GIMBAL_RATE_LPF_HZ (30.0f)           /* 大地系角速度低通截止频率，单位：Hz */
+#define GIMBAL_RATE_NOTCH_HZ (13.5f)         /* 结构共振带阻中心频率，单位：Hz */
+#define GIMBAL_RATE_NOTCH_BW_HZ (5.0f)       /* 结构共振带阻带宽，单位：Hz */
+
 #define GIMBAL_FULL_TURN_DEG (360.0f)        /* 整圈角度，单位：度 */
 #define GIMBAL_AXIS_COUNT (2U)               /* 云台轴数 */
 
@@ -78,12 +85,16 @@ typedef struct
 /* 单一云台实例的模块私有状态 */
 typedef struct
 {
-    Gimbal_Config_t control_config; /* 最近一次通过 Control 入口校验的配置快照 */
-    Gimbal_ImuFeedback_t imu;       /* 最近一帧有效或等待校验的惯性反馈缓存 */
-    Gimbal_AxisInternal_t yaw;      /* yaw 轴私有控制器与反馈历史 */
-    Gimbal_AxisInternal_t pitch;    /* pitch 轴私有控制器与反馈历史 */
-    float chassis_offline_s;        /* 底盘持续离线时间，单位：s */
-    float yaw_drag_s;               /* yaw 满足悬空带转条件的累计时间，单位：s */
+    Gimbal_Config_t control_config;   /* 最近一次通过 Control 入口校验的配置快照 */
+    Gimbal_ImuFeedback_t imu;         /* 最近一帧有效或等待校验的惯性反馈缓存 */
+    LowPassFilter2p_t yaw_rate_lpf;   /* yaw 大地系角速度低通 */
+    LowPassFilter2p_t pitch_rate_lpf; /* pitch 大地系角速度低通 */
+    NotchFilter_t yaw_rate_notch;     /* yaw 结构共振带阻 */
+    NotchFilter_t pitch_rate_notch;   /* pitch 结构共振带阻 */
+    Gimbal_AxisInternal_t yaw;        /* yaw 轴私有控制器与反馈历史 */
+    Gimbal_AxisInternal_t pitch;      /* pitch 轴私有控制器与反馈历史 */
+    float chassis_offline_s;          /* 底盘持续离线时间，单位：s */
+    float yaw_drag_s;                 /* yaw 满足悬空带转条件的累计时间，单位：s */
 } Gimbal_Internal_t;
 
 /* Private variables -------------------------------------------------------- */
@@ -884,8 +895,21 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, Gimbal_Internal_t *internal, cons
     }
 
     const bool ready = gimbal->imu_state == GIMBAL_IMU_READY;
-    gimbal->yaw.angle_deg = ready ? internal->imu.angle_deg[2] : NAN;
-    gimbal->pitch.angle_deg = ready ? internal->imu.angle_deg[1] : NAN;
+
+    /* 未就绪期间不外发姿态与角速度，滤波器同步回到零状态，恢复后不继承旧延迟单元 */
+    if (!ready)
+    {
+        LowPassFilter2p_Reset(&internal->yaw_rate_lpf, 0.0f);
+        LowPassFilter2p_Reset(&internal->pitch_rate_lpf, 0.0f);
+        NotchFilter_Reset(&internal->yaw_rate_notch, 0.0f);
+        NotchFilter_Reset(&internal->pitch_rate_notch, 0.0f);
+        gimbal->yaw.angle_deg = gimbal->pitch.angle_deg = NAN;
+        gimbal->yaw.speed_rad_s = gimbal->pitch.speed_rad_s = NAN;
+        return;
+    }
+
+    gimbal->yaw.angle_deg = internal->imu.angle_deg[2];
+    gimbal->pitch.angle_deg = internal->imu.angle_deg[1];
 
     /* 机体系陀螺仪按 ZYX 欧拉运动学换算为大地系角速度，pitch 接近奇异点时由上游限幅拒绝 */
     const float roll_rad = internal->imu.angle_deg[0] * M_DEG2RAD_MULT;
@@ -894,8 +918,12 @@ static void Gimbal_UpdateImu(Gimbal_t *gimbal, Gimbal_Internal_t *internal, cons
     const float gyro_y = internal->imu.gyro_rad_s[1];
     const float gyro_z = internal->imu.gyro_rad_s[2];
     const float yaw_rate = (gyro_y * sin_roll + gyro_z * cos_roll) / cosf(internal->imu.angle_deg[1] * M_DEG2RAD_MULT);
-    gimbal->yaw.speed_rad_s = ready ? yaw_rate : NAN;
-    gimbal->pitch.speed_rad_s = ready ? gyro_y * cos_roll - gyro_z * sin_roll : NAN;
+    const float pitch_rate = gyro_y * cos_roll - gyro_z * sin_roll;
+    /* 结构共振落在控制环带宽之外，先带阻再低通，避免振动被速度环原样透传 */
+    gimbal->yaw.speed_rad_s = LowPassFilter2p_Apply(&internal->yaw_rate_lpf,
+                                                    NotchFilter_Apply(&internal->yaw_rate_notch, yaw_rate));
+    gimbal->pitch.speed_rad_s = LowPassFilter2p_Apply(&internal->pitch_rate_lpf,
+                                                      NotchFilter_Apply(&internal->pitch_rate_notch, pitch_rate));
 }
 
 /* Exported functions ------------------------------------------------------- */
@@ -928,6 +956,12 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
 
     /* 两轴共享模块私有的已校验快照，PID 参数指向私有持久副本 */
     gimbal_internal.control_config = saved_config;
+    /* 惯性角速度滤波按控制频率一次算出系数，延迟单元已由上面的 memset 清零 */
+    LowPassFilter2p_Init(&gimbal_internal.yaw_rate_lpf, frequency_hz, GIMBAL_RATE_LPF_HZ);
+    LowPassFilter2p_Init(&gimbal_internal.pitch_rate_lpf, frequency_hz, GIMBAL_RATE_LPF_HZ);
+    NotchFilter_Init(&gimbal_internal.yaw_rate_notch, frequency_hz, GIMBAL_RATE_NOTCH_HZ, GIMBAL_RATE_NOTCH_BW_HZ);
+    NotchFilter_Init(&gimbal_internal.pitch_rate_notch, frequency_hz, GIMBAL_RATE_NOTCH_HZ,
+                     GIMBAL_RATE_NOTCH_BW_HZ);
     if (Gimbal_InitAxis(&gimbal->yaw, &gimbal_internal.yaw, &saved_config.yaw, frequency_hz) != 0 ||
         Gimbal_InitAxis(&gimbal->pitch, &gimbal_internal.pitch, &saved_config.pitch, frequency_hz) != 0)
     {
