@@ -19,6 +19,16 @@
 - 已知差异：非法 `imu_state` 枚举值不再归一为 FAULT（不可达）；`frame_time_us` 哨兵理论碰撞；均未烧录、未实物验收
 - `gimbal.h` 的 `pitch_gravity_*` 字段与实现来自另一会话的未提交改动，本轮未修改其语义；证据见 docs/validation/gimbal_simplify_20261117.md
 
+## 2026-11-17 pitch 重力前馈接入与标定方案
+
+- 用户要求按现有关环效果拟合重力前馈、不单独辨识负载质量：采用 `A·cos(θ - θ₀) + i₀`，θ 取 IMU 大地系俯仰角，质量与重力加速度、质心力臂、力矩常数、减速比合并为唯一幅值 A
+- `gimbal.h` 新增 `pitch_gravity_enabled`、`pitch_gravity_current_a`、`pitch_gravity_angle_deg`、`pitch_gravity_bias_a`；`config.c` 未改，全零即关闭，改动前后行为逐位一致
+- `gimbal.c` 新增入口集中校验与 `Gimbal_CalcPitchGravity`，前馈叠在速度环输出后、`max_current_a` 限幅前，与 yaw 摩擦补偿并列；输出仍由 `DumpOutput` 唯一闸门放行
+- 标定用线性最小二乘解 `(a, b, c)` 再换算 `A/θ₀/i₀`：±20° 行程内 `(cos, sin, 1)` 条件数 9833，参数不可辨识但预测可辨识（σ=0.01 A 时预测误差约 4%），不得做非线性迭代
+- 现有关环中 pitch 角度环 `i=2.5` 因 `i_limit=0` 积分永不累积，重力实际由速度环积分承担，上限 `1.4×0.5=0.7 A`；历史 `pitch_hold_torque_20261111` 的一阶模型不可辨识源于积分饱和右截断，那批数据不能复用
+- 证据：ARM `-Wall -Wextra -Werror` 零警告，User 层 35 个翻译单元重编 0 失败，链接 ELF 1,950,096 B、RAM 50704 B、FLASH 132848 B；排版 0 违规；ARCH/HW/SPEC 通过；最坏控制链静态栈约 960 B 对 3072 B
+- 未烧录、未标定、运行时栈高水位未实测；标定流程与验收判据见 docs/validation/pitch_gravity_feedforward_20261117.md 第 5 节
+
 ## 2026-11-11 拨弹五齿完成撤驱与未完成恢复重计
 
 - 后续实物复现仍不停转，上一轮合成到位回归不能代表机构已修复。实际 20.042 s、250 点均为下位，无完成或齿间阶段，到位计时采样全为 0，反馈资格反复失效恢复并重计五发
