@@ -11,8 +11,8 @@
 // 备弹与开火档的双摩擦轮转子目标为 8000 rpm，安全档立即失能撤驱
 #define MOTOR_TRIGGER_SHOOT_SPEED_RPM (8000.0f)
 
-// 遥控进给模式在线入口，每周期只读一次，0 连发、1 单发、2 五连发
-volatile uint8_t feeder_remote_fire_mode = FEEDER_FIRE_MODE_BURST;
+// 遥控进给模式在线入口，每周期只读一次，0 连发、1 单发、2 五连发，复位默认单发
+volatile uint8_t feeder_remote_fire_mode = FEEDER_FIRE_MODE_SINGLE;
 
 /*
  * feeder 为任务独占的拨弹观测实例，config 用于在线调参，控制历史由拨弹模块私有保存
