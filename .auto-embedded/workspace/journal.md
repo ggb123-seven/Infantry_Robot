@@ -41,3 +41,6 @@ BMI088 与 INS 移植处于 EXECUTE：第 1 轮 SPI1 10.5 Mbit/s 和 PF6/TIM10_C
 
 ## #14  task=云台小陀螺抖动滤波  phase=EXECUTE
 按 docs/validation/gimbal_spin_jitter_20261117.md 第 3 节在 User/module/gimbal.c 实现惯性角速度陷波+低通：Gimbal_Internal_t 增加 yaw/pitch 角速度低通与陷波状态，Init 按控制频率初始化系数，UpdateImu 未就绪时复位滤波器并输出 NAN，就绪时先带阻后低通；未改 config.c、filter.c、BSP 与 CubeMX。A 组（30 Hz/5 Hz）与 B 组（20 Hz/8 Hz）两轮均构建（RAM 50840 B、FLASH 133736 B，Gimbal_UpdateImu 静态帧 144 B）、烧录（J-Link 602710286，Programming Finished + Verified OK，firmwareConsistency match）并以 47~73 Hz 采样复测。静止 yaw 角速度峰峰 0.066→0.0153（A）→0.0099 rad/s（B）；小陀螺同扰动下角度峰峰 A 0.745° 对 B 0.804°（持平），最好窗口 0.487°，均未达 0.2° 目标；起动小陀螺瞬时观察到一次 yaw 被带转约 470°、电流 ±1 A 限幅，需重复验证。已提交 77a9f09、9833de7，板上最终为 B 组。下一步优先机械治理 13.5 Hz 结构共振，或把滤波参数改成 static 可写副本做在线扫参。
+
+## #15  task=云台小陀螺抖动滤波  phase=HANDOFF
+2026-11-18 用户判断小陀螺抖动纯属软件问题，另开新对话继续排查，本会话收尾。板上固件为 B 组参数（低通 20 Hz、陷波 13.5 Hz/带宽 8 Hz，SHA256 88073496…，firmwareConsistency match），提交 77a9f09、9833de7、f4d42f8。交接说明写入 docs/validation/gimbal_spin_jitter_20261117.md 第 8 节，含未解问题（同扰动角度峰峰 0.75~0.80°、起动带转 470° 一次）与六个软件候选点：500 Hz 环形缓冲日志、yaw 摩擦前馈改用相对转速、速度环积分、角度环 Kp 提到 24~28、INS 姿态解算抗振、底盘 wz 前馈。
