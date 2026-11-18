@@ -29,6 +29,10 @@
 #define GIMBAL_RATE_LPF_HZ (20.0f)           /* 大地系角速度低通截止频率，单位：Hz */
 #define GIMBAL_RATE_NOTCH_HZ (13.5f)         /* 结构共振带阻中心频率，单位：Hz */
 #define GIMBAL_RATE_NOTCH_BW_HZ (8.0f)       /* 结构共振带阻带宽，单位：Hz */
+/* yaw 单独取值：激励辨识显示带阻与 20 Hz 低通在 6 Hz 附近滞后约 46 度，速度环增益裕度只剩约 1 dB */
+/* 小陀螺扰动随电机相对转速移动，不是固定频率共振，yaw 关闭带阻并把低通提高到 40 Hz 换回相位 */
+#define GIMBAL_YAW_RATE_LPF_HZ (40.0f)       /* yaw 大地系角速度低通截止频率，单位：Hz */
+#define GIMBAL_YAW_RATE_NOTCH_HZ (0.0f)      /* yaw 带阻中心频率，单位：Hz，0 表示直通 */
 
 #define GIMBAL_FULL_TURN_DEG (360.0f)        /* 整圈角度，单位：度 */
 #define GIMBAL_AXIS_COUNT (2U)               /* 云台轴数 */
@@ -958,9 +962,9 @@ int8_t Gimbal_Init(Gimbal_t *gimbal, const Gimbal_Config_t *config, float freque
     /* 两轴共享模块私有的已校验快照，PID 参数指向私有持久副本 */
     gimbal_internal.control_config = saved_config;
     /* 惯性角速度滤波按控制频率一次算出系数，延迟单元已由上面的 memset 清零 */
-    LowPassFilter2p_Init(&gimbal_internal.yaw_rate_lpf, frequency_hz, GIMBAL_RATE_LPF_HZ);
+    LowPassFilter2p_Init(&gimbal_internal.yaw_rate_lpf, frequency_hz, GIMBAL_YAW_RATE_LPF_HZ);
     LowPassFilter2p_Init(&gimbal_internal.pitch_rate_lpf, frequency_hz, GIMBAL_RATE_LPF_HZ);
-    NotchFilter_Init(&gimbal_internal.yaw_rate_notch, frequency_hz, GIMBAL_RATE_NOTCH_HZ, GIMBAL_RATE_NOTCH_BW_HZ);
+    NotchFilter_Init(&gimbal_internal.yaw_rate_notch, frequency_hz, GIMBAL_YAW_RATE_NOTCH_HZ, GIMBAL_RATE_NOTCH_BW_HZ);
     NotchFilter_Init(&gimbal_internal.pitch_rate_notch, frequency_hz, GIMBAL_RATE_NOTCH_HZ,
                      GIMBAL_RATE_NOTCH_BW_HZ);
     if (Gimbal_InitAxis(&gimbal->yaw, &gimbal_internal.yaw, &saved_config.yaw, frequency_hz) != 0 ||
