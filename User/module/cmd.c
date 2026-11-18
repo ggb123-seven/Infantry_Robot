@@ -17,7 +17,7 @@
 #define CMD_CHANNEL_LIMIT (660.0f)         /* 通道满量程计数 */
 #define CMD_DEADZONE (0.05f)               /* 中心死区比例 */
 #define CMD_CHASSIS_SCALE_RPM (100.0f)     /* 底盘轮速尺度，单位：rpm */
-#define CMD_CHASSIS_SPIN_WZ (-0.30f)       /* 自旋角速度，单位：rad/s */
+#define CMD_CHASSIS_SPIN_WZ (-0.50f)       /* 自旋角速度，单位：rad/s */
 #define CMD_GIMBAL_DIRECTION (-1.0f)       /* 云台两轴方向系数 */
 #define CMD_GIMBAL_RATE_RAD_S (6.0f)       /* 满杆角速度，单位：rad/s */
 #define CMD_GIMBAL_ACCEL_DEG_S2 (60000.0f) /* 加速度上限，单位：度/s² */
