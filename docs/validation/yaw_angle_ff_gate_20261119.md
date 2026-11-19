@@ -78,6 +78,7 @@ A/B 验证（关掉前馈，同一组阶跃）：
 | --- | --- |
 | 辨识固件（记录开） | ELF SHA256 `2fc07f45…6a8e5`，RAM 116384 B，已烧录并采数 |
 | 正式固件（记录关） | ELF SHA256 `d63b72734505e5a9044c38a9c8c481957d17087f64e1eed982544f4aef6f3012`，RAM 50840 B / FLASH 133864 B |
+| 固化参数固件（记录关 + p=1.2/d=0.06） | ELF SHA256 `b8bfbcfc38563074f1177e02d844ec5dff5e82dd9576b673a318dead6ac1ab5b`，RAM 50840 B / FLASH 133864 B，回读参数一致 |
 | 烧录 | Programming Finished、Verified OK、Resetting Target，`firmwareConsistency: match` |
 | 静态栈 | `Gimbal_DebugLog_Push` 48 B；任务链 `Task_motor_gimbal` 368 + `Gimbal_Control` 376 + `Gimbal_ControlAxis` 48 + `Gimbal_RunAxis` 104 ≈ 0.9 kB，对 3072 B 任务栈 |
 | 排版 | 5 个改动文件 0 处超 120 列、0 处行尾空白 |
@@ -86,8 +87,8 @@ A/B 验证（关掉前馈，同一组阶跃）：
 
 ## 9. 参数现状
 
-- `config.c` 未改动，`gimbal_config.yaw.angle_pid` 仍为 `p=1.0`、`d=0.05`
-- 建议值 **`p=1.2`、`d=0.06`**（Kp=24、Kd=1.2）仅在 RAM 中试过，断电即失效；是否固化由用户决定
+- 用户确认固化：`gimbal_config.yaw.angle_pid` 已由 `p=1.0`/`d=0.05` 改为 **`p=1.2`/`d=0.06`**（Kp=24、Kd=1.2），pitch 轴未改
+- 固化固件已烧录并复位，回读到 `p=1.2`、`d=0.06`、`firmwareConsistency: match`，ELF SHA256 `b8bfbcfc38563074f1177e02d844ec5dff5e82dd9576b673a318dead6ac1ab5b`
 - 门控阈值固定为编译期常量：`GIMBAL_FRICTION_FADE_FULL_RAD_S = 0.20`、`GIMBAL_FRICTION_FADE_ZERO_RAD_S = 0.60`
 
 ## 10. 复现步骤

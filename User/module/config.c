@@ -200,9 +200,9 @@ const Gimbal_Config_t gimbal_config =
         .angle_pid =
         {
             .k = 20.0f,
-            .p = 1.0f,
+            .p = 1.2f,
             .i = 0.0f,
-            .d = 0.05f,
+            .d = 0.06f,
             .i_limit = 0.0f,
             .out_limit = 10.0f,
             .d_cutoff_freq = -1.0f,

@@ -60,7 +60,7 @@
 - 门控后实测：Kp20/Kd1.0 超调 10.3%、静差 0.19°、上升 113 ms；增益扫描综合最优 **Kp24/Kd1.2（p=1.2、d=0.06）** 上升 99 ms、收敛 336 ms、超调 11.1%、静差 0.21°；Kp32 以上上升 67 ms 但超调回到 15–19%，不采用
 - RAM：记录缓冲 4096×16 B=64 kB 使 RAM 由 50840 B（38.79%）升到 116384 B（88.79%）；新增编译开关 `MOTOR_GIMBAL_ENABLE_DEBUG_LOG` 默认 0，正式固件回到 50840 B（38.79%），辨识时置 1 重新构建
 - 证据：辨识固件 SHA `2fc07f45…`、正式固件 SHA `d63b72734505e5a9044c38a9c8c481957d17087f64e1eed982544f4aef6f3012`，均 Programming Finished / Verified OK / firmwareConsistency match；静态栈 `Gimbal_DebugLog_Push` 48 B、任务链约 0.9 kB 对 3072 B
-- `config.c` 未改动（仍 p=1.0/d=0.05）；p=1.2/d=0.06 只在 RAM 试过。未验证：运行时栈高水位、门控阈值扫描、打靶/连续跟踪/大信号饱和反向工况
+- 用户确认固化：`config.c` 的 `gimbal_config.yaw.angle_pid` 改为 `p=1.2`/`d=0.06`（Kp24/Kd1.2），pitch 未改；固化固件已烧录（SHA `b8bfbcfc38563074f1177e02d844ec5dff5e82dd9576b673a318dead6ac1ab5b`），复位后回读 p=1.2、d=0.06、`firmwareConsistency: match`。未验证：运行时栈高水位、门控阈值扫描、打靶/连续跟踪/大信号饱和反向工况
 - 详见 docs/validation/yaw_angle_ff_gate_20261119.md
 
 ## 2026-11-11 拨弹五齿完成撤驱与未完成恢复重计
