@@ -2,10 +2,13 @@
  * 云台调试记录实现
  *
  * 只做静态缓冲写入，不加锁不滤波；写满后自动关闭使能，保证最早期数据不被覆盖
+ * 整个文件受 MOTOR_GIMBAL_ENABLE_DEBUG_LOG 控制，默认不参与编译
  */
 
 /* Includes ----------------------------------------------------------------- */
 #include "task/gimbal_debug_log.h"
+
+#if MOTOR_GIMBAL_ENABLE_DEBUG_LOG
 
 /* Exported variables ------------------------------------------------------- */
 Gimbal_DebugLogSample_t gimbal_debug_log[GIMBAL_DEBUG_LOG_CAPACITY];
@@ -43,3 +46,5 @@ void Gimbal_DebugLog_Push(float command_deg, float angle_deg, float speed_rad_s,
     };
     gimbal_debug_log_count = index + 1U;
 }
+
+#endif

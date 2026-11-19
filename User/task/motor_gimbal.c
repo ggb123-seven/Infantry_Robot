@@ -137,9 +137,11 @@ void Task_motor_gimbal(void *argument)
             const Gimbal_Command_t command = *(const volatile Gimbal_Command_t *)&gimbal_command;
             Gimbal_Control(&gimbal, &command, chassis_state_cache, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
+#if MOTOR_GIMBAL_ENABLE_DEBUG_LOG
             /* 每周期记录 yaw 角度环输入输出，供离线辨识使用 */
             Gimbal_DebugLog_Push(command.yaw.angle_deg, gimbal.yaw.angle_deg, gimbal.yaw.speed_rad_s,
                                  gimbal.yaw.output_current_a);
+#endif
         }
 
         /* 发布失败时 CAN 任务按空邮箱输出零电流，同步让两轴停机，避免积分在零输出期间累计 */
