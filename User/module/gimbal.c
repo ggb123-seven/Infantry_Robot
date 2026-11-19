@@ -34,6 +34,10 @@
 #define GIMBAL_YAW_RATE_LPF_HZ (40.0f)       /* yaw 大地系角速度低通截止频率，单位：Hz */
 #define GIMBAL_YAW_RATE_NOTCH_HZ (0.0f)      /* yaw 带阻中心频率，单位：Hz，0 表示直通 */
 
+/* 摩擦前馈只在准静态生效：目标角速度大时线性淡出，避免大机动里被同向推力推过头 */
+#define GIMBAL_FRICTION_FADE_FULL_RAD_S (0.20f) /* 目标角速度低于该值时前馈全量，单位：rad/s */
+#define GIMBAL_FRICTION_FADE_ZERO_RAD_S (0.60f) /* 目标角速度高于该值时前馈完全淡出，单位：rad/s */
+
 #define GIMBAL_FULL_TURN_DEG (360.0f)        /* 整圈角度，单位：度 */
 #define GIMBAL_AXIS_COUNT (2U)               /* 云台轴数 */
 
@@ -280,6 +284,19 @@ static bool Gimbal_IsFrictionConfigValid(const Gimbal_Config_t *config)
     }
     const float vertex_a = Gimbal_FrictionMagnitude(config, vertex_rad_s);
     return isfinite(vertex_a) && vertex_a >= 0.0f && vertex_a <= max_current_a;
+}
+
+/**
+ * @brief 按目标角速度计算摩擦前馈淡出系数
+ *
+ * @param target_rad_s 限幅后的目标速度，单位：rad/s
+ * @return float 前馈系数，目标速度低于全量阈值时为 1，高于淡出阈值时为 0
+ */
+static float Gimbal_FrictionFade(float target_rad_s)
+{
+    const float span_rad_s = GIMBAL_FRICTION_FADE_ZERO_RAD_S - GIMBAL_FRICTION_FADE_FULL_RAD_S;
+    const float fade = (GIMBAL_FRICTION_FADE_ZERO_RAD_S - fabsf(target_rad_s)) / span_rad_s;
+    return fminf(fmaxf(fade, 0.0f), 1.0f);
 }
 
 /**
@@ -581,9 +598,11 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, Gimbal_AxisInternal_t *internal,
     const Gimbal_Config_t *const control_config = &gimbal_internal.control_config;
     /* 摩擦方向只取限幅与机械约束后的闭环目标速度，编码器差分速度量化粗且静止时跳变 */
     /* 参与方向判断会在零速附近让补偿电流逐周期翻转并反过来激励电机 */
+    /* 大机动时目标速度远大于实测速度，前馈推力会与速度环反向制动叠加，因此按目标速度大小淡出 */
     if (feedforward == GIMBAL_FEEDFORWARD_YAW_FRICTION && control_config->yaw_friction_max_speed_rad_s != 0.0f)
     {
-        current_a += Gimbal_CalcYawFriction(control_config, target_speed_rad_s);
+        const float fade = Gimbal_FrictionFade(target_speed_rad_s);
+        current_a += fade * Gimbal_CalcYawFriction(control_config, target_speed_rad_s);
     }
     /* 重力前馈与运动方向无关，静止时同样出力，用于承担恒定偏置并给速度环留出动态余量 */
     if (feedforward == GIMBAL_FEEDFORWARD_PITCH_GRAVITY && control_config->pitch_gravity_enabled)
