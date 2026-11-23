@@ -46,9 +46,9 @@ const Chassis_Config_t chassis_config =
  * - 姿态角采用当前 INS 坐标，yaw 使用累计 Yaw，pitch 使用 Pitch，速度环反馈为对应的大地系欧拉角速度
  * - yaw 未确认线束或机械行程，关闭机械限位，原 [0°, 360°] 数值保留但不再夹住惯性角目标
  * - 速度上限依据 GM6020 使用说明 20231013 的 320 rpm 空载转速换算，约 33.51 rad/s
- * - yaw 电流上限 1.6 A（GM6020 额定电流），pitch 也取 1.6 A：pitch 俯仰轴重力不平衡，
+ * - yaw 电流上限 3.0 A（高于额定 1.62 A 的竞技常用量级）、pitch 取 1.6 A：pitch 俯仰轴重力不平衡，
  *   水平保持约需 0.5 A，参考工作树实测重力前馈为 0.47 A，0.5 A 不足以稳定保持
- * - 速度环 Kp=0.06、Ki=0.177 为已整定值，yaw SPEED 调试路径沿用该环，积分限幅取 3.5 rad
+ * - 速度环 Kp=0.06、Ki=0.177 为已整定值，yaw SPEED 调试路径沿用该环，积分限幅取 17 rad，约 3 A
  * - pitch 速度环积分限幅取 3.5 rad，约 0.62 A，覆盖重力保持电流并留余量
  * - yaw ANGLE 使用直出电流滑模，不读取角度环和速度环；两环参数仅用于 SPEED 调试与 pitch
  * - 两轴角度环统一采用当前 yaw 参数 Kp=15、Ki=0.005、Kd=0，积分限幅为 1.0 rad·s
@@ -73,7 +73,7 @@ const Gimbal_Config_t gimbal_config =
         .min_angle_deg = 0.0f,
         .max_angle_deg = 360.0f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
-        .max_current_a = 1.6f,
+        .max_current_a = 3.0f,
         .angle_pid =
         {
             .k = 1.0f,
@@ -91,8 +91,8 @@ const Gimbal_Config_t gimbal_config =
             .p = 0.06f,
             .i = 0.177f,
             .d = 0.0f,
-            .i_limit = 3.5f,
-            .out_limit = 1.6f,
+            .i_limit = 17.0f,
+            .out_limit = 3.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },

@@ -72,7 +72,13 @@ void SMC_AdvanceReference(SMC_t *smc, float target_angle, float target_speed, fl
     // 命令已有解析速度时直接使用，位置偏差仅用于追踪受限参考，避免重复微分与前馈
     const float feedforward = fminf(max_speed, fmaxf(-max_speed, target_speed));
     const float predicted = smc->target + feedforward * period_s;
-    const float requested = feedforward + reference_gain * (target_angle - predicted);
+    const float error = target_angle - predicted;
+    // 只按剩余距离限制误差修正项，前馈速度不受影响，避免跟踪时把参考速度压成零
+    const float correction_raw = reference_gain * error;
+    const float correction_limit = sqrtf(2.0f * max_acceleration * fabsf(error));
+    const float correction = fminf(correction_limit, fabsf(correction_raw)) *
+                             (correction_raw < 0.0f ? -1.0f : 1.0f);
+    const float requested = feedforward + correction;
     const float speed_goal = fminf(max_speed, fmaxf(-max_speed, requested));
     const float previous_speed = smc->target_dot;
     const float step = max_acceleration * period_s;

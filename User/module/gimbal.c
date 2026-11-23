@@ -19,30 +19,34 @@
 #define GIMBAL_FULL_TURN_DEG (360.0f)
 
 /*
- * 本分支滑模试验的参考约束：速度 60 度每秒，加速度 180 度每平方秒
- * 参考追踪增益 5 每秒用于平滑绝对目标跳变，均为未上板试验值，不修改原默认配置
+ * 本分支滑模试验的参考约束：速度 600 度每秒，加速度 2500 度每平方秒，参考追踪增益 20 每秒
+ * 600 度每秒对应遥控满杆的角速度量级，加速度取 3 A 下电机可持续跟随的水平，避免参考跑在对象前面
  * 滑模采用线性滑模面并直接输出电流，参数含义与辨识方法见 component/SMC/readme.md
- * J 由 2026-11-23 上板标定：yaw 施加 0.5 A 恒流脉冲
- * 速度台阶拟合角加速度约 220 度每平方秒，得到 J 约 2.2e-3 A/(deg/s²)，包含摩擦偏置
- * C=10 每秒、K=10 每秒、切换项 100 度每平方秒、边界层 10 度每秒为 2026-11-23 台架整定值：
- * 静止角度峰峰 0.06 度、电流峰峰 0.16 A，5 度阶跃上升 0.60 秒、超调 0.4%，10 度阶跃上升 0.72 秒
- * 边界层取宽值以抑制噪声放大，等效位置增益约 0.44 A/deg、速度增益约 0.066 A/(deg/s)
+ * J 由 2026-11-23 上板标定：3 A 阶跃饱和段速度斜率约 3000~4000 度每平方秒
+ * 得到 J 约 8e-4 A/(deg/s²)；此前 0.5 A 脉冲受摩擦污染得到 2.2e-3，会令输出过猛
+ * C=25 每秒、K=25 每秒、切换项 150 度每平方秒、边界层 8 度每秒为 2026-11-23 台架整定值：
+ * 等效位置增益约 1.1 A/deg、速度增益约 0.065 A/(deg/s)，静止角度峰峰 0.025 度、电流峰峰 0.19 A
+ * 短阶跃 60 度上升 0.24 秒、超调 0%，小误差下也能给出足够电流，抗扰明显强于低增益版本
+ * 参考加速度前馈经 10 毫秒低通，避免参考换向时 J 乘加速度产生 2 A 级力矩尖峰和转动噪声
  * 单云台任务独占配置快照和运行上下文
  */
-#define GIMBAL_SMC_MAX_SPEED_DEG_S (60.0f)
-#define GIMBAL_SMC_MAX_ACCEL_DEG_S2 (180.0f)
-#define GIMBAL_SMC_REFERENCE_GAIN (5.0f)
-#define GIMBAL_SMC_J_A_PER_DEG_S2 (2.2e-3f)
+#define GIMBAL_SMC_MAX_SPEED_DEG_S (600.0f)
+#define GIMBAL_SMC_MAX_ACCEL_DEG_S2 (2500.0f)
+#define GIMBAL_SMC_REFERENCE_GAIN (20.0f)
+#define GIMBAL_SMC_J_A_PER_DEG_S2 (8.0e-4f)
+#define GIMBAL_SMC_DDOT_FILTER_TAU_S (0.01f)
 
 volatile SMC_t gimbal_yaw_smc_config =
 {
-    .C = 10.0f,
-    .K = 10.0f,
-    .epsilon_deg_s2 = 100.0f,
+    .C = 25.0f,
+    .K = 25.0f,
+    .epsilon_deg_s2 = 150.0f,
     .J = GIMBAL_SMC_J_A_PER_DEG_S2,
-    .surface_eps_deg_s = 10.0f,
+    .surface_eps_deg_s = 8.0f,
 };
 SMC_t gimbal_yaw_smc;
+// 参考加速度前馈的一阶滤波状态，用于削掉参考换向时的力矩尖峰
+static float yaw_ddot_filtered;
 
 static Gimbal_Config_t control_config;
 static bool config_valid;
@@ -413,6 +417,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         {
             gimbal_yaw_smc.target = axis->angle_deg;
             gimbal_yaw_smc.target_dot = gimbal_yaw_smc.target_ddot = 0.0f;
+            yaw_ddot_filtered = 0.0f;
             smc_reset = false;
         }
         else
@@ -420,6 +425,10 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
             SMC_AdvanceReference(&gimbal_yaw_smc, axis->target_angle_deg, command_speed_rad_s * M_RAD2DEG_MULT,
                                  GIMBAL_SMC_MAX_SPEED_DEG_S, GIMBAL_SMC_MAX_ACCEL_DEG_S2,
                                  GIMBAL_SMC_REFERENCE_GAIN, period_s);
+            // 前馈加速度低通后再交给滑模，保留参考速度但压掉换向时的电流尖峰
+            const float ddot_alpha = period_s / (GIMBAL_SMC_DDOT_FILTER_TAU_S + period_s);
+            yaw_ddot_filtered += ddot_alpha * (gimbal_yaw_smc.target_ddot - yaw_ddot_filtered);
+            gimbal_yaw_smc.target_ddot = yaw_ddot_filtered;
         }
         axis->target_angle_deg = gimbal_yaw_smc.target;
         axis->target_speed_rad_s = gimbal_yaw_smc.target_dot * M_DEG2RAD_MULT;
