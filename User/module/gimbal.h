@@ -125,7 +125,7 @@ typedef struct
  * 云台控制模式，由命令统一指定两轴：
  * - GIMBAL_MODE_RELAX：两轴零电流，同时解除故障锁存
  * - GIMBAL_MODE_SPEED：只运行速度环，用于单独整定速度环参数
- * - GIMBAL_MODE_ANGLE：yaw 使用滑模角度外环和速度 PID 内环，pitch 保持原串级 PID
+ * - GIMBAL_MODE_ANGLE：yaw 使用滑模直接输出电流，pitch 保持原串级 PID
  */
 typedef enum
 {
@@ -171,8 +171,8 @@ typedef enum
  * - min_angle_deg、max_angle_deg：相对编码器零点的机械角范围，单位度，仅启用机械约束时使用
  * - max_speed_rad_s：速度目标绝对值上限，单位 rad/s
  * - max_current_a：转子侧输出电流绝对值上限，单位 A
- * - angle_pid：角度外环参数，输入为弧度，输出为 rad/s，range 须为 0
- * - speed_pid：速度内环参数，输入为 rad/s，输出为 A
+ * - angle_pid：角度外环参数，输入为弧度，输出为 rad/s，range 须为 0，yaw ANGLE 使用滑模时不读取
+ * - speed_pid：速度内环参数，输入为 rad/s，输出为 A，yaw ANGLE 使用滑模时不读取
  * PID 增益、积分限幅或输出限幅变化时清空对应积分，d_cutoff_freq 只在初始化时生效
  */
 typedef struct
@@ -256,14 +256,14 @@ typedef struct
  * - base_speed_rad_s：底座大地系角速度估计，单位 rad/s，等于 speed_rad_s − motor_speed_rad_s
  *   底座水平时精确，倾斜时含投影误差，仅用于观测，任一输入失效时为非数值
  * - target_angle_deg：本周期实际参考角度，单位度，yaw 滑模路径包含参考轨迹约束
- * - target_speed_rad_s：本周期实际参考速度，单位 rad/s，yaw 滑模路径不包含旧 PID 纠偏量
+ * - target_speed_rad_s：本周期实际参考速度，单位 rad/s，yaw ANGLE 为受限参考轨迹速度，不代表控制输出
  * - output_current_a：本周期输出电流，单位 A，正方向与角度增大方向一致
  * - feedback_time_us：最近反馈帧时刻，单位微秒，无反馈时为 UINT64_MAX
  * - applied_zero_encoder_deg：当前连续角坐标采用的零点，用于识别零点修改
  * - applied_reversed：当前机械反馈采用的方向，用于识别运行中方向修改
  * - applied_angle_pid、applied_speed_pid：PID 实际使用的参数副本，与配置不同时同步并清空积分
  * - unwrap：yaw 连续角展开器，pitch 不使用
- * - angle_pid、speed_pid：角度外环和速度内环运行状态
+ * - angle_pid、speed_pid：角度外环和速度内环运行状态，yaw ANGLE 改用滑模后不参与该路径
  */
 typedef struct
 {
@@ -317,11 +317,11 @@ typedef struct
 } Gimbal_Output_t;
 
 /*
- * yaw 角度模式由滑模外环生成速度目标，再由现有速度 PID 输出电流；pitch 保持原 PID 控制
- * 在线调参只修改 C、K、error_eps、q、p、speed_max_deg_s、surface_eps_deg_s 参数字段
+ * yaw 角度模式由滑模直接输出电流，pitch 和 SPEED 模式保持原 PID 控制
+ * 在线调参只修改 C、K、epsilon_deg_s2、J、surface_eps_deg_s 参数字段
  * Control 每周期复制并校验参数，运行计算只读取 gimbal_yaw_smc，后者供状态观测
  * target、target_dot、target_ddot 分别为内部参考角度、速度和加速度，单位 deg、deg/s、deg/s²
- * speed_target_deg_s 为滑模输出速度目标，单位 deg/s；最终电流观察 gimbal.yaw.output_current_a
+ * u 为滑模候选电流，单位 A，最终仍受 max_current_a 与输出闸门限制，观察 gimbal.yaw.output_current_a
  */
 extern volatile SMC_t gimbal_yaw_smc_config;
 extern SMC_t gimbal_yaw_smc;

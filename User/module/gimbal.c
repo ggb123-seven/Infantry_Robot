@@ -19,23 +19,25 @@
 #define GIMBAL_FULL_TURN_DEG (360.0f)
 
 /*
- * 本分支首次滑模试验的参考约束：速度 60 度每秒，加速度 180 度每平方秒
+ * 本分支滑模试验的参考约束：速度 60 度每秒，加速度 180 度每平方秒
  * 参考追踪增益 5 每秒用于平滑绝对目标跳变，均为未上板试验值，不修改原默认配置
- * 滑模参数 C=5、K=10，q/p=21/27，近零过渡尺度 1 度
- * 速度目标上限 60 度每秒，滑模面连续边界宽度 0.5 度每秒
+ * 滑模采用线性滑模面并直接输出电流，参数含义与辨识方法见 component/SMC/readme.md
+ * J 按假定 yaw 等效惯量 0.03 千克平方米和 GM6020 力矩常数 0.74 牛米每安培推算，上板必须重新标定
+ * C=10 每秒、K=10 每秒、切换项 200 度每平方秒、边界层 1 度每秒为合成模型起点，不声明为本机已整定值
  * 单云台任务独占配置快照和运行上下文
  */
 #define GIMBAL_SMC_MAX_SPEED_DEG_S (60.0f)
 #define GIMBAL_SMC_MAX_ACCEL_DEG_S2 (180.0f)
 #define GIMBAL_SMC_REFERENCE_GAIN (5.0f)
+#define GIMBAL_SMC_J_A_PER_DEG_S2 (7.0757e-4f)
 
 volatile SMC_t gimbal_yaw_smc_config =
 {
-    .C = 5.0f, .K = 10.0f,
-    .error_eps = 1.0f,
-    .q = 21.0f, .p = 27.0f,
-    .speed_max_deg_s = GIMBAL_SMC_MAX_SPEED_DEG_S,
-    .surface_eps_deg_s = 0.5f,
+    .C = 10.0f,
+    .K = 10.0f,
+    .epsilon_deg_s2 = 200.0f,
+    .J = GIMBAL_SMC_J_A_PER_DEG_S2,
+    .surface_eps_deg_s = 1.0f,
 };
 SMC_t gimbal_yaw_smc;
 
@@ -172,11 +174,8 @@ void Gimbal_Control(Gimbal_t *gimbal, const Gimbal_Command_t *command, float per
     {
         gimbal_yaw_smc.C = smc_config.C;
         gimbal_yaw_smc.K = smc_config.K;
-        gimbal_yaw_smc.error_eps = smc_config.error_eps;
-        gimbal_yaw_smc.q = smc_config.q;
-        gimbal_yaw_smc.p = smc_config.p;
-        gimbal_yaw_smc.speed_max_deg_s = fminf(smc_config.speed_max_deg_s,
-                                               control_config.yaw.max_speed_rad_s * M_RAD2DEG_MULT);
+        gimbal_yaw_smc.epsilon_deg_s2 = smc_config.epsilon_deg_s2;
+        gimbal_yaw_smc.J = smc_config.J;
         gimbal_yaw_smc.surface_eps_deg_s = smc_config.surface_eps_deg_s;
     }
     // 两轴命令分别校验，单轴非法命令不掩盖另一轴的运行状态
@@ -344,7 +343,7 @@ static void Gimbal_EnterRunning(Gimbal_Axis_t *axis)
  * @param[in] mode 控制模式，只能为 SPEED 或 ANGLE
  * @param[in] command 单轴命令
  * @param[in] period_s 实际控制间隔，单位 s
- * @param[in] use_smc 为 true 时在角度模式使用 yaw 滑模控制，pitch 传 false
+ * @param[in] use_smc 为 true 时在角度模式由 yaw 滑模直接输出电流，pitch 传 false
  * @return 计算成功返回 true，浮点计算链出口异常时返回 false
  */
 static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *config, Gimbal_Mode_t mode,
@@ -352,7 +351,7 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
 {
     const bool angle_needed = mode == GIMBAL_MODE_ANGLE;
     const bool use_smc = use_smc_axis && angle_needed;
-    // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈与角度环修正量合成
+    // SPEED 模式直接采用命令角速度，ANGLE 模式将其作为前馈或角度环修正量
     const float max_speed_rad_s = config->max_speed_rad_s;
     const float command_speed_rad_s = AbsClip(command->target_speed_rad_s, max_speed_rad_s);
     float target_speed_rad_s = command_speed_rad_s;
@@ -391,8 +390,8 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     {
         axis->target_angle_deg = NAN;
     }
-    // 速度模式及前馈同样受机械边界约束，越界时只允许零速或向行程内部运动
-    if (config->mechanical_limit_enabled)
+    // 速度模式和 pitch 前馈受机械边界速度约束，yaw 角度模式由目标限幅和最终电流闸门处理
+    if (config->mechanical_limit_enabled && !use_smc)
     {
         const float scale = M_DEG2RAD_MULT / period_s;
         mechanical_min_speed_rad_s = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
@@ -401,11 +400,12 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         Clip(&target_speed_rad_s, mechanical_min_speed_rad_s, mechanical_max_speed_rad_s);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // yaw 角度模式由滑模外环生成速度目标，随后统一进入现有速度环
+    // 速度环积分在本周期电流计算前保存，边界阻断时回退到进入本函数时的值
     const float previous_speed_integral = axis->speed_pid.i;
+    float current_a = 0.0f;
     if (use_smc)
     {
-        // 起控时以当前姿态重置参考，避免沿用停止前轨迹
+        // yaw 角度模式先推进受限参考，再由滑模直接生成候选电流，不再经过速度 PID
         if (smc_reset)
         {
             gimbal_yaw_smc.target = axis->angle_deg;
@@ -414,9 +414,9 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         }
         else
         {
-            const float max_speed = gimbal_yaw_smc.speed_max_deg_s;
-            SMC_AdvanceReference(&gimbal_yaw_smc, axis->target_angle_deg, target_speed_rad_s * M_RAD2DEG_MULT,
-                                  max_speed, GIMBAL_SMC_MAX_ACCEL_DEG_S2, GIMBAL_SMC_REFERENCE_GAIN, period_s);
+            SMC_AdvanceReference(&gimbal_yaw_smc, axis->target_angle_deg, command_speed_rad_s * M_RAD2DEG_MULT,
+                                 GIMBAL_SMC_MAX_SPEED_DEG_S, GIMBAL_SMC_MAX_ACCEL_DEG_S2,
+                                 GIMBAL_SMC_REFERENCE_GAIN, period_s);
         }
         axis->target_angle_deg = gimbal_yaw_smc.target;
         axis->target_speed_rad_s = gimbal_yaw_smc.target_dot * M_DEG2RAD_MULT;
@@ -424,18 +424,15 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         {
             return false;
         }
-        const float requested_speed_rad_s = gimbal_yaw_smc.speed_target_deg_s * M_DEG2RAD_MULT;
-        target_speed_rad_s = requested_speed_rad_s;
-        Clip(&target_speed_rad_s, mechanical_min_speed_rad_s, mechanical_max_speed_rad_s);
-        mechanically_limited = mechanically_limited || requested_speed_rad_s != target_speed_rad_s;
+        current_a = gimbal_yaw_smc.u;
     }
-    axis->target_speed_rad_s = target_speed_rad_s;
-    const float current_a = PID_Calc(&axis->speed_pid, axis->target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
-    axis->output_current_a = AbsClip(current_a, config->max_current_a);
-    if (mechanically_limited && use_smc)
+    else
     {
-        axis->speed_pid.i = previous_speed_integral;
+        // pitch 串级和 yaw 速度模式继续由速度 PID 生成电流
+        axis->target_speed_rad_s = target_speed_rad_s;
+        current_a = PID_Calc(&axis->speed_pid, axis->target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
     }
+    axis->output_current_a = AbsClip(current_a, config->max_current_a);
     // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
     if (config->mechanical_limit_enabled &&
         ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||

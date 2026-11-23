@@ -1,6 +1,7 @@
 /*
  * 参考【RM2026 复旦大学 星云EGA战队】云台滑模控制器教学与开源
  * 来源：https://github.com/xinruilee04/smc_controller.git
+ * 本工程改为线性滑模面并直接输出电流，参数含义见本文件开头说明
  */
 #include "slidingmodec.h"
 
@@ -22,9 +23,8 @@ bool SMC_IsConfigValid(const SMC_t *smc)
 {
     // 在线调参可写入零分母或非有限值，统一在调用边界拒绝，计算函数不重复校验
     return isfinite(smc->C) && smc->C > 0.0f && isfinite(smc->K) && smc->K >= 0.0f &&
-           isfinite(smc->error_eps) && smc->error_eps > 0.0f &&
-           isfinite(smc->q) && isfinite(smc->p) && smc->q > 0.0f && smc->p >= smc->q &&
-           smc->q / smc->p > 0.0f && isfinite(smc->speed_max_deg_s) && smc->speed_max_deg_s > 0.0f &&
+           isfinite(smc->epsilon_deg_s2) && smc->epsilon_deg_s2 >= 0.0f &&
+           isfinite(smc->J) && smc->J > 0.0f &&
            isfinite(smc->surface_eps_deg_s) && smc->surface_eps_deg_s > 0.0f;
 }
 
@@ -34,51 +34,35 @@ void SMC_Init(SMC_t *smc, const SMC_t *config, float ref)
     memset(smc, 0, sizeof(*smc));
     smc->C = config->C;
     smc->K = config->K;
+    smc->epsilon_deg_s2 = config->epsilon_deg_s2;
+    smc->J = config->J;
+    smc->surface_eps_deg_s = config->surface_eps_deg_s;
     smc->target = ref;
     smc->target_last = ref;
-    smc->error_eps = config->error_eps;
-    smc->q = config->q;
-    smc->p = config->p;
-    smc->speed_max_deg_s = config->speed_max_deg_s;
-    smc->surface_eps_deg_s = config->surface_eps_deg_s;
 }
 
 bool SMC_Tick(SMC_t *smc, float angle_now, float angle_vel)
 {
-    // 滑模面使用本周期参考速度，确保角度与速度误差属于同一轨迹
+    // 误差与滑模面统一由模块坐标给出，参考转速和参考加速度来自同一条受限轨迹
     smc->angle = angle_now;
     smc->ang_vel = angle_vel;
     smc->error_last = smc->error;
     smc->error = angle_now - smc->target;
     const float error_dot = angle_vel - smc->target_dot;
-    const float ratio = smc->q / smc->p;
-    const float normalized_error = fabsf(smc->error) / smc->error_eps;
-    float surface_error;
+    smc->s = error_dot + smc->C * smc->error;
 
-    // 近零三次多项式连接连续幂函数，保持角误差符号与量纲
-    if (normalized_error < 1.0f)
-    {
-        const float t = normalized_error;
-        surface_error = smc->error * (1.0f + (ratio - 1.0f) * t * (t - 1.0f));
-    }
-    else
-    {
-        const float power = powf(normalized_error, ratio);
-        surface_error = copysignf(smc->error_eps * power, smc->error);
-    }
+    // 线性趋近项直接生成角加速度，再按等效惯量换算为候选电流
+    const float surface = SMC_Sat(smc->s / smc->surface_eps_deg_s);
+    const float u = smc->J * (smc->target_ddot - smc->C * error_dot - smc->K * smc->s -
+                              smc->epsilon_deg_s2 * surface);
 
-    // 实际角度减参考角度形成滑模面，趋近项直接修正速度目标
-    smc->s = error_dot + smc->C * surface_error;
-    const float speed_target_deg_s = smc->target_dot - smc->C * surface_error -
-                                     smc->K * SMC_Sat(smc->s / smc->surface_eps_deg_s);
-
-    // 浮点运算可能溢出，速度目标限幅前统一检查本链出口
-    if (!isfinite(speed_target_deg_s))
+    // 浮点运算可能溢出，候选电流在写入观测前统一检查本链出口
+    if (!isfinite(u))
     {
         return false;
     }
-    smc->speed_target_deg_s = fminf(smc->speed_max_deg_s, fmaxf(-smc->speed_max_deg_s, speed_target_deg_s));
     smc->target_last = smc->target;
+    smc->u = u;
     return true;
 }
 
