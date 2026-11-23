@@ -22,22 +22,25 @@
  * 本分支滑模试验的参考约束：速度 60 度每秒，加速度 180 度每平方秒
  * 参考追踪增益 5 每秒用于平滑绝对目标跳变，均为未上板试验值，不修改原默认配置
  * 滑模采用线性滑模面并直接输出电流，参数含义与辨识方法见 component/SMC/readme.md
- * J 按假定 yaw 等效惯量 0.03 千克平方米和 GM6020 力矩常数 0.74 牛米每安培推算，上板必须重新标定
- * C=10 每秒、K=10 每秒、切换项 200 度每平方秒、边界层 1 度每秒为合成模型起点，不声明为本机已整定值
+ * J 由 2026-11-23 上板标定：yaw 施加 0.5 A 恒流脉冲
+ * 速度台阶拟合角加速度约 220 度每平方秒，得到 J 约 2.2e-3 A/(deg/s²)，包含摩擦偏置
+ * C=10 每秒、K=10 每秒、切换项 100 度每平方秒、边界层 10 度每秒为 2026-11-23 台架整定值：
+ * 静止角度峰峰 0.06 度、电流峰峰 0.16 A，5 度阶跃上升 0.60 秒、超调 0.4%，10 度阶跃上升 0.72 秒
+ * 边界层取宽值以抑制噪声放大，等效位置增益约 0.44 A/deg、速度增益约 0.066 A/(deg/s)
  * 单云台任务独占配置快照和运行上下文
  */
 #define GIMBAL_SMC_MAX_SPEED_DEG_S (60.0f)
 #define GIMBAL_SMC_MAX_ACCEL_DEG_S2 (180.0f)
 #define GIMBAL_SMC_REFERENCE_GAIN (5.0f)
-#define GIMBAL_SMC_J_A_PER_DEG_S2 (7.0757e-4f)
+#define GIMBAL_SMC_J_A_PER_DEG_S2 (2.2e-3f)
 
 volatile SMC_t gimbal_yaw_smc_config =
 {
     .C = 10.0f,
     .K = 10.0f,
-    .epsilon_deg_s2 = 200.0f,
+    .epsilon_deg_s2 = 100.0f,
     .J = GIMBAL_SMC_J_A_PER_DEG_S2,
-    .surface_eps_deg_s = 1.0f,
+    .surface_eps_deg_s = 10.0f,
 };
 SMC_t gimbal_yaw_smc;
 
