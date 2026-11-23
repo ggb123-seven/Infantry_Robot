@@ -31,6 +31,9 @@ extern "C"
  * - gimbal_debug_yaw_speed_target_rad_s：速度内环目标，单位 rad/s，符号与 gimbal.yaw.speed_rad_s 相同
  *   该模式跳过滑模外环，速度目标按 max_speed_rad_s 和机械行程限幅，非有限值使 yaw 轴进入故障锁存
  *   两轴共用模式，pitch 同步进入速度环且目标为零速，测试须短时小幅并确认 pitch 行程与线束
+ * - gimbal_debug_pitch_target_enabled：默认 false，置 true 后以绝对角度驱动 pitch，yaw 保留遥控输入
+ * - gimbal_debug_pitch_target_deg：pitch 调试目标角度，单位度，使用 INS 俯仰角坐标，可在运行中修改
+ *   开启前先设为当前 gimbal.pitch.angle_deg，避免起控时产生大角度跳转；机械限位仍由云台模块处理
  * - gimbal_remote_speed_loop_enabled：默认 true，遥控链路速度环使能，关闭时遥控云台整体待机
  * - gimbal_remote_angle_loop_enabled：默认 true，遥控链路角度环使能，关闭时角度模式降为速度模式
  * - gimbal_sine_test_enabled：默认 false，闭环后以当前 yaw 为中心生成振幅 30°、相位速度 6 rad/s 的正弦轨迹
@@ -44,6 +47,8 @@ extern volatile bool gimbal_debug_yaw_target_enabled;
 extern volatile float gimbal_debug_yaw_target_deg;
 extern volatile bool gimbal_debug_yaw_speed_enabled;
 extern volatile float gimbal_debug_yaw_speed_target_rad_s;
+extern volatile bool gimbal_debug_pitch_target_enabled;
+extern volatile float gimbal_debug_pitch_target_deg;
 extern volatile bool gimbal_remote_speed_loop_enabled;
 extern volatile bool gimbal_remote_angle_loop_enabled;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST

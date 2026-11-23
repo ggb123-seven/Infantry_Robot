@@ -46,12 +46,16 @@ const Chassis_Config_t chassis_config =
  * - 姿态角采用当前 INS 坐标，yaw 使用累计 Yaw，pitch 使用 Pitch，速度环反馈为对应的大地系欧拉角速度
  * - yaw 未确认线束或机械行程，关闭机械限位，原 [0°, 360°] 数值保留但不再夹住惯性角目标
  * - 速度上限依据 GM6020 使用说明 20231013 的 320 rpm 空载转速换算，约 33.51 rad/s
- * - 电流上限 0.5 A，低于手册额定电流 1.62 A，为当前调试阶段的软件保护
- * - 速度环 Kp=0.06、Ki=0.177 为已整定值，积分限幅取电流上限除以 Ki，约 2.825 rad
+ * - yaw 电流上限 0.5 A，pitch 电流上限 1.0 A：pitch 俯仰轴重力不平衡，水平保持约需 0.5 A，
+ *   参考工作树实测重力前馈为 0.47 A，0.5 A 不足以稳定保持，故单独放宽到 1.0 A
+ * - 速度环 Kp=0.06、Ki=0.177 为已整定值，yaw 积分限幅取 0.5 A 除以 Ki，约 2.825 rad
+ * - pitch 速度环积分限幅取 3.5 rad，约 0.62 A，覆盖重力保持电流并留余量
  * - 两轴角度环统一采用当前 yaw 参数 Kp=15、Ki=0.005、Kd=0，积分限幅为 1.0 rad·s
- * - pitch 的两环参数、速度和电流上限与 yaw 对齐，参数副本独立保存，后续可分别整定
- * - pitch 水平零点 118.08016° 取自用户实测，沿用当前 reversed=false 的编码器方向
- * - pitch 编码器机械范围按用户指定设为水平零点两侧各 60°，即 [-60°, 60°]
+ * - pitch 水平零点 239.5459° 为 2026-11-23 实测，即俯仰摆到水平位时的编码器读数
+ * - pitch 机械行程按 2026-11-23 实测两端限位：上限位机械角 -35.16°、下限位 +27.51°，
+ *   配置取 -33.0° 到 25.5°，两端各留约 2° 余量
+ * - pitch 两环参数取自参考工作树实测值：角度环 k=2/p=5/out=6 rad/s，速度环 k=0.45/p=1/i=0.5/out=1.0
+ * - pitch 俯仰轴重力不平衡，向下运动有重力助力、向上运动需对抗重力，后续可考虑增加重力前馈
  * - 两轴均启用并独立输出电流，默认命令为 RELAX，上电保持零电流
  * - 编码器仅用于机械角、限位与在线检测，pitch 使用有符号角，yaw 保留连续展开
  * - 反馈超时 90 ms：320 rpm 时 90 ms 内转动小于半圈，保证编码器角度可唯一展开
@@ -97,30 +101,30 @@ const Gimbal_Config_t gimbal_config =
         .enabled = true,
         .reversed = false,
         .mechanical_limit_enabled = true,
-        .zero_encoder_deg = 118.08016f,
-        .min_angle_deg = -60.0f,
-        .max_angle_deg = 60.0f,
+        .zero_encoder_deg = 239.5459f,
+        .min_angle_deg = -33.0f,
+        .max_angle_deg = 25.5f,
         .max_speed_rad_s = 320.0f * 0.10471975512f,
-        .max_current_a = 0.5f,
+        .max_current_a = 1.0f,
         .angle_pid =
         {
-            .k = 1.0f,
-            .p = 15.0f,
-            .i = 0.005f,
+            .k = 2.0f,
+            .p = 5.0f,
+            .i = 0.0f,
             .d = 0.0f,
-            .i_limit = 1.0f,
-            .out_limit = 320.0f * 0.10471975512f,
+            .i_limit = 0.0f,
+            .out_limit = 6.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },
         .speed_pid =
         {
-            .k = 1.0f,
-            .p = 0.06f,
-            .i = 0.177f,
+            .k = 0.45f,
+            .p = 1.0f,
+            .i = 0.5f,
             .d = 0.0f,
-            .i_limit = 0.5f / 0.177f,
-            .out_limit = 0.5f,
+            .i_limit = 1.4f,
+            .out_limit = 1.0f,
             .d_cutoff_freq = 0.0f,
             .range = 0.0f,
         },

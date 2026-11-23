@@ -38,6 +38,8 @@ volatile bool gimbal_debug_yaw_target_enabled = false;
 volatile float gimbal_debug_yaw_target_deg = 0.0f;
 volatile bool gimbal_debug_yaw_speed_enabled = false;
 volatile float gimbal_debug_yaw_speed_target_rad_s = 0.0f;
+volatile bool gimbal_debug_pitch_target_enabled = false;
+volatile float gimbal_debug_pitch_target_deg = 0.0f;
 volatile bool gimbal_remote_speed_loop_enabled = true;
 volatile bool gimbal_remote_angle_loop_enabled = true;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
@@ -203,10 +205,10 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
 }
 
 /**
- * @brief 调试器覆盖遥控命令，提供 yaw 绝对角度和速度内环两种单轴测试
+ * @brief 调试器覆盖遥控命令，提供 yaw 角度、yaw 速度内环和 pitch 角度测试
  *
- * 速度调试优先于角度调试，用于在滑模外环不参与时单独整定速度环
- * 两种模式均由两轴共用，pitch 随模式进入对应控制环且目标为零，保持主动阻尼
+ * 速度调试优先；角度调试按轴独立覆盖，未覆盖的轴保留遥控输入
+ * 调试只替换命令，反馈、配置、故障、机械边界和输出闸门仍由云台模块处理
  *
  * @return 无返回值
  */
@@ -220,7 +222,7 @@ static void MotorGimbal_ApplyDebugCommand(void)
         gimbal_command.pitch.rate_rad_s = 0.0f;
         return;
     }
-    // 角度调试以绝对角度测试角度闭环，pitch 增量目标为零并保持当前目标
+    // yaw 角度调试以绝对角度测试角度闭环，pitch 增量目标为零并保持当前目标
     if (gimbal_debug_yaw_target_enabled)
     {
         gimbal_command.mode = GIMBAL_MODE_ANGLE;
@@ -228,6 +230,14 @@ static void MotorGimbal_ApplyDebugCommand(void)
         gimbal_command.yaw.angle_deg = gimbal_debug_yaw_target_deg;
         gimbal_command.yaw.rate_rad_s = 0.0f;
         gimbal_command.pitch.source = GIMBAL_TARGET_INCREMENT;
+        gimbal_command.pitch.rate_rad_s = 0.0f;
+    }
+    // pitch 角度调试以绝对角度驱动俯仰轴，yaw 保留遥控输入
+    if (gimbal_debug_pitch_target_enabled)
+    {
+        gimbal_command.mode = GIMBAL_MODE_ANGLE;
+        gimbal_command.pitch.source = GIMBAL_TARGET_ABSOLUTE;
+        gimbal_command.pitch.angle_deg = gimbal_debug_pitch_target_deg;
         gimbal_command.pitch.rate_rad_s = 0.0f;
     }
 }
