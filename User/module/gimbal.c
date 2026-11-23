@@ -28,6 +28,7 @@
  * 等效位置增益约 1.1 A/deg、速度增益约 0.065 A/(deg/s)，静止角度峰峰 0.025 度、电流峰峰 0.19 A
  * 短阶跃 60 度上升 0.24 秒、超调 0%，小误差下也能给出足够电流，抗扰明显强于低增益版本
  * 参考加速度前馈经 10 毫秒低通，避免参考换向时 J 乘加速度产生 2 A 级力矩尖峰和转动噪声
+ * yaw 摩擦前馈按参考速度方向补偿 0.2648 A，经 5 度每秒的 tanh 平滑，低速起转和换向更顺
  * 单云台任务独占配置快照和运行上下文
  */
 #define GIMBAL_SMC_MAX_SPEED_DEG_S (600.0f)
@@ -35,6 +36,8 @@
 #define GIMBAL_SMC_REFERENCE_GAIN (20.0f)
 #define GIMBAL_SMC_J_A_PER_DEG_S2 (8.0e-4f)
 #define GIMBAL_SMC_DDOT_FILTER_TAU_S (0.01f)
+#define GIMBAL_SMC_YAW_FRICTION_FF_A (0.2648f)
+#define GIMBAL_SMC_FRICTION_SMOOTH_DEG_S (5.0f)
 
 volatile SMC_t gimbal_yaw_smc_config =
 {
@@ -436,7 +439,10 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         {
             return false;
         }
-        current_a = gimbal_yaw_smc.u;
+        // yaw 摩擦前馈按参考速度方向平滑补偿，减小低速起转的粘滞和静差
+        const float friction_ff = GIMBAL_SMC_YAW_FRICTION_FF_A *
+                                  tanhf(gimbal_yaw_smc.target_dot / GIMBAL_SMC_FRICTION_SMOOTH_DEG_S);
+        current_a = gimbal_yaw_smc.u + friction_ff;
     }
     else
     {
