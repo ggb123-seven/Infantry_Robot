@@ -275,5 +275,14 @@ if (condition)
 - 验证：Debug 构建、ARM 严格语法、写入读回、烧录 verify、格式与门禁通过
 - 下一步：烧录固化 PID 的新固件；移植参考工作树 pitch 重力前馈；yaw CAN 反馈恢复后继续滑模
 
+### 2026-11-23 yaw CAN 总线修正
+
+- 现象：pitch 反馈正常、yaw 一直 `feedback_time_us = UINT64_MAX`；参考工作树固件能读到 yaw，说明硬件正常
+- 根因：本工作区把 yaw GM6020 注册到 CAN2，实际硬件与参考工作树一致为 yaw CAN1 ID5（0x209）、pitch CAN2 ID6（0x20A）
+- 修复：`can_devices_gimbal_param[0].can` 改为 `BSP_CAN_1`，重建烧录 `0207bcdc…`
+- 验证：yaw 反馈持续更新、轴进入 RUNNING、SMC 输出约 -0.18 A，3 秒保持角度 0.29~0.33°、电流 -0.14~-0.19 A、无振荡
+- 遗留：yaw J 仍为假定值；静止保持约 0.3° 静差，可考虑摩擦前馈（参考值约 0.2648 A）
+
+
 
 
