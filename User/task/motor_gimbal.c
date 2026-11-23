@@ -34,6 +34,10 @@ Gimbal_Command_t gimbal_command =
 {
     .mode = GIMBAL_MODE_RELAX,
 };
+volatile bool gimbal_debug_yaw_target_enabled = false;
+volatile float gimbal_debug_yaw_target_deg = 0.0f;
+volatile bool gimbal_debug_yaw_speed_enabled = false;
+volatile float gimbal_debug_yaw_speed_target_rad_s = 0.0f;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
@@ -50,6 +54,7 @@ static Cmd_Gimbal_t remote_command;
 
 static bool MotorGimbal_Init(void);
 static void MotorGimbal_ApplyDR16Input(float period_s);
+static void MotorGimbal_ApplyDebugCommand(void);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 static void MotorGimbal_UpdateSineTest(float period_s);
 #endif
@@ -107,6 +112,8 @@ void Task_motor_gimbal(void *argument)
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
             MotorGimbal_UpdateSineTest(period_s);
 #endif
+            // 调试命令使能时覆盖遥控和正弦输入，支持角度闭环和速度内环两种测试
+            MotorGimbal_ApplyDebugCommand();
             // 云台模块直接执行两轴闭环并导出电流
             Gimbal_Control(&gimbal, &gimbal_command, period_s);
             Gimbal_DumpOutput(&gimbal, &output);
@@ -115,6 +122,9 @@ void Task_motor_gimbal(void *argument)
         // 发布失败时 CAN 任务按空邮箱输出零电流，同步让两轴停机，避免积分在零输出期间累计
         if (!MotorGimbal_PublishOutput(&output) && initialized)
         {
+            // 输出发布失败后关闭全部调试使能，避免故障解除时自动重新起控
+            gimbal_debug_yaw_target_enabled = false;
+            gimbal_debug_yaw_speed_enabled = false;
             Gimbal_Command_t relax_command =
             {
                 .mode = GIMBAL_MODE_RELAX,
@@ -185,6 +195,36 @@ static void MotorGimbal_ApplyDR16Input(float period_s)
     const uint64_t now_us = BSP_TIME_Get();
     remote_cache_valid = Cmd_ParseGimbal(&remote_command, &remote_cache, remote_cache_valid,
         now_us, period_s, Gimbal_HasLatchedFault(&gimbal), &gimbal_command);
+}
+
+/**
+ * @brief 调试器覆盖遥控命令，提供 yaw 绝对角度和速度内环两种单轴测试
+ *
+ * 速度调试优先于角度调试，用于在滑模外环不参与时单独整定速度环
+ * 两种模式均由两轴共用，pitch 随模式进入对应控制环且目标为零，保持主动阻尼
+ *
+ * @return 无返回值
+ */
+static void MotorGimbal_ApplyDebugCommand(void)
+{
+    // 速度调试直接给出角速度目标，跳过滑模外环以便单独观察速度 PID 响应
+    if (gimbal_debug_yaw_speed_enabled)
+    {
+        gimbal_command.mode = GIMBAL_MODE_SPEED;
+        gimbal_command.yaw.rate_rad_s = gimbal_debug_yaw_speed_target_rad_s;
+        gimbal_command.pitch.rate_rad_s = 0.0f;
+        return;
+    }
+    // 角度调试以绝对角度测试角度闭环，pitch 增量目标为零并保持当前目标
+    if (gimbal_debug_yaw_target_enabled)
+    {
+        gimbal_command.mode = GIMBAL_MODE_ANGLE;
+        gimbal_command.yaw.source = GIMBAL_TARGET_ABSOLUTE;
+        gimbal_command.yaw.angle_deg = gimbal_debug_yaw_target_deg;
+        gimbal_command.yaw.rate_rad_s = 0.0f;
+        gimbal_command.pitch.source = GIMBAL_TARGET_INCREMENT;
+        gimbal_command.pitch.rate_rad_s = 0.0f;
+    }
 }
 
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
