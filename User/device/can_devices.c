@@ -413,17 +413,19 @@ int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedba
 }
 
 /**
- * @brief 分别写入 yaw 和 pitch 电流，再统一发送云台控制帧
+ * @brief 分别写入 yaw 和 pitch 电流，并按轴所在总线分别发送控制帧
+ *
+ * 两轴可能分属 CAN1 与 CAN2，共用的 0x2FE 需要在各自总线上各发一帧
  *
  * @param[in] yaw_current_a yaw 转子侧电流，单位 A，有限值由电机驱动按协议量程限幅
  * @param[in] pitch_current_a pitch 转子侧电流，单位 A，有限值由电机驱动按协议量程限幅
- * @return 两路缓存写入且发送成功返回 CAN_DEVICES_OK，非法输入或驱动失败返回 CAN_DEVICES_ERROR
+ * @return 两路缓存写入且各总线发送成功返回 CAN_DEVICES_OK，非法输入或驱动失败返回 CAN_DEVICES_ERROR
  */
 int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a)
 {
     bool success = isfinite(yaw_current_a) && isfinite(pitch_current_a);
     bool cache_safe = true;
-    MOTOR_RM_Param_t *flush_param = NULL;
+    MOTOR_RM_Param_t *flush_param[CAN_DEVICES_GIMBAL_MOTOR_COUNT] = { NULL, NULL };
 
     // 两轴独立校验，单轴非法请求只清零本轴，先写完两轴缓存再统一发送
     for (uint8_t axis = 0U; axis < CAN_DEVICES_GIMBAL_MOTOR_COUNT; axis++)
@@ -445,15 +447,31 @@ int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a)
                 cache_safe = false;
             }
         }
-        flush_param = param;
+        flush_param[axis] = param;
     }
 
-    // 共用的 0x2FE 每周期只发送一次，未使用的 ID7 与保留字节由驱动清零
-    if (!cache_safe || flush_param == NULL || MOTOR_RM_FlushGroup(flush_param) != DEVICE_OK)
+    // 缓存无法确认安全或没有已注册电机时停止提交本次输出
+    if (!cache_safe || (flush_param[CAN_DEVICES_GIMBAL_YAW] == NULL &&
+                        flush_param[CAN_DEVICES_GIMBAL_PITCH] == NULL))
     {
         return CAN_DEVICES_ERROR;
     }
-    return success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
+
+    // 两轴同总线时只发送一次，分属 CAN1 与 CAN2 时分别提交各自的 0x2FE 帧
+    bool flush_success = true;
+    if (flush_param[CAN_DEVICES_GIMBAL_YAW] != NULL &&
+        MOTOR_RM_FlushGroup(flush_param[CAN_DEVICES_GIMBAL_YAW]) != DEVICE_OK)
+    {
+        flush_success = false;
+    }
+    if (flush_param[CAN_DEVICES_GIMBAL_PITCH] != NULL &&
+        (flush_param[CAN_DEVICES_GIMBAL_YAW] == NULL ||
+         flush_param[CAN_DEVICES_GIMBAL_PITCH]->can != flush_param[CAN_DEVICES_GIMBAL_YAW]->can) &&
+        MOTOR_RM_FlushGroup(flush_param[CAN_DEVICES_GIMBAL_PITCH]) != DEVICE_OK)
+    {
+        flush_success = false;
+    }
+    return success && flush_success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
 }
 
 /**
