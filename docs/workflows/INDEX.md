@@ -2,6 +2,7 @@
 
 | 日期 | 类型 | 主题 | 记录 |
 |---|---|---|---|
+| 2026-11-23 | feature | 同步另一工作树的云台遥控映射 | [记录](2026-11-23_gimbal_remote_mapping_sync.md) |
 | 2026-11-23 | feature | yaw 改为滑模直接输出电流（线性滑模电流版） | [记录](2026-11-23_yaw_smc_direct_current_impl.md) |
 | 2026-11-23 | feature | yaw 速度内环调试入口与从内到外整定清单 | [记录](2026-11-23_yaw_smc_inner_loop_tuning.md) |
 | 2026-11-23 | analysis | yaw 直出电流 SMC 与级联架构对照及选型 | [记录](2026-11-23_yaw_smc_direct_current_decision.md) |

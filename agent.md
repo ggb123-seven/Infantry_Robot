@@ -257,3 +257,12 @@ if (condition)
 - Debug 构建、ARM 严格语法、主机 SMC 单元与云台集成测试、ARCH/HW/SPEC 通过；未烧录、未实测
 - 下一步：烧录后做 RELAX 零输出与方向核验、标定 J、做 5°/10° 阶跃，再按实测调参
 
+### 2026-11-23 云台遥控映射与参考工作树对齐
+
+- 参考 `F:\RM\Infantry_Robot`（main）的云台部分，只同步遥控映射，不引入底盘、拨弹和功率限制差异
+- 遥控在线即进入 ANGLE，两侧拨杆不再参与云台使能；命令状态改为 INACTIVE/ACTIVE 两态
+- 新增 `Cmd_SelectGimbalLoops` 与 `gimbal_remote_speed_loop_enabled`、`gimbal_remote_angle_loop_enabled`，默认都开启
+- 速度环关闭时遥控云台整体待机，角度环关闭时降为速度模式；失联和故障产生的待机不受环路开关覆盖
+- Debug 构建、ARM 严格语法、遥控映射主机测试、格式与门禁通过；未烧录、未接遥控器实测
+
+
