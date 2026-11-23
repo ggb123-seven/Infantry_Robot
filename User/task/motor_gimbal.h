@@ -31,9 +31,11 @@ extern "C"
  * - gimbal_debug_yaw_speed_target_rad_s：速度内环目标，单位 rad/s，符号与 gimbal.yaw.speed_rad_s 相同
  *   该模式跳过滑模外环，速度目标按 max_speed_rad_s 和机械行程限幅，非有限值使 yaw 轴进入故障锁存
  *   两轴共用模式，pitch 同步进入速度环且目标为零速，测试须短时小幅并确认 pitch 行程与线束
+ * - gimbal_remote_speed_loop_enabled：默认 true，遥控链路速度环使能，关闭时遥控云台整体待机
+ * - gimbal_remote_angle_loop_enabled：默认 true，遥控链路角度环使能，关闭时角度模式降为速度模式
  * - gimbal_sine_test_enabled：默认 false，闭环后以当前 yaw 为中心生成振幅 30°、相位速度 6 rad/s 的正弦轨迹
  * - gimbal_sine_feedforward_enabled：默认 true，控制正弦测试是否同时提供解析角速度前馈
- *   正弦测试仍受右拨杆和失联停机约束，调试命令使能后由调试命令覆盖，编译开关关闭时不提供这两个变量
+ *   正弦测试仍受失联停机约束，调试命令使能后由调试命令覆盖，编译开关关闭时不提供这两个变量
  * 调试命令只绕过遥控器使能，反馈、配置、故障状态、机械边界和输出闸门仍由云台模块处理
  */
 extern Gimbal_t gimbal;
@@ -42,6 +44,8 @@ extern volatile bool gimbal_debug_yaw_target_enabled;
 extern volatile float gimbal_debug_yaw_target_deg;
 extern volatile bool gimbal_debug_yaw_speed_enabled;
 extern volatile float gimbal_debug_yaw_speed_target_rad_s;
+extern volatile bool gimbal_remote_speed_loop_enabled;
+extern volatile bool gimbal_remote_angle_loop_enabled;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 extern volatile bool gimbal_sine_test_enabled;
 extern volatile bool gimbal_sine_feedforward_enabled;

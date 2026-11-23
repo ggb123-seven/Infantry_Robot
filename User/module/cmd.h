@@ -9,11 +9,10 @@ extern "C"
 {
 #endif
 
-// 启动及异常后等待中位确认，中位就绪后才允许上位运行
+// 遥控在线即允许云台运行，两侧拨杆不参与使能，失联或故障时回到未使能
 typedef enum
 {
-    CMD_GIMBAL_WAIT_NEUTRAL = 0,
-    CMD_GIMBAL_READY,
+    CMD_GIMBAL_INACTIVE = 0,
     CMD_GIMBAL_ACTIVE,
 } Cmd_GimbalState_t;
 
@@ -40,7 +39,7 @@ typedef struct
 void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out);
 
 /**
- * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
+ * @brief 解析云台遥控平滑速度，遥控在线即进入角度模式
  *
  * @param[in,out] ctx 云台任务独占上下文，可为 NULL
  * @param[in] rc 最近遥控快照，可为 NULL
@@ -55,7 +54,17 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
                      float period_s, bool gimbal_fault, Gimbal_Command_t *out);
 
 /**
- * @brief 撤销遥控使能与速度历史，要求重新确认中位
+ * @brief 根据环路开关选择两轴共用模式，失联和故障产生的待机不受影响
+ *
+ * @param[in,out] command 已解析的遥控命令，可为 NULL
+ * @param[in] speed_enabled 速度环使能，关闭时整体待机
+ * @param[in] angle_enabled 角度环使能，关闭时角度模式降为速度模式
+ * @return 无返回值
+ */
+void Cmd_SelectGimbalLoops(Gimbal_Command_t *command, bool speed_enabled, bool angle_enabled);
+
+/**
+ * @brief 撤销遥控运行阶段与速度历史，恢复后重新捕获姿态
  *
  * @param[out] ctx 云台命令上下文，可为 NULL
  * @return 无返回值

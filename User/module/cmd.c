@@ -122,7 +122,7 @@ void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
 }
 
 /**
- * @brief 撤销遥控使能与速度历史，要求重新确认中位
+ * @brief 撤销遥控运行阶段与速度历史，恢复后重新捕获姿态
  *
  * @param[out] ctx 云台命令上下文，可为 NULL
  * @return 无返回值
@@ -133,13 +133,37 @@ void Cmd_ResetGimbal(Cmd_Gimbal_t *ctx)
     {
         *ctx = (Cmd_Gimbal_t)
         {
-            .state = CMD_GIMBAL_WAIT_NEUTRAL,
+            .state = CMD_GIMBAL_INACTIVE,
         };
     }
 }
 
 /**
- * @brief 解析云台遥控使能顺序与平滑速度，异常输入要求重新确认中位
+ * @brief 根据环路开关选择两轴共用模式，失联和故障产生的待机不受影响
+ *
+ * @param[in,out] command 已解析的遥控命令，可为 NULL
+ * @param[in] speed_enabled 速度环使能，关闭时整体待机
+ * @param[in] angle_enabled 角度环使能，关闭时角度模式降为速度模式
+ * @return 无返回值
+ */
+void Cmd_SelectGimbalLoops(Gimbal_Command_t *command, bool speed_enabled, bool angle_enabled)
+{
+    // 只改写遥控生成的角度模式，待机命令与调试命令保持原样
+    if (command != NULL && command->mode == GIMBAL_MODE_ANGLE)
+    {
+        if (!speed_enabled)
+        {
+            command->mode = GIMBAL_MODE_RELAX;
+        }
+        else if (!angle_enabled)
+        {
+            command->mode = GIMBAL_MODE_SPEED;
+        }
+    }
+}
+
+/**
+ * @brief 解析云台遥控平滑速度，遥控在线即进入角度模式
  *
  * @param[in,out] ctx 云台任务独占上下文，可为 NULL
  * @param[in] rc 最近遥控快照，可为 NULL
@@ -175,42 +199,9 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
         return true;
     }
 
-    // 只有中位确认后的上位允许持续运行，停机档和非法状态要求重新确认
+    // 遥控正常通信即允许运行，两侧拨杆不参与云台使能，首次上线先捕获姿态
     const bool was_active = ctx->state == CMD_GIMBAL_ACTIVE;
-    switch (ctx->state)
-    {
-        case CMD_GIMBAL_WAIT_NEUTRAL:
-            if (rc->data.sw_r == DR16_SWITCH_MIDDLE)
-            {
-                ctx->state = CMD_GIMBAL_READY;
-            }
-            break;
-
-        case CMD_GIMBAL_READY:
-        case CMD_GIMBAL_ACTIVE:
-            switch (rc->data.sw_r)
-            {
-                case DR16_SWITCH_MIDDLE:
-                    ctx->state = CMD_GIMBAL_READY;
-                    break;
-                case DR16_SWITCH_UP:
-                    ctx->state = CMD_GIMBAL_ACTIVE;
-                    break;
-                default:
-                    ctx->state = CMD_GIMBAL_WAIT_NEUTRAL;
-                    break;
-            }
-            break;
-
-        default:
-            ctx->state = CMD_GIMBAL_WAIT_NEUTRAL;
-            break;
-    }
-    if (ctx->state != CMD_GIMBAL_ACTIVE)
-    {
-        ctx->yaw_rate_deg_s = ctx->pitch_rate_deg_s = 0.0f;
-        return true;
-    }
+    ctx->state = CMD_GIMBAL_ACTIVE;
     out->mode = GIMBAL_MODE_ANGLE;
     if (!was_active)
     {

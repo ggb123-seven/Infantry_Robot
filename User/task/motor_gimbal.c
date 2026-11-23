@@ -38,6 +38,8 @@ volatile bool gimbal_debug_yaw_target_enabled = false;
 volatile float gimbal_debug_yaw_target_deg = 0.0f;
 volatile bool gimbal_debug_yaw_speed_enabled = false;
 volatile float gimbal_debug_yaw_speed_target_rad_s = 0.0f;
+volatile bool gimbal_remote_speed_loop_enabled = true;
+volatile bool gimbal_remote_angle_loop_enabled = true;
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
 volatile bool gimbal_sine_test_enabled = false;
 volatile bool gimbal_sine_feedforward_enabled = true;
@@ -107,8 +109,11 @@ void Task_motor_gimbal(void *argument)
             Gimbal_UpdateFeedback(&gimbal, yaw_received ? &yaw_feedback : NULL,
                                   pitch_received ? &pitch_feedback : NULL, imu_received ? &imu : NULL, BSP_TIME_Get());
 
-            // 遥控输入先决定是否使能，正弦测试同样受遥控失能约束，再执行模块闭环
+            // 遥控输入先决定是否使能，再按环路开关选择角度或速度模式
             MotorGimbal_ApplyDR16Input(period_s);
+            // 环路开关只改写遥控生成的角度模式，失联和故障产生的待机不受影响
+            Cmd_SelectGimbalLoops(&gimbal_command, gimbal_remote_speed_loop_enabled,
+                                  gimbal_remote_angle_loop_enabled);
 #if MOTOR_GIMBAL_ENABLE_SINE_TEST
             MotorGimbal_UpdateSineTest(period_s);
 #endif
