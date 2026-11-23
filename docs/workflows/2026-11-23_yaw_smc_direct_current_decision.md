@@ -3,8 +3,8 @@
 ## 决定与范围
 
 - 用户选择方案 A：把 yaw ANGLE 恢复为**滑模直接输出电流**的原开源结构，替代 2026-11-06 的“速度域滑模 + 速度 PID”级联
-- 本文只记录无代码的主机对照、参数起点与改动范围，**未修改任何源码**
-- 源码改动需要修改 `User/component/SMC` 与 `User/module/gimbal.c`，超出 `User/task` 默认授权，待用户确认
+- 本文只记录无代码的主机对照、参数起点与改动范围，撰写时未修改源码；源码改动与验证见 [直出电流线性滑模实现](2026-11-23_yaw_smc_direct_current_impl.md)
+- 源码改动需要修改 `User/component/SMC` 与 `User/module/gimbal.c`，超出 `User/task` 默认授权，已取得用户授权
 
 ## 对照模型（合成参数，不是实物辨识）
 
@@ -87,10 +87,11 @@ u = J * [ theta_ddot_ref - C*e_dot - K*s - epsilon*sat(s/phi) ]
 - `User/module/gimbal.c`、`gimbal.h`：yaw ANGLE 直接使用 SMC 电流，输出仍受 `max_current_a`、机械边界与输出闸门约束；SPEED 模式继续使用速度 PID；参考轨迹继续沿用 `SMC_AdvanceReference`
 - 新增字段属于结构体改动，按项目规则需要先与用户确认字段设计再定稿
 
-## 待确认
+## 已确认与实施
 
-- 是否授权修改上述两个目录
-- 采用线性滑模（C、K、epsilon、J、surface_eps）还是保留终端滑模（额外 q、p、error_eps）
+- 用户已授权修改 `User/component/SMC` 与 `User/module/gimbal.c/.h`
+- 采用线性滑模电流版（C、K、epsilon、J、surface_eps），不保留终端滑模的 q、p、error_eps
+- 源码改动、参数起点和验证证据见 [直出电流线性滑模实现](2026-11-23_yaw_smc_direct_current_impl.md)
 
 ## 验证边界
 

@@ -245,3 +245,15 @@ if (condition)
 - 2026-10-31 按用户最新要求恢复原方向：删除 Task_can_Init 中的 +1 覆盖，Feeder_Init 使用模块默认 direction=-1，保留在线可调副本与周期快照
 - 本次 Debug 构建、can_task.c ARM 严格语法检查、ARCH/HW/SPEC 和格式检查通过，详见 docs/workflows/2026-10-31_feeder_reverse.md
 - 未烧录、未验证本次实物旋转方向、未测最坏控制耗时及栈高水位
+
+## 云台当前进度
+
+### 2026-11-23 yaw 改为直出电流线性滑模
+
+- 用户选择原开源架构并授权修改 `User/component/SMC` 与 `User/module/gimbal.c/.h`，替代 2026-11-06 的速度域级联
+- `SMC_t` 改为电流域：C(1/s)、K(1/s)、epsilon_deg_s2、J(A/(deg/s²))、surface_eps_deg_s；`SMC_Tick` 直接输出 A 电流
+- yaw ANGLE 不再经过角度环和速度环；pitch 与 SPEED 模式保留 PID，状态机、反馈和输出闸门不变
+- 默认 J=7.0757e-4 由假定惯量推算，必须上板用固定小电流测角加速度标定；C=10、K=10、epsilon=200、surface_eps=1 为合成模型起点
+- Debug 构建、ARM 严格语法、主机 SMC 单元与云台集成测试、ARCH/HW/SPEC 通过；未烧录、未实测
+- 下一步：烧录后做 RELAX 零输出与方向核验、标定 J、做 5°/10° 阶跃，再按实测调参
+
