@@ -67,14 +67,15 @@ typedef struct
 static CANDevices_State_t can_devices_state;
 
 /*
- * CAN2 云台固定参数：索引 0 为 ID5 yaw，索引 1 为 ID6 pitch
+ * 云台固定参数：索引 0 为 CAN1 上的 ID5 yaw，索引 1 为 CAN2 上的 ID6 pitch
  * 反馈标准帧分别为 0x209、0x20A，电流控制共用 0x2FE，方向暂不反转，无外置减速箱
+ * 两轴分属不同总线：yaw 与父工作树一致接 CAN1，pitch 与拨弹共用 CAN2
  * @datasheet RoboMaster GM6020 使用说明 20231013 的 CAN 电流控制协议
  */
 static MOTOR_RM_Param_t can_devices_gimbal_param[CAN_DEVICES_GIMBAL_MOTOR_COUNT] =
 {
     {
-        .can = BSP_CAN_2,
+        .can = BSP_CAN_1,
         .id = 0x209U,
         .module = MOTOR_GM6020,
         .reverse = false,
