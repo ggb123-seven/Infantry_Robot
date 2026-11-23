@@ -282,6 +282,9 @@ if (condition)
 - 修复：`can_devices_gimbal_param[0].can` 改为 `BSP_CAN_1`，重建烧录 `0207bcdc…`
 - 验证：yaw 反馈持续更新、轴进入 RUNNING、SMC 输出约 -0.18 A，3 秒保持角度 0.29~0.33°、电流 -0.14~-0.19 A、无振荡
 - 遗留：yaw J 仍为假定值；静止保持约 0.3° 静差，可考虑摩擦前馈（参考值约 0.2648 A）
+- 追加修复：`CANDevices_ApplyGimbalCurrent` 旧实现只按 pitch 的 CAN2 发一次 0x2FE，yaw 在 CAN1 收不到电流；已同步参考工作树改为按轴所在总线分别发送，烧录 `85ae87df…` 后 yaw 输出真实电流
+- 注意：修复前观察到的 yaw 0.18 A 保持只是软件缓存值，电机实际无出力；J 标定需重做
+
 
 
 
