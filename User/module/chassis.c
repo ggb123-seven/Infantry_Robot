@@ -20,6 +20,7 @@
 #define CHASSIS_RPM_TO_RAD_S (M_2PI / 60.0F) /* rpm 转 rad/s 系数 */
 
 _Static_assert(CHASSIS_WHEEL_COUNT == CAN_DEVICES_CHASSIS_MOTOR_COUNT, "底盘与 CAN 电机数量必须一致");
+_Static_assert(CHASSIS_WHEEL_COUNT == POWER_WHEEL_COUNT, "底盘与功率环轮数必须一致");
 
 /* 四轮前馈初值取自 2026-11-10 架空正向 30 rpm 实测，单位：A/rpm */
 /* 依次为左前 0.0137、左后 0.0231、右后 0.0097、右前 0.0092，调试器写入后由控制入口逐周期采纳 */
@@ -59,10 +60,12 @@ static void Chassis_RunWheel(Chassis_Wheel_t *wheel, const Chassis_Config_t *con
  *
  * @param chassis 待初始化的底盘实例，初始化后不得整体复制
  * @param config 默认配置
+ * @param power_config 功率限制默认配置
  * @param frequency_hz 控制采样频率，单位：Hz
  * @return int8_t 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
-int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float frequency_hz)
+int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, const Power_Config_t *power_config,
+                    float frequency_hz)
 {
     /* 清空旧状态并标记缺失反馈，保证所有初始化失败路径输出零电流 */
     memset(chassis, 0, sizeof(*chassis));
@@ -73,6 +76,13 @@ int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float fr
     chassis->config_valid = Chassis_IsConfigValid(config, frequency_hz);
     if (!chassis->config_valid)
     {
+        return -1;
+    }
+
+    /* 功率限制配置随底盘一起初始化，失败时保持未初始化和零输出 */
+    if (Power_Init(&chassis->power, power_config) != 0)
+    {
+        chassis->config_valid = false;
         return -1;
     }
 
@@ -293,6 +303,29 @@ void Chassis_Control(Chassis_t *chassis, const Chassis_Command_t *command, float
         Chassis_ControlWheel(wheel, &chassis_internal.cycle_config, next_mode != CHASSIS_MODE_RELAX,
                                period_s, feedforward_gain[i]);
     }
+
+    /* 四轮电流统一做功率再分配，离线轮不参与预测并保持零输出 */
+    Power_WheelInput_t power_wheels[POWER_WHEEL_COUNT];
+    float power_current_a[POWER_WHEEL_COUNT];
+    for (uint32_t i = 0U; i < POWER_WHEEL_COUNT; i++)
+    {
+        power_wheels[i].current_a = chassis->wheel[i].output_current_a;
+        power_wheels[i].measured_speed_rad_s = chassis->wheel[i].measured_speed_rpm * CHASSIS_RPM_TO_RAD_S;
+        power_wheels[i].target_speed_rad_s = chassis->wheel[i].target_speed_rpm * CHASSIS_RPM_TO_RAD_S;
+        power_wheels[i].max_current_a = snapshot.max_current_a;
+        power_wheels[i].online = chassis->wheel[i].state == CHASSIS_WHEEL_RUNNING;
+        power_current_a[i] = power_wheels[i].current_a;
+    }
+    Power_Limit(&chassis->power, power_wheels, power_current_a);
+    for (uint32_t i = 0U; i < POWER_WHEEL_COUNT; i++)
+    {
+        chassis->wheel[i].output_current_a = power_current_a[i];
+    }
+    if (!chassis->power.config_valid)
+    {
+        chassis->config_valid = false;
+    }
+
     chassis->mode = next_mode;
 }
 

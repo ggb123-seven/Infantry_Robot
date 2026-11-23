@@ -15,6 +15,7 @@ extern "C"
 #include "component/mixer.h"
 #include "component/pid.h"
 #include "device/can_devices.h"
+#include "module/power.h"
 
 /* Exported constants ------------------------------------------------------- */
 #define CHASSIS_WHEEL_COUNT (4U) /* 底盘驱动轮数量，电调 ID1~4 */
@@ -95,6 +96,7 @@ typedef struct
     float follow_relative_angle_deg;            /* 云台相对车头的最短机械角，单位：度，反馈无效时为非数值 */
     float follow_relative_speed_rad_s;          /* 方向修正后的云台相对底盘角速度，单位：rad/s */
     float follow_wz;                            /* 本周期跟随 PID 的归一化转向请求，不代表实测车体角速度 */
+    Power_t power;                              /* 功率限制实例，配置与观测字段见 power.h */
 } Chassis_t;
 
 /* Exported functions ------------------------------------------------------- */
@@ -103,10 +105,12 @@ typedef struct
  *
  * @param chassis 待初始化的底盘实例，初始化后不得整体复制
  * @param config 默认配置
+ * @param power_config 功率限制默认配置
  * @param frequency_hz 控制采样频率，单位：Hz
  * @return int8_t 成功返回 0，失败返回 -1 并保持未初始化和零输出
  */
-int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, float frequency_hz);
+int8_t Chassis_Init(Chassis_t *chassis, const Chassis_Config_t *config, const Power_Config_t *power_config,
+                    float frequency_hz);
 
 /**
  * @brief 从 CAN 快照更新四轮实测转速

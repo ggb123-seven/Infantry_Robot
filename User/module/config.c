@@ -151,6 +151,33 @@ const Chassis_Config_t chassis_config =
 };
 
 /*
+ * 功率限制默认配置，当前无裁判系统，按固定功率上限限制四轮输出
+ *
+ * enabled：是否启用功率限制，关闭时完全直通
+ * limit_w：底盘功率上限，单位：W，当前按用户要求取 90 W
+ * torque_const：M3508 输出轴力矩常数，单位：N*m/A，取手册转矩常数 0.3
+ * k_abs：转速损耗系数，单位：W/(rad/s)，暂取参考工程默认值 0.22
+ * k_sq：转速平方损耗系数，单位：W/(rad/s)^2，默认关闭，离线辨识后再启用
+ * k_cur：电流平方损耗系数，单位：W/A^2，由参考工程 1.2 * 0.3^2 折算为 0.108
+ * k0：整机静态损耗，单位：W，暂取参考工程默认值 2.78
+ * error_low_rad_s、error_high_rad_s：功率分配置信度阈值，单位：rad/s，取参考工程 15 与 20
+ *
+ * 系数为参考初值，尚未按本车标定，顺序见 docs/workflows 的功率限制设计方案
+ */
+const Power_Config_t power_config =
+{
+    .enabled = true,
+    .limit_w = 90.0F,
+    .torque_const = 0.3F,
+    .k_abs = 0.22F,
+    .k_sq = 0.0F,
+    .k_cur = 0.108F,
+    .k0 = 2.78F,
+    .error_low_rad_s = 15.0F,
+    .error_high_rad_s = 20.0F,
+};
+
+/*
  * 云台默认配置，按结构体字段逐项说明，字段定义和校验约束见 gimbal.h
  *
  * yaw、pitch：单轴配置 Gimbal_AxisConfig_t，两轴字段含义相同

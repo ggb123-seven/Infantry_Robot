@@ -20,6 +20,7 @@ extern "C"
 /* Exported constants ------------------------------------------------------- */
 /* 各业务模块的只读默认配置，参数说明见定义处，模块初始化时复制到实例 */
 extern const Chassis_Config_t chassis_config; /* 底盘默认配置 */
+extern const Power_Config_t power_config;     /* 功率限制默认配置 */
 extern const Gimbal_Config_t gimbal_config;   /* 云台默认配置 */
 extern const Shoot_Config_t shoot_config;     /* 摩擦轮默认配置 */
 extern const Feeder_Config_t feeder_config;   /* 拨弹默认配置 */

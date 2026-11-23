@@ -731,6 +731,11 @@
               <FilePath>..\User\module\feeder.c</FilePath>
             </File>
             <File>
+              <FileName>power.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\module\power.c</FilePath>
+            </File>
+            <File>
               <FileName>gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\bsp\gpio.c</FilePath>

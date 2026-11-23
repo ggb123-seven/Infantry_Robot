@@ -79,6 +79,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/module/feeder.c
     User/module/gimbal.c
     User/module/ins.c
+    User/module/power.c
     User/module/shoot.c
     User/module/trigger.c
 

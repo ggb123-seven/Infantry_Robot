@@ -65,7 +65,7 @@ void Task_motor_chassis(void *argument)
     const uint32_t tick_frequency = osKernelGetTickFreq();
     const uint32_t delay_tick = tick_frequency / MOTOR_CHASSIS_FREQ;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
-    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, (float)MOTOR_CHASSIS_FREQ);
+    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, &power_config, (float)MOTOR_CHASSIS_FREQ);
     if (init_status != 0)
     {
         FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
