@@ -102,16 +102,13 @@ void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Ch
         return;
     }
 
-    // 上位为独立模式，中位跟随云台朝向，下位按云台坐标平移并自旋
-    // 上位保留本工作树原有平移，父树该档为零速闭环刹车，差异待实测确认
+    // 上位为独立模式且零速闭环刹车，中位跟随云台朝向，下位按云台坐标平移并自旋
     const float lateral = Cmd_NormalizeChannel(rc->data.ch_l_x);
     const float forward = Cmd_NormalizeChannel(rc->data.ch_l_y);
     switch (rc->data.sw_l)
     {
         case DR16_SWITCH_UP:
             out->mode = CHASSIS_MODE_INDEPENDENT;
-            out->move.vx = -forward;
-            out->move.vy = lateral;
             break;
 
         case DR16_SWITCH_MIDDLE:
