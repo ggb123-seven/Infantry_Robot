@@ -1,17 +1,23 @@
 "use strict";
 const { inspectElf } = require("./elf-file");
-// mcu-flash 编程/校验入口的共享逻辑：EmberProbe 配置复用、ELF/目标/探针自动
-// 检测与 OpenOCD 进程调用。仅依赖 Node 内置模块，随 skills/_emberprobe 一起分发，
-// 不依赖扩展本体；bridge 不可用时各项检测自动降级为工作区推断。
+// Shared logic for the mcu-flash program/verify entry points: reuse of EmberProbe configuration, ELF/target/probe
+// detection and OpenOCD process calls. It uses only Node built-ins and ships with skills/_emberprobe, independent of
+// the extension; without the Bridge every detection degrades to workspace inference.
 
 const fs = require("fs");
 const { canonicalFileSync } = require("./file-identity");
 const { createLineDecoder } = require("./tool-output");
 const { detectProbe, probeFromText } = require("./probe-detection");
-const { isSafeCfgPath, resolveExecutablePath, resolveOpenOcdLaunch, normalizeTransport } = require("./openocd-launch");
+const {
+    isSafeCfgPath,
+    matchesOpenOcdExecutable,
+    resolveExecutablePath,
+    resolveOpenOcdLaunch,
+    normalizeTransport
+} = require("./openocd-launch");
 const path = require("path");
 const crypto = require("crypto");
-const { execFile, spawn } = require("child_process");
+const { spawn } = require("child_process");
 const { call, diagnosticForError } = require("./agent-client");
 const { MIN_OPENOCD_VERSION, parseVersion: parseOpenOcdVersion, checkCompatibility } = require("./openocd-policy");
 const { normalizeProbeSerial, normalizeAdapterSpeed } = require("./probe-connection");
@@ -45,11 +51,12 @@ function parseArgs(argv) {
     return out;
 }
 
-// 读取 EmberProbe 配置。config.get 失败时不再吞掉异常：返回结构化 diagnostic，
-// 供预检记录降级原因并保留原始错误码与详情；调用方仍可继续用显式参数/自动检测降级。
+// Reads the EmberProbe configuration. A failed config.get is not swallowed: it returns a structured diagnostic so the
+// preflight records why it degraded, with the original error code and details; callers can still fall back to explicit
+// arguments or detection.
 async function getEmberProbeConfig(workspace, bridgeCall = call) {
     try {
-        return { config: await bridgeCall(workspace, "config.get", {}), diagnostic: null };
+        return { config: await bridgeCall(workspace, "config.get", { resolveOpenOcd: true }), diagnostic: null };
     } catch (error) {
         return { config: null, diagnostic: diagnosticForError(error, { operation: "config.get" }) };
     }
@@ -75,8 +82,8 @@ async function authorizeFlash(result, confirmationId, operation = "flash.execute
     });
 }
 
-// 深度优先遍历工作区文件；跳过 ignored 目录，忽略不可读目录。
-// 扩展名比较统一小写，避免 Linux 等大小写敏感文件系统上漏掉 FIRMWARE.ELF。
+// Depth-first walk of workspace files, skipping ignored and unreadable directories. Extensions are compared in lower
+// case so FIRMWARE.ELF is found on case-sensitive file systems.
 function walkFiles(root, accept, ignored = targets.ELF_IGNORED_DIRS) {
     const files = [];
     const visit = (dir) => {
@@ -107,8 +114,8 @@ function readElfHeader(file) {
     }
 }
 
-// 与扩展自动检测共用选择规则：只取 ELF 镜像（含 Keil .axf / IAR .out），拒绝与目标架构矛盾的镜像，
-// 优先工程目录内的镜像，其次按修改时间。
+// Uses the extension's auto-detection rules: only ELF images (including Keil .axf / IAR .out), rejecting images whose
+// architecture contradicts the target, preferring images inside the project directory, then by modification time.
 function findNewestElf(root, options = {}) {
     const images = [];
     for (const file of walkFiles(root, targets.isElfCandidateName)) {
@@ -249,13 +256,13 @@ function tclQuote(value) {
     return `"${escaped}"`;
 }
 
-// OpenOCD Tcl 内的文件名使用正斜杠，Windows 路径也能被解析。
+// File names inside OpenOCD Tcl use forward slashes so Windows paths parse too.
 function toPosix(value) {
     return path.sep === "/" ? value : value.split(path.sep).join("/");
 }
 
-// 运行 OpenOCD 并把 stdout/stderr 逐行转发到本进程 stdout（OpenOCD 诊断走 stderr，
-// 与 PowerShell 版的 2>&1 行为保持一致），同时收集行供 EP_VERIFY 标记解析。
+// Runs OpenOCD and forwards stdout/stderr line by line to this process's stdout (OpenOCD diagnostics go to stderr),
+// collecting the lines for EP_VERIFY marker parsing.
 function runOpenOcd(executable, args, options = {}) {
     return new Promise((resolve, reject) => {
         let child;
@@ -317,15 +324,15 @@ function runOpenOcd(executable, args, options = {}) {
     });
 }
 
-// 统一预检：显式参数 > EmberProbe 配置（Agent Bridge）> 工作区/USB 自动检测。
-// notes 携带检测工具缺失等提示，随 JSON 一并输出。
-// deps.call 允许 MCP 服务器以自己的通道标识调用 Bridge；skill 脚本使用默认的 agent-client。
+// Unified preflight: explicit arguments > EmberProbe configuration (Agent Bridge) > workspace/USB detection. notes
+// carry hints such as missing detection tools and are printed with the JSON. deps.call lets the MCP server call the
+// Bridge with its own channel; skill scripts use the default agent-client.
 async function preflight(options, deps = {}) {
     const bridgeCall = deps.call || call;
     const root = fs.realpathSync(path.resolve(options.workspace));
     const { config, diagnostic } = await getEmberProbeConfig(root, bridgeCall);
-    // diagnostics 保留 config.get 失败的原始诊断（错误码/详情），不因降级而丢弃；
-    // sources 记录每个字段的最终来源，供 agent 区分显式参数、EmberProbe 配置与自动检测。
+    // diagnostics keeps the original config.get failure (code and details) even when degrading; sources records where
+    // each field came from, so agents can tell explicit arguments, EmberProbe configuration and detection apart.
     const diagnostics = diagnostic ? [diagnostic] : [];
     const sources = { elf: "none", target: "none", probe: "none", openocd: "none" };
     const notes = [];
@@ -368,16 +375,53 @@ async function preflight(options, deps = {}) {
         sources.probe = "config";
     }
     let openocd;
-    if (options.openocd) {
+    if (Object.hasOwn(config || {}, "resolvedOpenOcdPath")) {
+        openocd = resolveExecutablePath(config.resolvedOpenOcdPath);
+        sources.openocd = "config";
+        let error;
+        if (!openocd) {
+            const configuredPath = String(config.openocdPath || "").trim();
+            if (configuredPath && configuredPath !== "openocd") {
+                try {
+                    openocd = resolveExecutablePath(configuredPath);
+                } catch (e) {
+                    error = e;
+                }
+            }
+            if (!openocd && !error) {
+                error = Object.assign(new Error("The configured OpenOCD could not be prepared"), {
+                    code: "OPENOCD_NOT_FOUND"
+                });
+            }
+        } else if (options.openocd) {
+            let matched = false;
+            try {
+                matched = matchesOpenOcdExecutable(options.openocd, config.openocdPath, openocd);
+            } catch (e) {
+                error = e;
+            }
+            if (!error && !matched) {
+                error = Object.assign(new Error("Agent OpenOCD must match the configured executable"), {
+                    code: "OPENOCD_EXECUTABLE_MISMATCH"
+                });
+            }
+            if (error) openocd = "";
+        }
+        if (error) {
+            diagnostics.push(diagnosticForError(error, { operation: "openocd.launch" }));
+            notes.push(error.message);
+        }
+    } else if (options.openocd) {
         openocd = String(options.openocd);
         sources.openocd = "explicit";
     } else if (config && config.openocdPath) {
         openocd = String(config.openocdPath);
         sources.openocd = "config";
-    } else {
+    } else if (!diagnostic) {
         openocd = "openocd";
         sources.openocd = "default";
     }
+    if (!openocd && diagnostic) notes.push(diagnostic.error.message);
     // Configuration values are workspace-relative by convention; canonicalize the
     // selected ELF before hashing/authorizing so the same bytes are flashed that the
     // user saw in preflight, regardless of the skill process' current directory.
@@ -400,8 +444,8 @@ async function preflight(options, deps = {}) {
         sources.probe = probe ? "auto" : "none";
         notes.push(...detected.notes);
     }
-    const openocdCheck = await probeOpenOcdCompatibility(openocd);
-    if (!openocdCheck.compatible) {
+    const openocdCheck = openocd ? await probeOpenOcdCompatibility(openocd) : { compatible: false, version: "" };
+    if (openocd && !openocdCheck.compatible) {
         const detected = openocdCheck.version ? ` ${openocdCheck.version}` : " with an unknown version";
         const action =
             process.platform === "win32"
@@ -427,7 +471,7 @@ async function preflight(options, deps = {}) {
         }
     }
     let scriptsReady = false;
-    if (target && probe) {
+    if (openocd && target && probe) {
         try {
             resolveOpenOcdLaunch(openocd, probe, target, transport);
             const connection = await prepareProbeConnection(

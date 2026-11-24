@@ -1,6 +1,6 @@
 ---
 name: mcu-debug-control
-description: Control the workspace debugger, manage source-line or function breakpoints, and inspect paused C/C++ task stacks, scopes, classes and STL objects through EmberProbe. Use for debugging controls, breakpoints, or frame-specific variable inspection.
+description: Control the workspace debugger, manage source-line, function or hardware data breakpoints (watchpoints), and inspect paused C/C++ task stacks, scopes, classes and STL objects through EmberProbe. Use for debugging controls, breakpoints, watching when a variable is written or read, or frame-specific variable inspection.
 ---
 
 # MCU Debug Control
@@ -20,10 +20,10 @@ has been verified at a firmware address; report adapter verification when availa
 ## Before you run
 
 - **MCP first**: if this session provides EmberProbe MCP tools (such as `debug_control`), use them; the scripts here are the fallback. The authorization and hardware rules on this page apply to both.
-- **Applies to**: controlling the workspace debugger session (start/stop/pause/continue/step/restart) and managing source-line or function breakpoints.
+- **Applies to**: controlling the workspace debugger session (start/stop/pause/continue/step/restart) and managing source-line, function or data breakpoints.
 - **Requires**: the EmberProbe Agent Bridge and VS Code's debugger APIs; `--start` also needs a complete EmberProbe debug configuration (ELF, probe, target, OpenOCD, SVD).
-- **Preconditions**: one control action in flight (else `DEBUG_CONTROL_BUSY` — read status instead); pause needs a running target, continue/step need a paused target; breakpoints can be created before a session starts.
-- **Side effects**: `--start` launches a session and halts the target; control actions change execution state; `--stop` ends the session and returns once the managed OpenOCD server has released the probe (an unconfirmed server exit fails with `DEBUG_SERVER_STOP_FAILED` and the probe stays owned); breakpoint mutations change VS Code breakpoints.
+- **Preconditions**: one control action in flight (else `DEBUG_CONTROL_BUSY` — read status instead); pause needs a running target, continue/step need a paused target; source/function breakpoints can be created before a session starts; data breakpoint changes need a paused built-in EmberProbe session.
+- **Side effects**: `--start` launches a session, resets the target and programs the ELF when Flash differs; `--start --attach` halts the running target without reset or download; control actions change execution state; `--stop` ends the session and returns once the managed OpenOCD server has released the probe (an unconfirmed server exit fails with `DEBUG_SERVER_STOP_FAILED` and the probe stays owned); source/function breakpoint mutations change VS Code breakpoints; data breakpoint mutations arm or remove hardware watchpoints shared with the sidebar.
 - **Success evidence**: state-changing commands complete from the corresponding DAP state event. A `--status`/`--breakpoints` read does not prove `--start` works. On timeout, read status; never auto-resend.
 
 For failure handling, retry limits, cross-skill routing, and result scoping, read [../_emberprobe/agent-workflow.md](../_emberprobe/agent-workflow.md).
@@ -33,6 +33,7 @@ node <skill-dir>/scripts/debug.js --workspace <workspace> --status
 node <skill-dir>/scripts/debug.js --workspace <workspace> --select --session <session-id>
 node <skill-dir>/scripts/debug.js --workspace <workspace> --select --group <server-group> --core <zero-based-core>
 node <skill-dir>/scripts/debug.js --workspace <workspace> --start
+node <skill-dir>/scripts/debug.js --workspace <workspace> --start --attach
 node <skill-dir>/scripts/debug.js --workspace <workspace> --pause
 node <skill-dir>/scripts/debug.js --workspace <workspace> --continue
 node <skill-dir>/scripts/debug.js --workspace <workspace> --step-over
@@ -41,6 +42,8 @@ node <skill-dir>/scripts/debug.js --workspace <workspace> --step-out
 node <skill-dir>/scripts/debug.js --workspace <workspace> --restart
 node <skill-dir>/scripts/debug.js --workspace <workspace> --stop
 ```
+
+`--start` resets the target and programs the ELF when Flash differs. `--start --attach` keeps the running firmware instead: it halts the core where it is, without reset or download, so a hung or misbehaving target keeps its state for `--status`, `inspect.js` stacks and `mcu-rtos`. Prefer it when the user wants to know where a running target is stuck, and resume with `--continue` afterwards unless they want it to stay paused. Attach programs nothing, so its result reports `firmwareConsistency`; on `ELF_TARGET_MISMATCH`, warn that source lines and symbols may not match the running firmware.
 
 Use one action per call. `--start` reuses EmberProbe's configured ELF, probe, target, OpenOCD, and SVD. State-changing commands complete from the corresponding DAP state event even if debugger's request promise responds late, and they do not retry after a timeout. Only one control action may be in flight; on `DEBUG_CONTROL_BUSY`, read status instead of issuing concurrent commands. Pause requires a running target; continue and stepping require a paused target. Restart is available only when debugger advertises it.
 
@@ -60,5 +63,22 @@ node <skill-dir>/scripts/debug.js --workspace <workspace> --remove-breakpoint --
 ```
 
 Breakpoint mutation actions are `--add-breakpoint`, `--remove-breakpoint`, `--enable-breakpoint`, and `--disable-breakpoint`. Select either `--source <workspace-file> --line <1-based-line> [--column <1-based-column>]` or `--function <name>`. Optional `--condition`, `--hit-condition`, and `--log-message` are accepted when adding. Breakpoints are managed by VS Code, remain visible in its Breakpoints view, and can be created before a session starts.
+
+### Data breakpoints (watchpoints)
+
+```bash
+node <skill-dir>/scripts/debug.js --workspace <workspace> --pause
+node <skill-dir>/scripts/debug.js --workspace <workspace> --add-breakpoint --data g_state --access write
+node <skill-dir>/scripts/debug.js --workspace <workspace> --add-breakpoint --data motor.speed --access readWrite --condition "motor.speed > 100"
+node <skill-dir>/scripts/debug.js --workspace <workspace> --disable-breakpoint --id <id>
+node <skill-dir>/scripts/debug.js --workspace <workspace> --remove-breakpoint --data g_state
+node <skill-dir>/scripts/debug.js --workspace <workspace> --continue
+```
+
+A data breakpoint stops the target when firmware writes (`write`, the default), reads (`read`) or accesses (`readWrite`) a global scalar variable or leaf path of 1, 2 or 4 aligned bytes. It uses the core's hardware watchpoint comparators through the built-in EmberProbe debugger; external GDB servers and other debug adapters are not supported. Composite values, bitfields, runtime display paths, locals and pointer dereferences are refused. The storage address is resolved once when the breakpoint is added and stays fixed.
+
+Every change needs a paused target: pause first, change, then continue. `--condition` is accepted only when adding; to change it, remove and add again. Select an existing entry with `--id` from `--breakpoints` (`dataBreakpoints.entries`), or with `--data` (plus `--access` when the same variable is watched more than once). These are the same data breakpoints shown in the EmberProbe sidebar; the user may add or remove them there too, so list before changing. An entry with `verified: false` is not armed, usually because the core has no free comparator; report its `message`.
+
+When a data breakpoint stops the target, `--status` reports `reason: "data breakpoint"` and `stop.description`/`stop.text` with the variable and, when GDB reports them, its old and new values. Data breakpoints end with the debug session.
 
 If EmberProbe reports `DEBUG_SESSION_CONFLICT`, do not guess which session to control. Base all failure explanations on the structured stderr diagnostic.

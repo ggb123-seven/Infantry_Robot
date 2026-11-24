@@ -10,7 +10,7 @@ description: Program MCU firmware or verify on-chip Flash against the workspace 
 - **MCP first**: if this session provides EmberProbe MCP tools (such as `flash_program`), use them; the scripts here are the fallback. The authorization and hardware rules on this page apply to both.
 - **Applies to**: programming/downloading/burning firmware, or verifying on-chip Flash against the workspace ELF.
 - **Requires**: the EmberProbe Agent Bridge, OpenOCD, a connected probe, a powered target, and a resolvable ELF.
-- **Preconditions**: the probe is free (not sampling, downloading, or debugging); ELF, target, and probe are resolved — never guess a missing one; programming and verification need separate user authorization in the Agent conversation; programming may use a 24-hour workspace permission the user explicitly chose, verification is always one-time.
+- **Preconditions**: the probe is free (not sampling, downloading, or debugging); ELF, target, and probe are resolved — never guess a missing one; programming and verification need separate user authorization in the Agent conversation; programming may use a 24-hour workspace permission the user explicitly chose, verification is one-time unless the Bridge explicitly authorizes the sidebar full-access grant.
 - **Side effects**: programming rewrites target Flash and resets the target; verification briefly halts then resumes it, restoring the prior run state.
 - **Success evidence**: preflight reports the selected ELF, ELF SHA-256, target, probe, OpenOCD, and each value's `sources`; the run reports OpenOCD's own result. A verify success does not prove a program success.
 
@@ -36,4 +36,4 @@ Both operations must complete detection first and report the selected ELF, ELF S
 
 ## Execution safety
 
-Bridge-backed authorization, programming and verification use the OpenOCD executable configured in EmberProbe. An explicit `--openocd` must resolve to that same executable; otherwise execution returns `OPENOCD_EXECUTABLE_MISMATCH`. Change the extension setting through the user interface before selecting another installation. ELF inputs must be regular ELF32 little-endian files no larger than 64 MiB. The extension hashes bounded reads and programs only a private snapshot matching the authorized digest.
+Preflight, authorization, programming and verification use the OpenOCD executable resolved by EmberProbe. The default uses the bundled runtime on Windows and Linux x64. An explicit `--openocd` must match the resolved executable or the configured default name; a mismatch returns `OPENOCD_EXECUTABLE_MISMATCH`. Change the extension setting through the user interface before selecting another installation. ELF inputs must be regular ELF32 little-endian files no larger than 64 MiB. The extension hashes bounded reads and programs only a private snapshot matching the authorized digest.
