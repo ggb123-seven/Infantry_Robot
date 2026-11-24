@@ -66,6 +66,7 @@ typedef enum
     TASK_INIT_KERNEL_UNLOCK_FAILED,
     TASK_INIT_DR16_GIMBAL_MAILBOX_FAILED,
     TASK_INIT_DR16_FEEDER_MAILBOX_FAILED,
+    TASK_INIT_CHASSIS_YAW_FEEDBACK_MAILBOX_FAILED,
 } Task_InitStatus_t;
 
 /*
@@ -85,6 +86,8 @@ typedef enum
  * - 两个云台反馈邮箱的速度单位为 rpm、时间戳单位为微秒，均由 Task_motor_gimbal 消费
  * - msgq.gimbal_output：长度为 1 的云台输出邮箱，元素为 Gimbal_Output_t，单位 A，由云台任务写入、CAN 任务读取
  * - msgq.gimbal_imu：长度为 1 的同帧惯性反馈邮箱，元素为 Gimbal_ImuFeedback_t，由 INS 任务写入、云台任务读取
+ * - msgq.chassis_yaw_feedback：长度为 1 的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 CAN 任务写入
+ *   与云台消费的 yaw 邮箱相互独立，仅供底盘跟随模式读取
  * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果
  */
 typedef struct
@@ -108,6 +111,7 @@ typedef struct
         osMessageQueueId_t gimbal_pitch_feedback;
         osMessageQueueId_t gimbal_output;
         osMessageQueueId_t gimbal_imu;
+        osMessageQueueId_t chassis_yaw_feedback;
     } msgq;
     volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;

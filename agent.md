@@ -16,6 +16,16 @@
 
 ## 底盘当前进度
 
+### 2026-11-24 底盘模式同步（FOLLOW_GIMBAL / SPIN）
+
+- 从父工作树 `F:\RM\Infantry_Robot` 移植 FOLLOW_GIMBAL（跟随云台平移）与 SPIN（小陀螺）模式，功率限制未引入
+- chassis.h/c 增加模式、follow_pid、指令层斜坡、云台反馈校验与跟随环；cmd.c 左拨杆映射改为上 INDEPENDENT、中 FOLLOW_GIMBAL、下 SPIN，自旋量取父树 -0.50
+- 新增 task_runtime.chassis_yaw_feedback 邮箱，can_task 同帧投递，motor_chassis 用 gimbal_config.yaw 零点/方向调用反馈入口
+- 跟随失效安全：yaw 反馈缺失/超时/非法时 FOLLOW 与 SPIN 退回 RELAX，INDEPENDENT 不受影响
+- 验证：Debug 构建、6 个 C 文件 ARM 严格语法、格式扫描、40+14 项主机行为/映射断言全部通过；check.py HW/SPEC PASS，arch-check.ps1 单独执行 PASS 0 违规
+- 待确认：拨杆上位语义（本树平移 vs 父树零速刹车）、自旋方向/幅值、跟随方向需架空实测；未烧录、未上板
+- 未移植父树四轮速度前馈、架空测速调试入口、chassis_gimbal 状态队列等非模式依赖能力
+
 ### 2026-10-28 四轮观测与云台异常旋转联合识别
 
 - 已接入四轮解码源时间、底盘转速观测、独立云台观测邮箱和旋转意图；FOLLOW 仅预留入口

@@ -20,13 +20,18 @@ FaultDetect_Snapshot_t fault_detect_snapshot;
  * - can_feedback_cache：本周期从反馈邮箱取得的 CAN 快照，读取失败时不使用缓存
  * - dr16_state_cache：最近一次从 DR16 邮箱取得的状态，按完整微秒时间检查时效
  * - dr16_state_cache_valid：至少取得过一帧 DR16 状态时为 true
+ * - yaw_feedback_cache：最近一帧云台 yaw 电机反馈，源时间不因重复消费而刷新
+ * - yaw_feedback_received：至少取得过一帧 yaw 反馈时为 true
  */
 static CANDevices_Snapshot_t can_feedback_cache;
 static DR16_State_t dr16_state_cache;
 static bool dr16_state_cache_valid;
+static MOTOR_RM_Feedback_t yaw_feedback_cache;
+static bool yaw_feedback_received;
 
 static bool MotorChassis_ReadLatestFeedback(void);
 static bool MotorChassis_ReadLatestDR16(void);
+static void MotorChassis_ReadLatestYawFeedback(void);
 static bool MotorChassis_PublishCommand(const CANDevices_Command_t *command);
 
 /**
@@ -44,7 +49,8 @@ void Task_motor_chassis(void *argument)
     const bool timing_valid = tick_frequency >= MOTOR_CHASSIS_FREQ && tick_frequency % MOTOR_CHASSIS_FREQ == 0U;
     const uint32_t delay_tick = timing_valid ? tick_frequency / MOTOR_CHASSIS_FREQ : 1U;
     osDelay(MOTOR_CHASSIS_INIT_DELAY);
-    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F);
+    const float init_frequency_hz = timing_valid ? (float)MOTOR_CHASSIS_FREQ : 0.0F;
+    const int8_t init_status = Chassis_Init(&chassis, &chassis_config, init_frequency_hz);
     if (init_status != 0)
     {
         FaultDetect_UpdateMotorChassis(NULL, &chassis, &fault_detect_snapshot);
@@ -64,11 +70,18 @@ void Task_motor_chassis(void *argument)
         const bool feedback_received = MotorChassis_ReadLatestFeedback();
         Chassis_UpdateFeedback(&chassis, feedback_received ? &can_feedback_cache : NULL);
 
+        // 独立消费云台 yaw 最新帧，空邮箱沿用缓存帧，帧龄由模块统一判断
+        MotorChassis_ReadLatestYawFeedback();
+
         // DR16 独占运动命令来源，邮箱为空时保留缓存并持续检查 100 ms 时效
         MotorChassis_ReadLatestDR16();
         // 读取遥控快照后再采当前时间，避免接收任务抢占时将合法新帧误判为未来时间
         const uint64_t remote_time_us = BSP_TIME_Get();
         Cmd_ParseChassis(&dr16_state_cache, dr16_state_cache_valid, remote_time_us, &chassis_command);
+        // 反馈边界用已标定零点和方向更新云台相对角，跟随计算与坐标转换统一交给控制入口
+        Chassis_UpdateGimbalFeedback(&chassis, yaw_feedback_received ? &yaw_feedback_cache : NULL,
+                                     remote_time_us, gimbal_config.yaw.zero_encoder_deg,
+                                     gimbal_config.yaw.reversed);
         // 模块完成状态转换与速度闭环，任务只补充命令序号并发布最新电流
         CANDevices_Command_t output =
         {
@@ -128,6 +141,34 @@ static bool MotorChassis_ReadLatestFeedback(void)
 {
     return task_runtime.msgq.can_feedback != NULL &&
            osMessageQueueGet(task_runtime.msgq.can_feedback, &can_feedback_cache, NULL, 0U) == osOK;
+}
+
+/**
+ * @brief 从容量为 1 的 yaw 反馈邮箱取得一帧云台电机反馈
+ *
+ * @return 无返回值
+ */
+static void MotorChassis_ReadLatestYawFeedback(void)
+{
+    if (task_runtime.msgq.chassis_yaw_feedback == NULL)
+    {
+        yaw_feedback_received = false;
+        return;
+    }
+
+    MOTOR_RM_Feedback_t received_feedback;
+    const osStatus_t status = osMessageQueueGet(task_runtime.msgq.chassis_yaw_feedback, &received_feedback,
+                                                NULL, 0U);
+    if (status == osOK)
+    {
+        yaw_feedback_cache = received_feedback;
+        yaw_feedback_received = true;
+    }
+    else if (status != osErrorResource)
+    {
+        // 队列异常时撤销缓存，避免沿用无法确认时序的历史帧
+        yaw_feedback_received = false;
+    }
 }
 
 /**

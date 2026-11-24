@@ -127,6 +127,14 @@ static bool Task_InitCreateObjects(void)
         return false;
     }
 
+    // 底盘跟随另用独立 yaw 反馈邮箱，与云台消费的同一帧互不影响
+    task_runtime.init_status = TASK_INIT_CHASSIS_YAW_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.chassis_yaw_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.chassis_yaw_feedback == NULL)
+    {
+        return false;
+    }
+
     // 云台输出邮箱保存两轴最新电流，由云台任务写入、CAN 任务读取
     task_runtime.init_status = TASK_INIT_GIMBAL_OUTPUT_MAILBOX_FAILED;
     task_runtime.msgq.gimbal_output = osMessageQueueNew(1U, sizeof(Gimbal_Output_t), NULL);
@@ -288,6 +296,15 @@ static bool Task_InitReleaseObjects(void)
             success = false;
         }
         task_runtime.msgq.gimbal_yaw_feedback = NULL;
+    }
+    // 底盘 yaw 反馈邮箱与云台两轴邮箱同时回收
+    if (task_runtime.msgq.chassis_yaw_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.chassis_yaw_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.chassis_yaw_feedback = NULL;
     }
     if (task_runtime.msgq.can_feedback != NULL)
     {

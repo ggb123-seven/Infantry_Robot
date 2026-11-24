@@ -186,5 +186,17 @@ static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue
     }
 
     // 邮箱保留最新一帧，清空及写入的结果均交给调用方检查
-    return osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
+    bool success = osMessageQueueReset(queue) == osOK && osMessageQueuePut(queue, &feedback, 0U, 0U) == osOK;
+
+    // 同一有效 yaw 帧另投底盘独占邮箱，云台邮箱失败不阻止底盘跟随
+    if (axis == CAN_DEVICES_GIMBAL_YAW)
+    {
+        const osMessageQueueId_t chassis_queue = task_runtime.msgq.chassis_yaw_feedback;
+        if (chassis_queue == NULL || osMessageQueueReset(chassis_queue) != osOK ||
+            osMessageQueuePut(chassis_queue, &feedback, 0U, 0U) != osOK)
+        {
+            success = false;
+        }
+    }
+    return success;
 }

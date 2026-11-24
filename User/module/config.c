@@ -16,7 +16,10 @@ const float chassis_yaw_rad_s_per_rpm = 0.03369824953f;
  * - 速度反馈二阶低通 45 Hz，电流滤波 -1 表示直通，最终转子侧电流限幅 4 A
  * - 四轮共用原 ID4 速度 PID：k=1、p=0.16、i=0、d=0，积分限幅 20 rpm·s
  * - PID 输出限幅 4 A，微分滤波 20 Hz，range=0 表示线性速度误差
+ * - 跟随角度环取父工作树整定值：k=1、p=0.6、i=0、d=0，积分限幅 1.0
+ * - 跟随输出限幅 1.0 归一化转向，range=2π 使误差按最短机械角环绕，微分高频不滤波
  * - 布局及反馈、电流滤波截止频率仅初始化时生效，其他参数可在实例配置中在线调整
+ * - 跟随与自旋使用同一 wheel_accel_rpm_s 约束归一化指令斜坡，未移植父树功率限制与电流前馈
  */
 const Chassis_Config_t chassis_config =
 {
@@ -37,6 +40,17 @@ const Chassis_Config_t chassis_config =
         .out_limit = 4.0F,
         .d_cutoff_freq = 20.0F,
         .range = 0.0F,
+    },
+    .follow_pid =
+    {
+        .k = 1.0F,
+        .p = 0.6F,
+        .i = 0.0F,
+        .d = 0.0F,
+        .i_limit = 1.0F,
+        .out_limit = 1.0F,
+        .d_cutoff_freq = -1.0F,
+        .range = M_2PI,
     },
 };
 

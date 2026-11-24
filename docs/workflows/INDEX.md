@@ -2,6 +2,7 @@
 
 | 日期 | 类型 | 主题 | 记录 |
 |---|---|---|---|
+| 2026-11-24 | feature | 底盘模式同步（FOLLOW_GIMBAL / SPIN，无功率限制） | [记录](2026-11-24_chassis_mode_sync.md) |
 | 2026-11-23 | feature | yaw 滑模控制器上板标定与整定 | [记录](2026-11-23_yaw_smc_tuning.md) |
 | 2026-11-23 | bugfix | 修正 yaw 电机 CAN 总线注册（CAN2→CAN1） | [记录](2026-11-23_yaw_can_bus_fix.md) |
 | 2026-11-23 | feature | pitch 零点、限位、电流预算与 PID 标定 | [记录](2026-11-23_pitch_calibration_and_pid.md) |
