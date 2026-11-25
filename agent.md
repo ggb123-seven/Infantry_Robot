@@ -269,6 +269,9 @@ if (condition)
 - Debug 构建通过，RAM 44256 B 占 33.76%、FLASH 133368 B 占 12.72%，无编译告警，提交 66a7cf9
 - 未上板：摩擦轮极性、拨弹实际进给方向与齿数、到位门控阈值、三种开火模式实车表现均未验证
 - 需装车复核：本节 2026-10-31 记录的原方向为 -1，本次随主工作树改为 +1，齿数也由 10 改为 8，进给方向必须重新确认
+- 首次烧录后遥控全无响应，EmberProbe 附着读出现场：`task_runtime.init_status = 11`（`TASK_INIT_GIMBAL_THREAD_FAILED`），七个任务句柄全为 0，`xMinimumEverFreeBytesRemaining = 976` 字节，建云台任务需约 1136 字节，判定为 FreeRTOS 堆耗尽而非栈溢出
+- 修复：`configTOTAL_HEAP_SIZE` 由 15360 提升到 24576，重新构建 RAM 53472 B 占 40.80%，待烧录后确认 `init_status == 1`
+- 注意 `Inc/FreeRTOSConfig.h` 由 CubeMX 生成，`.ioc` 的 `ProjectManager.HeapSize` 仍为 0x2000，重新生成前必须同步改为 0x6000，否则堆会被改回 15360
 
 ## 云台当前进度
 
