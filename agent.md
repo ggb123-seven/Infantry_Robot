@@ -274,8 +274,10 @@ if (condition)
 - `Inc/FreeRTOSConfig.h` 由 CubeMX 生成，FreeRTOS 堆原本等于 CubeMX 默认值 15360，因而没有写进 `.ioc`；`ProjectManager.HeapSize=0x2000` 是链接器 newlib 最小堆，与 FreeRTOS 堆无关
 - 为此增加两道防线：`user_task.c` 用 `_Static_assert` 要求 `configTOTAL_HEAP_SIZE` 不小于 24576（CubeMX 重新生成把堆改回 15360 时直接编译失败），并打开 `configUSE_MALLOC_FAILED_HOOK` 配合 `vApplicationMallocFailedHook` 在运行期记录失败次数后停机
 - 负向验证：把堆临时改回 15360 后构建 exit=1 且命中该断言，恢复 24576 后构建 exit=0，RAM 53472 B、FLASH 133412 B，`ucHeap` 为 0x6000，钩子符号已链接
-- `.ioc` 已同步：`FREERTOS.IPParameters` 增加 `configTOTAL_HEAP_SIZE`，并新增 `FREERTOS.configTOTAL_HEAP_SIZE=24576`；键名取自 CubeMX 自带板级模板 `.ioc`，全文件仅改这两行且行尾保持 CRLF
-- 该 `.ioc` 改动尚未经 CubeMX 重新生成验证：校验时 EmberProbe Agent Bridge 随 VS Code 窗口关闭而下线，需重开窗口后用 `cubemx.js --prepare` 复核；若生成结果低于 24576，`_Static_assert` 会直接中断构建
+- `.ioc` 已同步两个 FreeRTOS 参数：`FREERTOS.IPParameters` 增加 `configTOTAL_HEAP_SIZE` 与 `configUSE_MALLOC_FAILED_HOOK`，并新增 `FREERTOS.configTOTAL_HEAP_SIZE=24576`、`FREERTOS.configUSE_MALLOC_FAILED_HOOK=1`；键名取自 CubeMX 自带板级模板 `.ioc`，行尾保持 CRLF
+- 堆配置已由 CubeMX 重新生成实测确认：抓取沙箱生成物 `Inc/FreeRTOSConfig.h` 为 7469 字节，含 `configTOTAL_HEAP_SIZE ((size_t)24576)`，与工程原件逐行比对仅差钩子宏一行，说明 `.ioc` 的堆键确实生效
+- 钩子键的合法性由 `db/mcu/config/FREERTOS-STM32F4xx_Configs.xml` 中的 `<Argument Name="configUSE_MALLOC_FAILED_HOOK"/>` 确认，但尚未抓到含该宏的生成物：CubeMX 启动期联网更新报错（HTTP 418 与 Updater busy）使 EmberProbe 判定生成本次不洁净并拒绝写回，四次尝试均在 baseline 阶段失败且工程文件哈希无变化
+- 上述自动生成的失败只影响 EmberProbe 的写回与洁净度判定，CubeMX 日志尾部均出现 `OK` 与 `Bye bye`；需要真正写回生成时建议直接用 CubeMX 图形界面执行，避免其联网检查干扰
 
 ## 云台当前进度
 
