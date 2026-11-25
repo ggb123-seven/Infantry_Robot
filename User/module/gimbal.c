@@ -18,6 +18,10 @@
 #define GIMBAL_IMU_JUMP_MARGIN_DEG (1.0f)
 #define GIMBAL_FULL_TURN_DEG (360.0f)
 
+// 机械边界减速增益，单位 1/s，允许的朝边界速度 = 增益 × 到边界的距离（rad），边界处连续降为零
+// 取值为估计起点，增益越大越晚减速，越小越早减速，需按实测的冲限位量整定
+#define GIMBAL_LIMIT_SPEED_GAIN (20.0f)
+
 /*
  * 本分支滑模试验的参考约束：速度 600 度每秒，加速度 2500 度每平方秒，参考追踪增益 20 每秒
  * 600 度每秒对应遥控满杆的角速度量级，加速度取 3 A 下电机可持续跟随的水平，避免参考跑在对象前面
@@ -400,18 +404,16 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
     {
         axis->target_angle_deg = NAN;
     }
-    // 速度模式和 pitch 前馈受机械边界速度约束，yaw 角度模式由目标限幅和最终电流闸门处理
+    // 速度模式和 pitch 前馈受机械边界速度约束，朝边界的允许速度随距离线性减小，yaw 角度模式由目标限幅和滑模参考处理
     if (config->mechanical_limit_enabled && !use_smc)
     {
-        const float scale = M_DEG2RAD_MULT / period_s;
+        const float scale = M_DEG2RAD_MULT * GIMBAL_LIMIT_SPEED_GAIN;
         mechanical_min_speed_rad_s = fminf(0.0f, (config->min_angle_deg - axis->mechanical_angle_deg) * scale);
         mechanical_max_speed_rad_s = fmaxf(0.0f, (config->max_angle_deg - axis->mechanical_angle_deg) * scale);
         const float requested_speed = target_speed_rad_s;
         Clip(&target_speed_rad_s, mechanical_min_speed_rad_s, mechanical_max_speed_rad_s);
         mechanically_limited = mechanically_limited || requested_speed != target_speed_rad_s;
     }
-    // 速度环积分在本周期电流计算前保存，边界阻断时回退到进入本函数时的值
-    const float previous_speed_integral = axis->speed_pid.i;
     float current_a = 0.0f;
     if (use_smc)
     {
@@ -451,18 +453,21 @@ static bool Gimbal_RunAxis(Gimbal_Axis_t *axis, const Gimbal_AxisConfig_t *confi
         current_a = PID_Calc(&axis->speed_pid, axis->target_speed_rad_s, axis->speed_rad_s, 0.0f, period_s);
     }
     axis->output_current_a = AbsClip(current_a, config->max_current_a);
-    // 边界处阻断指向行程外侧的电流，避免底座运动或积分残留绕过目标限幅
-    if (config->mechanical_limit_enabled &&
+    // yaw 滑模不经过速度环夹限，限位启用时仍用越界截流兜底，避免滑模参考把电机顶向行程外侧
+    // 当前配置下 yaw 机械限位关闭，本分支只在将来启用 yaw 限位时生效
+    if (config->mechanical_limit_enabled && use_smc &&
         ((axis->mechanical_angle_deg >= config->max_angle_deg && axis->output_current_a > 0.0f) ||
          (axis->mechanical_angle_deg <= config->min_angle_deg && axis->output_current_a < 0.0f)))
     {
         axis->output_current_a = 0.0f;
-        axis->speed_pid.i = previous_speed_integral;
         mechanically_limited = true;
     }
+    // 被边界限制时角度环积分保持原值，速度环积分清零，避免靠限位时残留积分持续顶向行程外侧
+    // 边界附近电流只由连续的速度夹限决定，机械角在限位两侧读数跳动也不会产生电流突变
     if (mechanically_limited && !use_smc)
     {
         axis->angle_pid.i = previous_angle_integral;
+        PID_ResetIntegral(&axis->speed_pid);
     }
     return isfinite(axis->output_current_a);
 }
