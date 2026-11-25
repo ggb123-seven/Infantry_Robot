@@ -271,7 +271,10 @@ if (condition)
 - 需装车复核：本节 2026-10-31 记录的原方向为 -1，本次随主工作树改为 +1，齿数也由 10 改为 8，进给方向必须重新确认
 - 首次烧录后遥控全无响应，EmberProbe 附着读出现场：`task_runtime.init_status = 11`（`TASK_INIT_GIMBAL_THREAD_FAILED`），七个任务句柄全为 0，`xMinimumEverFreeBytesRemaining = 976` 字节，建云台任务需约 1136 字节，判定为 FreeRTOS 堆耗尽而非栈溢出
 - 修复：`configTOTAL_HEAP_SIZE` 由 15360 提升到 24576，重新构建 RAM 53472 B 占 40.80%，待烧录后确认 `init_status == 1`
-- 注意 `Inc/FreeRTOSConfig.h` 由 CubeMX 生成，`.ioc` 的 `ProjectManager.HeapSize` 仍为 0x2000，重新生成前必须同步改为 0x6000，否则堆会被改回 15360
+- 注意 `Inc/FreeRTOSConfig.h` 由 CubeMX 生成，FreeRTOS 堆等于 CubeMX 默认值 15360，因此 `.ioc` 中没有对应键；`ProjectManager.HeapSize=0x2000` 是链接器 newlib 最小堆，与 FreeRTOS 堆无关，改它无效
+- 为此增加两道防线：`user_task.c` 用 `_Static_assert` 要求 `configTOTAL_HEAP_SIZE` 不小于 24576（CubeMX 重新生成把堆改回 15360 时直接编译失败），并打开 `configUSE_MALLOC_FAILED_HOOK` 配合 `vApplicationMallocFailedHook` 在运行期记录失败次数后停机
+- 负向验证：把堆临时改回 15360 后构建 exit=1 且命中该断言，恢复 24576 后构建 exit=0，RAM 53472 B、FLASH 133412 B，`ucHeap` 为 0x6000，钩子符号已链接
+- 若要让 CubeMX 永久保留该值，需在 CubeMX 的 FreeRTOS 配置页把 TOTAL_HEAP_SIZE 改为 24576 并保存，届时 `.ioc` 才会出现该非默认参数
 
 ## 云台当前进度
 
