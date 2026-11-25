@@ -33,6 +33,18 @@ extern "C"
 #define MOTOR_GIMBAL_INIT_DELAY (0U)
 
 /*
+ * 发射机构任务运行参数：
+ * - MOTOR_SHOOT_FREQ：双摩擦轮速度环控制频率，单位赫兹
+ * - MOTOR_SHOOT_INIT_DELAY：摩擦轮任务启动延时，单位内核节拍
+ * - MOTOR_TRIGGER_FREQ：拨弹角度与速度环控制频率，单位赫兹
+ * - MOTOR_TRIGGER_INIT_DELAY：拨弹任务启动延时，单位内核节拍
+ */
+#define MOTOR_SHOOT_FREQ (500U)
+#define MOTOR_SHOOT_INIT_DELAY (0U)
+#define MOTOR_TRIGGER_FREQ (500U)
+#define MOTOR_TRIGGER_INIT_DELAY (0U)
+
+/*
  * INS 任务运行参数：
  * - INS_TASK_FREQ：BMI088 采集和姿态更新频率，单位赫兹
  * - INS_TASK_INIT_DELAY：INS 任务启动延时，单位内核节拍
@@ -65,8 +77,16 @@ typedef enum
     TASK_INIT_CLEANUP_FAILED,
     TASK_INIT_KERNEL_UNLOCK_FAILED,
     TASK_INIT_DR16_GIMBAL_MAILBOX_FAILED,
-    TASK_INIT_DR16_FEEDER_MAILBOX_FAILED,
     TASK_INIT_CHASSIS_YAW_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_FRIC1_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_FRIC2_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_FEEDBACK_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_COMMAND_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_COMMAND_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_OUTPUT_MAILBOX_FAILED,
+    TASK_INIT_TRIGGER_OUTPUT_MAILBOX_FAILED,
+    TASK_INIT_SHOOT_THREAD_FAILED,
+    TASK_INIT_TRIGGER_THREAD_FAILED,
 } Task_InitStatus_t;
 
 /*
@@ -74,11 +94,12 @@ typedef enum
  * - thread.can：CAN 设备反馈采集和电流发送任务句柄
  * - thread.motor_chassis：底盘周期控制任务句柄
  * - thread.motor_gimbal：云台模块初始化与两轴周期控制任务句柄
+ * - thread.motor_shoot：双摩擦轮速度环控制任务句柄
+ * - thread.motor_trigger：拨弹与摩擦轮联动命令任务句柄
  * - thread.dr16：DR16 字节流接收和状态发布任务句柄
  * - thread.ins：BMI088 采集、姿态解算和温控任务句柄
  * - msgq.dr16_state：长度为 1 的 DR16 最新状态邮箱，由 Task_dr16 写入、底盘任务读取
  * - msgq.dr16_gimbal_state：长度为 1 的独立 DR16 状态邮箱，元素为 DR16_State_t，由 DR16 任务写入、云台任务读取
- * - msgq.dr16_feeder_state：长度为 1 的拨弹遥控邮箱，由 DR16 任务写入、CAN 任务读取
  * - msgq.can_feedback：长度为 1 的 CAN 设备最新反馈邮箱，由 Task_can 写入、Task_motor_chassis 读取
  * - msgq.can_command：长度为 1 的 CAN 设备最新电流命令邮箱，由 Task_motor_chassis 写入、Task_can 读取
  * - msgq.gimbal_yaw_feedback：长度为 1 的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 Task_can 写入
@@ -88,6 +109,13 @@ typedef enum
  * - msgq.gimbal_imu：长度为 1 的同帧惯性反馈邮箱，元素为 Gimbal_ImuFeedback_t，由 INS 任务写入、云台任务读取
  * - msgq.chassis_yaw_feedback：长度为 1 的 yaw 最新反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 CAN 任务写入
  *   与云台消费的 yaw 邮箱相互独立，仅供底盘跟随模式读取
+ * - msgq.shoot_fric1_feedback：长度为 1 的第一只摩擦轮反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 CAN 任务写入
+ * - msgq.shoot_fric2_feedback：长度为 1 的第二只摩擦轮反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 CAN 任务写入
+ * - msgq.trigger_feedback：长度为 1 的拨弹 M2006 反馈邮箱，元素为 MOTOR_RM_Feedback_t，由 CAN 任务写入
+ * - msgq.shoot_command：长度为 1 的摩擦轮命令邮箱，元素为 Shoot_Command_t，由拨弹任务写入、摩擦轮任务读取
+ * - msgq.trigger_command：长度为 1 的拨弹遥控邮箱，元素为 DR16_State_t，由 DR16 任务写入、拨弹任务读取
+ * - msgq.shoot_output：长度为 1 的摩擦轮输出邮箱，元素为 Shoot_Output_t，单位 A，由摩擦轮任务写入
+ * - msgq.trigger_output：长度为 1 的拨弹输出邮箱，元素为 float 转子电流，单位 A，由拨弹任务写入
  * - init_status：业务模块初始化、RTOS 对象创建、清理和内核解锁的最终结果
  */
 typedef struct
@@ -97,6 +125,8 @@ typedef struct
         osThreadId_t can;
         osThreadId_t motor_chassis;
         osThreadId_t motor_gimbal;
+        osThreadId_t motor_shoot;
+        osThreadId_t motor_trigger;
         osThreadId_t dr16;
         osThreadId_t ins;
     } thread;
@@ -104,7 +134,6 @@ typedef struct
     {
         osMessageQueueId_t dr16_state;
         osMessageQueueId_t dr16_gimbal_state;
-        osMessageQueueId_t dr16_feeder_state;
         osMessageQueueId_t can_feedback;
         osMessageQueueId_t can_command;
         osMessageQueueId_t gimbal_yaw_feedback;
@@ -112,6 +141,13 @@ typedef struct
         osMessageQueueId_t gimbal_output;
         osMessageQueueId_t gimbal_imu;
         osMessageQueueId_t chassis_yaw_feedback;
+        osMessageQueueId_t shoot_fric1_feedback;
+        osMessageQueueId_t shoot_fric2_feedback;
+        osMessageQueueId_t trigger_feedback;
+        osMessageQueueId_t shoot_command;
+        osMessageQueueId_t trigger_command;
+        osMessageQueueId_t shoot_output;
+        osMessageQueueId_t trigger_output;
     } msgq;
     volatile Task_InitStatus_t init_status;
 } Task_Runtime_t;
@@ -122,6 +158,8 @@ extern const osThreadAttr_t attr_init;
 extern const osThreadAttr_t attr_can;
 extern const osThreadAttr_t attr_motor_chassis;
 extern const osThreadAttr_t attr_motor_gimbal;
+extern const osThreadAttr_t attr_motor_shoot;
+extern const osThreadAttr_t attr_motor_trigger;
 extern const osThreadAttr_t attr_dr16;
 extern const osThreadAttr_t attr_ins;
 

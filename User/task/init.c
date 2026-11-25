@@ -3,11 +3,14 @@
 #include "device/can_devices.h"
 #include "device/dr16.h"
 #include "module/gimbal.h"
+#include "module/shoot.h"
 #include "task/can_task.h"
 #include "task/dr16_task.h"
 #include "task/ins_task.h"
 #include "task/motor_chassis.h"
 #include "task/motor_gimbal.h"
+#include "task/motor_shoot.h"
+#include "task/motor_trigger.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -90,9 +93,51 @@ static bool Task_InitCreateObjects(void)
     }
 
     // 拨弹使用独立遥控邮箱，避免与底盘和云台争抢同一条消息
-    task_runtime.init_status = TASK_INIT_DR16_FEEDER_MAILBOX_FAILED;
-    task_runtime.msgq.dr16_feeder_state = osMessageQueueNew(1U, sizeof(DR16_State_t), NULL);
-    if (task_runtime.msgq.dr16_feeder_state == NULL)
+    task_runtime.init_status = TASK_INIT_TRIGGER_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_command = osMessageQueueNew(1U, sizeof(DR16_State_t), NULL);
+    if (task_runtime.msgq.trigger_command == NULL)
+    {
+        return false;
+    }
+
+    // 两路摩擦轮与拨弹各用一个最新反馈邮箱，先于发射任务完成创建
+    task_runtime.init_status = TASK_INIT_SHOOT_FRIC1_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_fric1_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.shoot_fric1_feedback == NULL)
+    {
+        return false;
+    }
+    task_runtime.init_status = TASK_INIT_SHOOT_FRIC2_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_fric2_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.shoot_fric2_feedback == NULL)
+    {
+        return false;
+    }
+    task_runtime.init_status = TASK_INIT_TRIGGER_FEEDBACK_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_feedback = osMessageQueueNew(1U, sizeof(MOTOR_RM_Feedback_t), NULL);
+    if (task_runtime.msgq.trigger_feedback == NULL)
+    {
+        return false;
+    }
+
+    // 摩擦轮命令由拨弹任务按档位联动发布，两轮共用同一条命令
+    task_runtime.init_status = TASK_INIT_SHOOT_COMMAND_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_command = osMessageQueueNew(1U, sizeof(Shoot_Command_t), NULL);
+    if (task_runtime.msgq.shoot_command == NULL)
+    {
+        return false;
+    }
+
+    // 两轮电流共用一条输出消息，拨弹单独发布转子电流，均由 CAN 任务消费
+    task_runtime.init_status = TASK_INIT_SHOOT_OUTPUT_MAILBOX_FAILED;
+    task_runtime.msgq.shoot_output = osMessageQueueNew(1U, sizeof(Shoot_Output_t), NULL);
+    if (task_runtime.msgq.shoot_output == NULL)
+    {
+        return false;
+    }
+    task_runtime.init_status = TASK_INIT_TRIGGER_OUTPUT_MAILBOX_FAILED;
+    task_runtime.msgq.trigger_output = osMessageQueueNew(1U, sizeof(float), NULL);
+    if (task_runtime.msgq.trigger_output == NULL)
     {
         return false;
     }
@@ -179,6 +224,20 @@ static bool Task_InitCreateObjects(void)
     task_runtime.init_status = TASK_INIT_GIMBAL_THREAD_FAILED;
     task_runtime.thread.motor_gimbal = osThreadNew(Task_motor_gimbal, NULL, &attr_motor_gimbal);
     if (task_runtime.thread.motor_gimbal == NULL)
+    {
+        return false;
+    }
+
+    // 摩擦轮与拨弹反馈、命令和输出邮箱齐备后再创建两个发射任务
+    task_runtime.init_status = TASK_INIT_SHOOT_THREAD_FAILED;
+    task_runtime.thread.motor_shoot = osThreadNew(Task_motor_shoot, NULL, &attr_motor_shoot);
+    if (task_runtime.thread.motor_shoot == NULL)
+    {
+        return false;
+    }
+    task_runtime.init_status = TASK_INIT_TRIGGER_THREAD_FAILED;
+    task_runtime.thread.motor_trigger = osThreadNew(Task_motor_trigger, NULL, &attr_motor_trigger);
+    if (task_runtime.thread.motor_trigger == NULL)
     {
         return false;
     }
@@ -314,14 +373,63 @@ static bool Task_InitReleaseObjects(void)
         }
         task_runtime.msgq.can_feedback = NULL;
     }
-    // 遥控分发邮箱同样由初始化任务负责回收
-    if (task_runtime.msgq.dr16_feeder_state != NULL)
+    // 发射机构命令、反馈与输出邮箱同样由初始化任务负责回收
+    if (task_runtime.msgq.trigger_output != NULL)
     {
-        if (osMessageQueueDelete(task_runtime.msgq.dr16_feeder_state) != osOK)
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_output) != osOK)
         {
             success = false;
         }
-        task_runtime.msgq.dr16_feeder_state = NULL;
+        task_runtime.msgq.trigger_output = NULL;
+    }
+    if (task_runtime.msgq.shoot_output != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_output) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_output = NULL;
+    }
+    if (task_runtime.msgq.shoot_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_command = NULL;
+    }
+    if (task_runtime.msgq.trigger_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.trigger_feedback = NULL;
+    }
+    if (task_runtime.msgq.shoot_fric2_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_fric2_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_fric2_feedback = NULL;
+    }
+    if (task_runtime.msgq.shoot_fric1_feedback != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.shoot_fric1_feedback) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.shoot_fric1_feedback = NULL;
+    }
+    // 遥控分发邮箱同样由初始化任务负责回收
+    if (task_runtime.msgq.trigger_command != NULL)
+    {
+        if (osMessageQueueDelete(task_runtime.msgq.trigger_command) != osOK)
+        {
+            success = false;
+        }
+        task_runtime.msgq.trigger_command = NULL;
     }
     if (task_runtime.msgq.dr16_gimbal_state != NULL)
     {

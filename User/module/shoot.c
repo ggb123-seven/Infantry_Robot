@@ -1,0 +1,259 @@
+/*
+ * 摩擦轮射击模块
+ *
+ * 消费双路 M3508 反馈与连续速度命令，经一秒目标斜坡与两个独立速度环输出转子电流
+ */
+
+/* Includes ----------------------------------------------------------------- */
+#include "module/shoot.h"
+
+#include <math.h>
+#include <stddef.h>
+#include <string.h>
+
+/* Private define ----------------------------------------------------------- */
+/* 与现有电机在线窗口保持一致，反馈超过 100 ms 或控制周期超过 0.1 s 时两轮撤驱 */
+#define SHOOT_TIMEOUT_US (100000U) /* 反馈超时上限，单位：us */
+#define SHOOT_MAX_PERIOD_S (0.1f)  /* 控制周期合法上限，单位：s */
+
+/* 按用户确认，每次使能内变更目标均从当前平滑目标用一秒线性过渡，失能不经过斜坡 */
+#define SHOOT_RAMP_DURATION_S (1.0f) /* 目标过渡时间，单位：s */
+
+/* 前馈系数集中在 module/config.c 定义，本文件只通过 shoot.h 的外部声明读取 */
+
+/* Private function --------------------------------------------------------- */
+static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz);
+
+/**
+ * @brief 校验双摩擦轮速度环配置与协议电流上限
+ *
+ * @param config 待校验配置
+ * @param frequency_hz 控制频率，单位：Hz
+ * @return bool 全部参数合法返回 true
+ */
+static bool Shoot_ConfigValid(const Shoot_Config_t *config, float frequency_hz)
+{
+    const KPID_Params_t *pid = &config->speed_pid;
+    return isfinite(frequency_hz) && frequency_hz > 0.0f &&
+        isfinite(config->max_speed_rpm) && config->max_speed_rpm > 0.0f &&
+        isfinite(config->max_current_a) && config->max_current_a > 0.0f && config->max_current_a <= 20.0f &&
+        isfinite(pid->k) && pid->k > 0.0f && isfinite(pid->p) && pid->p >= 0.0f &&
+        isfinite(pid->i) && pid->i >= 0.0f && isfinite(pid->d) && pid->d >= 0.0f &&
+        isfinite(pid->i_limit) && pid->i_limit >= 0.0f && isfinite(pid->out_limit) &&
+        pid->out_limit > 0.0f && pid->out_limit <= config->max_current_a &&
+        isfinite(pid->d_cutoff_freq) && pid->d_cutoff_freq < frequency_hz * 0.5f && pid->range == 0.0f;
+}
+
+/* Exported functions ------------------------------------------------------- */
+/**
+ * @brief 复制摩擦轮配置并初始化两个速度控制器
+ *
+ * @param shoot 双摩擦轮实例，初始化后不得整体复制
+ * @param config 默认配置
+ * @param frequency_hz 控制频率，单位：Hz
+ * @return int8_t 成功返回 0，失败返回 -1 并保留两轮零输出
+ */
+int8_t Shoot_Init(Shoot_t *shoot, const Shoot_Config_t *config, float frequency_hz)
+{
+    /* 初始化失败保留故障状态与零电流，两轮源时间分别从无反馈开始 */
+    memset(shoot, 0, sizeof(*shoot));
+    shoot->state = SHOOT_FAULT;
+    for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+    {
+        shoot->feedback_time_us[index] = UINT64_MAX;
+    }
+    if (!Shoot_ConfigValid(config, frequency_hz))
+    {
+        return -1;
+    }
+
+    /* 两个控制器引用同一份参数，各自独立保存积分与微分历史 */
+    shoot->config = *config;
+    shoot->frequency_hz = frequency_hz;
+    shoot->applied_speed_pid = config->speed_pid;
+    for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+    {
+        if (PID_Init(&shoot->speed_pid[index], KPID_MODE_CALC_D, frequency_hz, &shoot->applied_speed_pid) != 0)
+        {
+            return -1;
+        }
+    }
+    shoot->initialized = true;
+    shoot->config_valid = true;
+    shoot->state = SHOOT_RELAX;
+    return 0;
+}
+
+/**
+ * @brief 独立接纳两轮新反馈并检查各自的缓存时效
+ *
+ * @param shoot 双摩擦轮实例
+ * @param fric1 第一轮新反馈，空指针时仅检查该轮缓存是否超时
+ * @param fric2 第二轮新反馈，空指针时仅检查该轮缓存是否超时
+ * @param now_us 读取两路反馈后的完整单调时刻，单位：us
+ * @return 无返回值
+ */
+void Shoot_UpdateFeedback(Shoot_t *shoot, const MOTOR_RM_Feedback_t *fric1,
+                          const MOTOR_RM_Feedback_t *fric2, uint64_t now_us)
+{
+    const MOTOR_RM_Feedback_t *feedback[SHOOT_MOTOR_COUNT] =
+    {
+        fric1, fric2,
+    };
+
+    /* 两路只在实际取得新帧时恢复完整源时间，空邮箱保留缓存但不刷新源时间 */
+    for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+    {
+        const MOTOR_RM_Feedback_t *motor = feedback[index];
+        if (motor != NULL)
+        {
+            const uint32_t age_us = (uint32_t)now_us - motor->last_update_time;
+            const uint64_t source_us = now_us >= age_us ? now_us - age_us : UINT64_MAX;
+            shoot->feedback_valid[index] = age_us <= SHOOT_TIMEOUT_US && source_us != UINT64_MAX &&
+                (shoot->feedback_time_us[index] == UINT64_MAX || source_us > shoot->feedback_time_us[index]);
+            if (shoot->feedback_valid[index])
+            {
+                shoot->feedback[index] = *motor;
+                shoot->feedback_time_us[index] = source_us;
+            }
+        }
+
+        /* 失效标志只由后续新帧恢复，低位计时回绕不得复活过期缓存 */
+        if (shoot->feedback_time_us[index] == UINT64_MAX || now_us < shoot->feedback_time_us[index] ||
+            now_us - shoot->feedback_time_us[index] > SHOOT_TIMEOUT_US)
+        {
+            shoot->feedback_valid[index] = false;
+        }
+    }
+}
+
+/**
+ * @brief 推进双轮状态机，经一秒目标斜坡执行两个独立速度闭环
+ *
+ * @param shoot 双摩擦轮实例
+ * @param command 双轮连续速度命令，失能或空指针立即撤驱
+ * @param period_s 实测控制周期，单位：s
+ * @return 无返回值
+ */
+void Shoot_Control(Shoot_t *shoot, const Shoot_Command_t *command, float period_s)
+{
+    /* 两轮共享同一份入口快照，避免本周期混用 EmberProbe 写入前后的配置 */
+    const Shoot_Config_t snapshot = *(const volatile Shoot_Config_t *)&shoot->config;
+    const float feedforward_gain = shoot_speed_feedforward_gain_a_per_rpm;
+    shoot->config_valid = Shoot_ConfigValid(&snapshot, shoot->frequency_hz) &&
+        isfinite(feedforward_gain) && feedforward_gain >= 0.0f;
+    const bool enabled = command != NULL && command->enabled;
+    const bool valid = shoot->initialized && shoot->config_valid && isfinite(period_s) &&
+        period_s > 0.0f && period_s <= SHOOT_MAX_PERIOD_S &&
+        (!enabled || (isfinite(command->target_speed_rpm[0]) && isfinite(command->target_speed_rpm[1])));
+    const Shoot_State_t previous_state = shoot->state;
+    const bool was_active = previous_state == SHOOT_RUNNING || previous_state == SHOOT_RAMPING;
+
+    /* 两轮共用唯一状态，单轮离线撤驱整对摩擦轮，故障须先失能解除 */
+    switch (shoot->state)
+    {
+    case SHOOT_RELAX:
+    case SHOOT_RUNNING:
+    case SHOOT_RAMPING:
+    case SHOOT_OFFLINE:
+        shoot->state = valid ? SHOOT_RELAX : SHOOT_FAULT;
+        if (valid && enabled)
+        {
+            shoot->state = shoot->feedback_valid[0] && shoot->feedback_valid[1] ? SHOOT_RUNNING : SHOOT_OFFLINE;
+        }
+        break;
+    case SHOOT_FAULT:
+        if (valid && !enabled)
+        {
+            shoot->state = SHOOT_RELAX;
+        }
+        break;
+    default:
+        shoot->state = SHOOT_FAULT;
+        break;
+    }
+
+    /* 停机与异常入口清除两轮控制历史，避免下一次恢复沿用旧积分 */
+    if (shoot->state != SHOOT_RUNNING)
+    {
+        /* 记录运行中被打断的次数，用于区分命令缺失与命令层失能 */
+        if (was_active)
+        {
+            shoot->active_drop_count++;
+        }
+        memset(shoot->target_speed_rpm, 0, sizeof(shoot->target_speed_rpm));
+        memset(shoot->ramp_target_rpm, 0, sizeof(shoot->ramp_target_rpm));
+        memset(shoot->ramp_rate_rpm_s, 0, sizeof(shoot->ramp_rate_rpm_s));
+        if (shoot->initialized)
+        {
+            for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+            {
+                PID_Reset(&shoot->speed_pid[index]);
+            }
+        }
+        return;
+    }
+
+    /* 同一周期同时采纳公共参数变更，恢复起控时分别按各轮实测转速预置微分 */
+    const bool pid_changed = memcmp(&shoot->applied_speed_pid, &snapshot.speed_pid,
+                                    sizeof(shoot->applied_speed_pid)) != 0;
+    shoot->applied_speed_pid = snapshot.speed_pid;
+    bool ramping = false;
+    for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+    {
+        KPID_t *pid = &shoot->speed_pid[index];
+        if (pid_changed || !was_active)
+        {
+            LowPassFilter2p_Init(&pid->dfilter, shoot->frequency_hz, snapshot.speed_pid.d_cutoff_freq);
+            PID_Reset(pid);
+            pid->last.k_fb = LowPassFilter2p_Reset(&pid->dfilter,
+                shoot->applied_speed_pid.k * shoot->feedback[index].rotor_speed);
+        }
+
+        /* 终点变更时独立重算各轮的一秒变化率，重复命令及参数同步不重新开始斜坡 */
+        const float previous_target_rpm = shoot->target_speed_rpm[index];
+        const float requested_rpm = AbsClip(command->target_speed_rpm[index], snapshot.max_speed_rpm);
+        if (requested_rpm != shoot->ramp_target_rpm[index] || !was_active)
+        {
+            shoot->ramp_target_rpm[index] = requested_rpm;
+            shoot->ramp_rate_rpm_s[index] = fabsf(requested_rpm - previous_target_rpm) / SHOOT_RAMP_DURATION_S;
+        }
+        shoot->target_speed_rpm[index] = RampTo(previous_target_rpm, shoot->ramp_target_rpm[index],
+            shoot->ramp_rate_rpm_s[index] * period_s);
+        ramping = ramping || shoot->target_speed_rpm[index] != shoot->ramp_target_rpm[index];
+
+        /* 前馈只使用斜坡后的逐周期目标差分，保持既有公式不除以控制周期 */
+        const float feedforward_a = (shoot->target_speed_rpm[index] - previous_target_rpm) * feedforward_gain;
+        const float current_a = PID_Calc(pid, shoot->target_speed_rpm[index],
+            shoot->feedback[index].rotor_speed, 0.0f, period_s) + feedforward_a;
+
+        /* 前馈叠加后的计算出口检查溢出，任一路异常由统一输出闸门撤驱两轮 */
+        if (!isfinite(current_a))
+        {
+            shoot->state = SHOOT_FAULT;
+        }
+        shoot->current_a[index] = AbsClip(current_a, snapshot.max_current_a);
+    }
+
+    /* 过渡和恒速共用连续的速度环历史，计算故障优先于正常阶段完成 */
+    if (shoot->state != SHOOT_FAULT)
+    {
+        shoot->state = ramping ? SHOOT_RAMPING : SHOOT_RUNNING;
+    }
+}
+
+/**
+ * @brief 按双摩擦轮运行状态导出本周期电流或零
+ *
+ * @param shoot 已初始化或已运行的双摩擦轮实例
+ * @param output 两轮电流，单位：A
+ * @return 无返回值
+ */
+void Shoot_DumpOutput(const Shoot_t *shoot, Shoot_Output_t *output)
+{
+    const bool active = shoot->state == SHOOT_RUNNING || shoot->state == SHOOT_RAMPING;
+    for (uint8_t index = 0U; index < SHOOT_MOTOR_COUNT; index++)
+    {
+        output->current_a[index] = active ? shoot->current_a[index] : 0.0f;
+    }
+}

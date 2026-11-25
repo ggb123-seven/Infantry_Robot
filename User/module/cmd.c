@@ -232,3 +232,87 @@ bool Cmd_ParseGimbal(Cmd_Gimbal_t *ctx, const DR16_State_t *rc, bool rc_valid, u
     out->pitch.rate_rad_s = ctx->pitch_rate_deg_s * CMD_DEG_TO_RAD;
     return true;
 }
+
+/**
+ * @brief 按右拨杆生成安全、备弹和开火命令，模式切换后要求重新备弹
+ *
+ * @param[in,out] ctx 拨弹任务独占命令上下文，可为 NULL
+ * @param[in] rc 最近遥控快照，可为 NULL
+ * @param[in] rc_valid 已取得有效缓存时为 true
+ * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[in] fire_mode 遥控进给模式，0 连发、1 单发、2 五连发
+ * @param[out] out 本周期拨弹命令，可为 NULL
+ * @return 遥控、模式和右拨杆有效时为 true，否则为 false
+ */
+bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
+                     uint8_t fire_mode, Feeder_Command_t *out)
+{
+    if (ctx == NULL || rc == NULL || out == NULL)
+    {
+        return false;
+    }
+
+    // 遥控边界统一拒绝旧帧，失联和非法输入撤销备弹记忆
+    *out = (Feeder_Command_t)
+    {
+        .mode = FEEDER_CMD_OFFLINE,
+    };
+    if (!rc_valid || !rc->header.online || now_us < rc->header.last_online_time ||
+        now_us - rc->header.last_online_time > DR16_RECEIVER_OFFLINE_TIMEOUT_US)
+    {
+        ctx->state = CMD_FEEDER_DISABLED;
+        return false;
+    }
+
+    // 在线模式入口只校验一次，状态同时记录备弹时选定的模式
+    Cmd_FeederState_t ready;
+    Cmd_FeederState_t active;
+    switch (fire_mode)
+    {
+        case FEEDER_FIRE_MODE_AUTO:
+            ready = CMD_FEEDER_AUTO_READY;
+            active = CMD_FEEDER_AUTO_ACTIVE;
+            break;
+
+        case FEEDER_FIRE_MODE_SINGLE:
+            ready = CMD_FEEDER_SINGLE_READY;
+            active = CMD_FEEDER_SINGLE_ACTIVE;
+            break;
+
+        case FEEDER_FIRE_MODE_BURST:
+            ready = CMD_FEEDER_BURST_READY;
+            active = CMD_FEEDER_BURST_ACTIVE;
+            break;
+
+        default:
+            ctx->state = CMD_FEEDER_DISABLED;
+            return false;
+    }
+    out->fire_mode = fire_mode;
+
+    // 左拨杆和两路右摇杆不参与射击，右拨杆中位备弹、下位直接请求开火
+    switch (rc->data.sw_r)
+    {
+        case DR16_SWITCH_UP:
+            out->mode = FEEDER_CMD_RELAX;
+            ctx->state = CMD_FEEDER_DISABLED;
+            break;
+
+        case DR16_SWITCH_MIDDLE:
+            out->mode = FEEDER_CMD_RUN;
+            ctx->state = ready;
+            break;
+
+        case DR16_SWITCH_DOWN:
+            out->mode = FEEDER_CMD_RUN;
+            ctx->state = active;
+            out->speed_ratio = 1.0f;
+            out->single_fire = true;
+            break;
+
+        default:
+            ctx->state = CMD_FEEDER_DISABLED;
+            return false;
+    }
+    return true;
+}

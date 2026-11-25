@@ -1,6 +1,88 @@
 #include "module/config.h"
 
 /*
+ * 拨弹默认配置，初始化只复制本配置，不再从底盘或云台覆盖参数
+ *
+ * tooth_count：一圈齿数，单发步距为 360 度除以齿数
+ * feed_hz：单发重复时每秒进给齿数上限，单位：Hz，实际推进还须等待到位
+ * direction：角度递增方向，取 +1，按用户要求反转拨弹进给方向
+ * max_speed_rpm：输出轴速度目标上限，单位：rpm
+ * max_current_a：转子电流上限，单位：A
+ * position_pid：角度外环，输入输出轴弧度，range 为 2π，输出限幅按速度上限换算
+ * speed_pid：速度内环，输入输出轴 rpm，输出 A，range 为零
+ * speed_feedforward_gain_a_per_rpm：目标逐周期差分的电流前馈系数，单位：A/rpm，零表示关闭
+ *
+ * 逐齿配置为一圈 8 齿、每秒 20 齿、方向 +1，每齿对应一发，满倍率输出轴约 150 rpm
+ * 速度环参数取用户提供的整定值，实物方向和闭环响应仍须上板验证
+ */
+const Feeder_Config_t feeder_config =
+{
+    .tooth_count = 8.0f,
+    .feed_hz = 20.0f,
+    .direction = 1.0f,
+    .max_speed_rpm = 300.0f,
+    .max_current_a = 10.0f,
+    .position_pid =
+    {
+        .k = 1.0f,
+        .p = 25.0f,
+        .i = 2.4f,
+        .d = 0.4f,
+        .i_limit = 1.0f,
+        .out_limit = 300.0f * (M_2PI / 60.0f),
+        .d_cutoff_freq = 0.0f,
+        .range = M_2PI,
+    },
+    .speed_pid =
+    {
+        .k = 1.0f,
+        .p = 0.5f,
+        .i = 0.12f,
+        .d = 0.0f,
+        .i_limit = 20.0f,
+        .out_limit = 10.0f,
+        .d_cutoff_freq = 20.0f,
+        .range = 0.0f,
+    },
+    .speed_feedforward_gain_a_per_rpm = 0.0f,
+};
+
+/*
+ * 双摩擦轮默认配置，两轮使用相同参数、独立控制历史，目标符号由各自命令指定
+ *
+ * max_speed_rpm：转子目标转速上限，单位：rpm
+ * max_current_a：每轮转子电流上限，单位：A
+ * speed_pid：两轮共用的速度环参数，输入转子 rpm、输出电流 A，range 为零
+ *
+ * 速度环参数独立保存迁移前实际使用的整定值，不借用底盘参数
+ * 尚未标定实际弹速，当前只提供独立转速命令接口
+ */
+const Shoot_Config_t shoot_config =
+{
+    .max_speed_rpm = 8000.0f,
+    .max_current_a = 3.0f,
+    .speed_pid =
+    {
+        .k = 1.0f,
+        .p = 0.16f,
+        .i = 0.1f,
+        .d = 0.0f,
+        .i_limit = 20.0f,
+        .out_limit = 3.0f,
+        .d_cutoff_freq = 20.0f,
+        .range = 0.0f,
+    },
+};
+
+/*
+ * 摩擦轮目标逐周期差分前馈的可写参数集中定义于配置文件，控制入口每周期读取一次
+ * 参考第 3.9 节作业的系数 30000，按减速比 3591/187、rad/s 转 rpm、16384 对应 20 A 换算
+ * 单位：A/rpm，保留既有在线调参变量和数值，零表示关闭
+ */
+volatile float shoot_speed_feedforward_gain_a_per_rpm = 30000.0f * 20.0f / 16384.0f *
+    M_2PI / 60.0f / (3591.0f / 187.0f);
+
+/*
  * 轮速旋转标定系数，单位为每 rpm 对应的 rad/s
  * 来源为用户提供的《底盘几何与运动学参数清单》第 1 至 3 页，测量日期为 2026-09-22
  * 接地有效半径为 76.50 mm，轮心纵横偏距各 168.10 mm，径向轮轴对应切向滚动

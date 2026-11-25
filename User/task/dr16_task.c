@@ -172,7 +172,7 @@ static bool DR16_TaskPublishState(void)
     {
         task_runtime.msgq.dr16_state,
         task_runtime.msgq.dr16_gimbal_state,
-        task_runtime.msgq.dr16_feeder_state,
+        task_runtime.msgq.trigger_command,
     };
     bool success = true;
     for (size_t i = 0U; i < sizeof(queues) / sizeof(queues[0]); ++i)

@@ -49,7 +49,7 @@ static MOTOR_RM_Param_t can_devices_chassis_motor_param[CAN_DEVICES_CHASSIS_MOTO
 /*
  * 整车 CAN 设备集合私有状态：
  * - initialized：CAN 总线初始化成功后为 true
- * - init_status：总线初始化、底盘、云台与拨弹电机注册的聚合结果
+ * - init_status：总线初始化、底盘、云台与发射机构电机注册的聚合结果
  * - register_status[0~3]、feedback_update_status[0~3]：四个 M3508 的注册和反馈更新结果
  * - chassis_motor[0~3]：四个已注册 M3508 实例，注册失败时对应项为 NULL
  * - sequence：反馈更新周期序号
@@ -93,30 +93,47 @@ static MOTOR_RM_Param_t can_devices_gimbal_param[CAN_DEVICES_GIMBAL_MOTOR_COUNT]
 static bool can_devices_gimbal_registered[CAN_DEVICES_GIMBAL_MOTOR_COUNT];
 
 /*
- * 拨弹参数同步自参考工程 User/device/can.h 与 User/module/config.c
- * 用户确认使用 CAN2 的 M2006，电调 ID7 对应反馈标准帧 0x207，启用驱动内置 36:1 减速比
- * 方向暂不反转，模块以负角度实现正面顺时针，实际安装方向仍需上板确认
+ * 发射机构固定参数：全部接入 CAN2，索引 0、1 为 M3508 摩擦轮 ID5、ID6，索引 2 为 M2006 拨弹 ID7
+ * 反馈标准帧依次为 0x205、0x206、0x207，三路电流共用控制帧 0x1FF 的前三个槽位，第四槽位固定为零
+ * 摩擦轮使用转子 rpm 且不启用减速比换算，拨弹启用驱动内置 36:1 减速比并使用输出轴 rpm
+ * 第一只摩擦轮按安装方向反转，其余两台不反转，实际安装方向仍需上板确认
+ * @datasheet RoboMaster C620 与 C610 电调用户手册的 CAN 通信协议
  */
-static MOTOR_RM_Param_t can_devices_feeder_param =
+static MOTOR_RM_Param_t can_devices_shoot_param[CAN_DEVICES_SHOOT_MOTOR_COUNT] =
 {
-    .can = BSP_CAN_2,
-    .id = 0x207U,
-    .module = MOTOR_M2006,
-    .reverse = false,
-    .gear = true,
+    {
+        .can = BSP_CAN_2,
+        .id = 0x205U,
+        .module = MOTOR_M3508,
+        .reverse = true,
+        .gear = false,
+    },
+    {
+        .can = BSP_CAN_2,
+        .id = 0x206U,
+        .module = MOTOR_M3508,
+        .reverse = false,
+        .gear = false,
+    },
+    {
+        .can = BSP_CAN_2,
+        .id = 0x207U,
+        .module = MOTOR_M2006,
+        .reverse = false,
+        .gear = true,
+    },
 };
 
-// 保留注册结果和现有驱动实例，供初始化失败隔离与调试器观察
-static int8_t can_devices_feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
-static MOTOR_RM_t *can_devices_feeder_motor;
+static bool can_devices_shoot_registered[CAN_DEVICES_SHOOT_MOTOR_COUNT];
 
 static void CANDevices_ResetState(void);
 static void CANDevices_ResetSnapshot(CANDevices_Snapshot_t *snapshot);
 static int8_t CANDevices_WriteCurrent(uint32_t motor_index, float requested_current_a, float *applied_current_a);
 static int8_t CANDevices_InitGimbal(void);
+static int8_t CANDevices_InitShoot(void);
 
 /**
- * @brief 初始化 CAN 总线并注册底盘、云台与拨弹电机
+ * @brief 初始化 CAN 总线并注册底盘、云台与发射机构电机
  *
  * @param[out] snapshot CAN 设备集合初始化结果快照
  * @return 全部设备注册成功返回 CAN_DEVICES_OK，部分失败或总线不可用时返回对应状态码
@@ -161,18 +178,12 @@ int8_t CANDevices_Init(CANDevices_Snapshot_t *snapshot)
         }
     }
 
-    // 云台与拨弹分别注册，失败只影响聚合结果，不阻止其他设备运行
+    // 云台与发射机构分别注册，失败只影响聚合结果，不阻止其他设备运行
     const int8_t gimbal_status = CANDevices_InitGimbal();
-    can_devices_feeder_init_status = MOTOR_RM_Register(&can_devices_feeder_param);
-    if (can_devices_feeder_init_status == DEVICE_OK)
-    {
-        // 注册成功保证实例存在，预置零缓存后由通信任务提交独立的 0x1FF 帧
-        can_devices_feeder_motor = MOTOR_RM_GetMotor(&can_devices_feeder_param);
-        can_devices_feeder_init_status = MOTOR_RM_SetTorqueCurrent(&can_devices_feeder_param, 0.0f);
-    }
-    can_devices_state.init_status = all_registered && gimbal_status == CAN_DEVICES_OK &&
-                                    can_devices_feeder_init_status == DEVICE_OK ?
-                                    CAN_DEVICES_OK : CAN_DEVICES_ERROR;
+    const int8_t shoot_status = CANDevices_InitShoot();
+    can_devices_state.init_status =
+        all_registered && gimbal_status == CAN_DEVICES_OK && shoot_status == CAN_DEVICES_OK ?
+        CAN_DEVICES_OK : CAN_DEVICES_ERROR;
     CANDevices_ResetSnapshot(snapshot);
     return can_devices_state.init_status;
 }
@@ -332,44 +343,129 @@ static int8_t CANDevices_InitGimbal(void)
 }
 
 /**
- * @brief 由 CAN 任务轮询拨弹反馈，解码与离线判断复用现有电机驱动
+ * @brief 注册 CAN2 两路摩擦轮与一路拨弹电机，并预置零电流缓存
  *
- * 新反馈保存在现有实例，并复制给同一 CAN 任务内的拨弹模块
- *
- * @param[out] feedback 本周期新反馈，调用方保证非空，仅成功时写入
- * @return 新反馈解码成功返回 DEVICE_OK，初始化失败返回设备不可用，否则返回驱动状态码
+ * @return 三路注册与缓存初始化均成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
-int8_t CANDevices_UpdateFeederFeedback(MOTOR_RM_Feedback_t *feedback)
+static int8_t CANDevices_InitShoot(void)
 {
-    // 初始化失败时隔离拨弹设备，避免把注册失败误认为运行期丢帧
-    if (can_devices_feeder_init_status != DEVICE_OK)
+    // 总线不可用时不创建设备，避免缺失的 CAN2 配置影响底盘通信
+    for (uint8_t index = 0U; index < CAN_DEVICES_SHOOT_MOTOR_COUNT; index++)
     {
-        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+        can_devices_shoot_registered[index] = false;
     }
-    const int8_t status = MOTOR_RM_Update(&can_devices_feeder_motor->param);
-    if (status == DEVICE_OK)
+    if (BSP_CAN_GetHandle(BSP_CAN_2) == NULL)
     {
-        *feedback = can_devices_feeder_motor->feedback;
+        return CAN_DEVICES_ERROR;
     }
-    return status;
+
+    // 注册失败的设备保持隔离，注册成功的设备从零电流开始
+    bool success = true;
+    for (uint8_t index = 0U; index < CAN_DEVICES_SHOOT_MOTOR_COUNT; index++)
+    {
+        MOTOR_RM_Param_t *param = &can_devices_shoot_param[index];
+        if (MOTOR_RM_Register(param) != DEVICE_OK || MOTOR_RM_GetMotor(param) == NULL ||
+            MOTOR_RM_SetTorqueCurrent(param, 0.0f) != DEVICE_OK)
+        {
+            success = false;
+            continue;
+        }
+        can_devices_shoot_registered[index] = true;
+    }
+    return success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
 }
 
 /**
- * @brief 写入拨弹电流并提交与云台缓存隔离的控制帧
+ * @brief 更新单路发射机构电机的最新反馈
  *
- * @param[in] current_a 转子侧电流，单位 A，调用方保证来自拨弹模块输出闸门的有限值
- * @return 缓存写入和发送成功返回 DEVICE_OK，否则返回设备错误码
+ * @param[in] index 发射机构电机索引，0、1 为摩擦轮，2 为拨弹
+ * @param[out] feedback 新反馈，摩擦轮为转子 rpm、拨弹为输出轴 rpm，时间戳单位为微秒，失败时清零
+ * @return 取得新反馈返回 CAN_DEVICES_OK，否则返回设备错误码
  */
-int8_t CANDevices_ApplyFeederCurrent(float current_a)
+int8_t CANDevices_UpdateShootFeedback(uint8_t index, MOTOR_RM_Feedback_t *feedback)
 {
-    if (can_devices_feeder_init_status != DEVICE_OK)
+    if (feedback == NULL)
+    {
+        return CAN_DEVICES_NULL_ERROR;
+    }
+
+    // 失败路径清零输出，并拒绝越界或尚未完成注册的设备
+    *feedback = (MOTOR_RM_Feedback_t)
+    {
+        0,
+    };
+    if (index >= CAN_DEVICES_SHOOT_MOTOR_COUNT || !can_devices_shoot_registered[index])
     {
         return CAN_DEVICES_DEVICE_UNAVAILABLE;
     }
 
-    // 帧组隔离由电机驱动保证，未注册的摩擦轮槽位保留零，不再借用云台输出
-    const int8_t status = MOTOR_RM_SetTorqueCurrent(&can_devices_feeder_param, current_a);
-    return status == DEVICE_OK ? MOTOR_RM_FlushGroup(&can_devices_feeder_param) : status;
+    // 只返回本周期实际取得的新帧，禁止把旧反馈当成重新上线
+    MOTOR_RM_Param_t *param = &can_devices_shoot_param[index];
+    const int8_t status = MOTOR_RM_Update(param);
+    if (status != DEVICE_OK)
+    {
+        return status;
+    }
+    const MOTOR_RM_t *motor = MOTOR_RM_GetMotor(param);
+    if (motor == NULL)
+    {
+        return CAN_DEVICES_DEVICE_UNAVAILABLE;
+    }
+    *feedback = motor->feedback;
+    return CAN_DEVICES_OK;
+}
+
+/**
+ * @brief 合并两路摩擦轮与一路拨弹的电流后统一发送一次 CAN2 的 0x1FF 控制帧
+ *
+ * 三路电流依次写入同帧槽位 0、1、2，对应电调 ID5、ID6、ID7，第四槽位保持为零
+ *
+ * @param[in] fric1_a 第一只摩擦轮的转子侧电流，单位 A，非有限值按零处理
+ * @param[in] fric2_a 第二只摩擦轮的转子侧电流，单位 A，非有限值按零处理
+ * @param[in] trigger_a 拨弹电机的转子侧电流，单位 A，非有限值按零处理
+ * @return 三路缓存写入且统一发送成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
+ */
+int8_t CANDevices_ApplyShootCurrent(float fric1_a, float fric2_a, float trigger_a)
+{
+    const float current_a[CAN_DEVICES_SHOOT_MOTOR_COUNT] =
+    {
+        fric1_a, fric2_a, trigger_a,
+    };
+    bool success = true;
+    bool cache_safe = true;
+    MOTOR_RM_Param_t *flush_param = NULL;
+
+    // 三路独立校验，非法请求只清零本路，清零失败时禁止提交可能残留的旧电流
+    for (uint8_t index = 0U; index < CAN_DEVICES_SHOOT_MOTOR_COUNT; index++)
+    {
+        if (!can_devices_shoot_registered[index])
+        {
+            success = false;
+            continue;
+        }
+        MOTOR_RM_Param_t *param = &can_devices_shoot_param[index];
+        const bool valid = isfinite(current_a[index]);
+        if (!valid)
+        {
+            success = false;
+        }
+        if (MOTOR_RM_SetTorqueCurrent(param, valid ? current_a[index] : 0.0f) != DEVICE_OK)
+        {
+            success = false;
+            if (MOTOR_RM_SetOutput(param, 0.0f) != DEVICE_OK)
+            {
+                cache_safe = false;
+            }
+        }
+        flush_param = param;
+    }
+
+    // 三路缓存全部写完后只提交一次 0x1FF，保证同周期命令一致提交
+    if (!cache_safe || flush_param == NULL || MOTOR_RM_FlushGroup(flush_param) != DEVICE_OK)
+    {
+        return CAN_DEVICES_ERROR;
+    }
+    return success ? CAN_DEVICES_OK : CAN_DEVICES_ERROR;
 }
 
 /**
@@ -481,8 +577,6 @@ int8_t CANDevices_ApplyGimbalCurrent(float yaw_current_a, float pitch_current_a)
  */
 static void CANDevices_ResetState(void)
 {
-    can_devices_feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
-    can_devices_feeder_motor = NULL;
     can_devices_state = (CANDevices_State_t)
     {
         0,

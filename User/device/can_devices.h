@@ -11,14 +11,19 @@ extern "C"
 #include "device/motor_rm.h"
 
 /*
- * CAN 设备聚合参数：CAN1 注册四路 M3508，CAN2 注册两路 GM6020 和一路拨弹 M2006
- * 云台索引 0、1 分别对应 ID5 yaw 和 ID6 pitch，反馈标准帧为 0x209、0x20A
- * 拨弹使用电调 ID7，反馈标准帧为 0x207，电流控制使用独立缓存的 0x1FF
+ * CAN 设备聚合参数：CAN1 注册四路底盘 M3508 和 yaw GM6020，CAN2 注册 pitch GM6020、两路摩擦轮 M3508 和一路拨弹 M2006
+ * 云台索引 0、1 分别对应 CAN1 ID5 yaw 和 CAN2 ID6 pitch，反馈标准帧为 0x209、0x20A
+ * 发射索引 0、1、2 分别对应 CAN2 上的摩擦轮 ID5、ID6 与拨弹 ID7，反馈标准帧为 0x205、0x206、0x207
+ * 三路发射电流共用控制帧 0x1FF 的前三个槽位，第四槽位固定为零
  */
 #define CAN_DEVICES_CHASSIS_MOTOR_COUNT (4U)
 #define CAN_DEVICES_GIMBAL_MOTOR_COUNT (2U)
 #define CAN_DEVICES_GIMBAL_YAW (0U)
 #define CAN_DEVICES_GIMBAL_PITCH (1U)
+#define CAN_DEVICES_SHOOT_MOTOR_COUNT (3U)
+#define CAN_DEVICES_SHOOT_FRIC1 (0U)
+#define CAN_DEVICES_SHOOT_FRIC2 (1U)
+#define CAN_DEVICES_SHOOT_TRIGGER (2U)
 
 /**
  * @brief 整车 CAN 设备集合状态
@@ -48,7 +53,7 @@ typedef struct
 /*
  * 整车 CAN 设备集合快照：
  * - initialized：CAN 总线初始化成功时为 true，允许单个电机注册失败后隔离运行
- * - init_status：总线初始化、四路 M3508、两路 GM6020 与一路 M2006 注册的聚合结果
+ * - init_status：总线初始化、四路 M3508、两路 GM6020、两路摩擦轮 M3508 与一路 M2006 注册的聚合结果
  * - feedback_status：四路 M3508 本周期反馈更新的聚合结果
  * - output_status：四路 M3508 本周期电流提交的聚合结果
  * - tx_status：四路 M3508 槽位处理完成后的 0x200 控制帧发送结果
@@ -82,7 +87,7 @@ typedef struct
 } CANDevices_Snapshot_t;
 
 /**
- * @brief 初始化 CAN 总线并注册四路底盘 M3508、两路云台 GM6020 和一路拨弹 M2006
+ * @brief 初始化 CAN 总线并注册四路底盘 M3508、两路云台 GM6020、两路摩擦轮 M3508 和一路拨弹 M2006
  *
  * 单个电机注册失败时保留其他电机运行能力，并在快照中记录对应注册状态
  *
@@ -120,22 +125,27 @@ int8_t CANDevices_ApplyCurrent(const CANDevices_Command_t *command, CANDevices_S
 int8_t CANDevices_UpdateGimbalFeedback(uint8_t axis, MOTOR_RM_Feedback_t *feedback);
 
 /**
- * @brief 更新 CAN2 拨弹 M2006 反馈，反馈与在线状态保留在现有驱动实例
+ * @brief 更新单路发射机构电机的最新反馈，供 CAN 任务发布至独立邮箱
  *
- * 调用方保证由 CAN 任务串行调用，解码结果也可通过 can_devices_feeder_motor 观察
+ * 三路电机同属 CAN2 的 0x1FF 控制帧组，反馈标准帧依次为 0x205、0x206、0x207
  *
- * @param[out] feedback 本周期新反馈，调用方保证非空，仅成功时写入
- * @return 新反馈解码成功返回 DEVICE_OK，初始化失败返回设备不可用，否则返回驱动状态码
+ * @param[in] index 发射机构电机索引，0、1 为摩擦轮，2 为拨弹
+ * @param[out] feedback 新反馈，摩擦轮为转子 rpm、拨弹为输出轴 rpm，时间戳单位为微秒，失败时清零
+ * @return 取得新反馈返回 CAN_DEVICES_OK，否则返回设备错误码且不得发布本次结果
  */
-int8_t CANDevices_UpdateFeederFeedback(MOTOR_RM_Feedback_t *feedback);
+int8_t CANDevices_UpdateShootFeedback(uint8_t index, MOTOR_RM_Feedback_t *feedback);
 
 /**
- * @brief 写入拨弹电流并提交一次 0x1FF 控制帧
+ * @brief 合并两路摩擦轮与一路拨弹的电流后统一发送一次 CAN2 的 0x1FF 控制帧
  *
- * @param[in] current_a 转子侧电流，单位 A，调用方保证为拨弹模块输出的有限值
- * @return 写入和发送成功返回 DEVICE_OK，否则返回设备错误码
+ * 三路电流依次写入该帧的槽位 0、1、2，对应电调 ID5、ID6、ID7，第四槽位保持为零
+ *
+ * @param[in] fric1_a 第一只摩擦轮的转子侧电流，单位 A，非有限值按零处理
+ * @param[in] fric2_a 第二只摩擦轮的转子侧电流，单位 A，非有限值按零处理
+ * @param[in] trigger_a 拨弹电机的转子侧电流，单位 A，非有限值按零处理
+ * @return 三路缓存写入且统一发送成功返回 CAN_DEVICES_OK，否则返回 CAN_DEVICES_ERROR
  */
-int8_t CANDevices_ApplyFeederCurrent(float current_a);
+int8_t CANDevices_ApplyShootCurrent(float fric1_a, float fric2_a, float trigger_a);
 
 /**
  * @brief 分别写入 yaw 和 pitch 电流，统一发送一次 0x2FE 帧

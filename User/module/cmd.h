@@ -2,6 +2,7 @@
 
 #include "device/dr16.h"
 #include "module/chassis.h"
+#include "module/feeder.h"
 #include "module/gimbal.h"
 
 #ifdef __cplusplus
@@ -27,6 +28,27 @@ typedef struct
     float pitch_rate_deg_s;
 } Cmd_Gimbal_t;
 
+/*
+ * 拨弹命令阶段，上位安全、中位备弹、下位开火，定量组的执行与释放重触发由拨弹模块独占
+ * 状态同时记录备弹时选定的射击模式，模式切换后要求重新备弹
+ */
+typedef enum
+{
+    CMD_FEEDER_DISABLED = 0,
+    CMD_FEEDER_AUTO_READY,
+    CMD_FEEDER_AUTO_ACTIVE,
+    CMD_FEEDER_SINGLE_READY,
+    CMD_FEEDER_SINGLE_ACTIVE,
+    CMD_FEEDER_BURST_READY,
+    CMD_FEEDER_BURST_ACTIVE,
+} Cmd_FeederState_t;
+
+// 拨弹任务独占的命令上下文，state 保存射击模式及拨杆备弹阶段，初始为零
+typedef struct
+{
+    Cmd_FeederState_t state;
+} Cmd_Feeder_t;
+
 /**
  * @brief 将遥控快照转换为底盘命令，异常输入输出待机
  *
@@ -37,6 +59,23 @@ typedef struct
  * @return 无返回值
  */
 void Cmd_ParseChassis(const DR16_State_t *rc, bool rc_valid, uint64_t now_us, Chassis_Command_t *out);
+
+/**
+ * @brief 按右拨杆生成安全、备弹和开火命令，模式切换后要求重新备弹
+ *
+ * 右拨杆上位安全、中位备弹、下位直接开火，左拨杆与右摇杆不参与射击选择
+ * 固定发数的执行与释放重触发由拨弹模块负责
+ *
+ * @param[in,out] ctx 拨弹任务独占命令上下文，可为 NULL
+ * @param[in] rc 最近遥控快照，可为 NULL
+ * @param[in] rc_valid 已取得有效缓存时为 true
+ * @param[in] now_us 读取快照后的当前时间，单位微秒
+ * @param[in] fire_mode 遥控进给模式，0 连发、1 单发、2 五连发
+ * @param[out] out 本周期拨弹命令，可为 NULL
+ * @return 遥控、模式和右拨杆有效时为 true，否则为 false
+ */
+bool Cmd_ParseFeeder(Cmd_Feeder_t *ctx, const DR16_State_t *rc, bool rc_valid, uint64_t now_us,
+                     uint8_t fire_mode, Feeder_Command_t *out);
 
 /**
  * @brief 解析云台遥控平滑速度，遥控在线即进入角度模式

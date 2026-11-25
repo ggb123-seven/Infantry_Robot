@@ -365,6 +365,8 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
     motor->motor.raw_feedback.raw_current = raw_current;
     motor->motor.raw_feedback.raw_temp = msg->data[6];
     motor->motor.raw_feedback.raw_error_code = msg->data[7];
+    // 本帧角度跳变只影响本帧有效性，下一帧可自行恢复，避免一次丢帧后永久离线
+    bool delta_plausible = true;
     // 按减速箱配置维护连续角度，再应用安装方向并发布反馈时间
     if (motor->param.gear)
     {
@@ -376,6 +378,7 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
         if (delta >= MOTOR_RM_SUSPICIOUS_DELTA_COUNT || delta <= -MOTOR_RM_SUSPICIOUS_DELTA_COUNT)
         {
             motor->angle_lost_count++;
+            delta_plausible = false;
         }
         motor->gearbox_total_raw_count += delta;
         motor->gearbox_round_count = motor->gearbox_total_raw_count / MOTOR_ENC_RES;
@@ -398,7 +401,8 @@ static void Motor_RM_Decode(MOTOR_RM_t *motor, BSP_CAN_Message_t *msg)
         motor->feedback.rotor_speed = rotor_speed;
         motor->feedback.torque_current = torque_current;
     }
-    motor->feedback.angle_valid = (motor->angle_lost_count == 0U);
+    // 有效性逐帧判定，累计丢帧计数只作观测，不再锁存为永久失效
+    motor->feedback.angle_valid = delta_plausible;
     if (motor->motor.reverse)
     {
         motor->feedback.rotor_total_angle = -motor->feedback.rotor_total_angle;

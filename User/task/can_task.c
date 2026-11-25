@@ -1,30 +1,38 @@
+/*
+ * CAN 任务
+ *
+ * 只做总线路由：把设备反馈分投到各业务邮箱，再汇聚底盘、云台、摩擦轮与拨弹的输出统一发送
+ * 本任务不实现任何业务控制策略
+ */
+
 #include "task/can_task.h"
 
 #include "device/can_devices.h"
-#include "bsp/time.h"
-#include "module/feeder.h"
 #include "module/gimbal.h"
+#include "module/shoot.h"
 #include "task/user_task.h"
 
 #include <stddef.h>
 
 // CAN 设备观测变量，声明见 can_task.h
 CANDevices_Snapshot_t can_devices_snapshot;
-Feeder_t feeder;
-
-// 遥控缓存只由 CAN 任务持有，源时间不得因重复消费而刷新
-static DR16_State_t feeder_remote_cache;
-static bool feeder_remote_valid;
 
 static bool CANTask_ReadLatestCommand(CANDevices_Command_t *command);
 static bool CANTask_PublishSnapshot(void);
 static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue);
+static int8_t CANTask_PublishShootFeedback(uint8_t index, osMessageQueueId_t queue);
+
 // 独立保留云台发送结果，避免覆盖底盘快照的发送状态
 static int8_t gimbal_output_status = CAN_DEVICES_NOT_INITIALIZED;
-// 独立记录拨弹反馈结果，设备注册失败或丢帧不改变底盘和云台状态
-static int8_t feeder_feedback_status = CAN_DEVICES_NOT_INITIALIZED;
-static int8_t feeder_output_status = CAN_DEVICES_NOT_INITIALIZED;
-static int8_t feeder_init_status = CAN_DEVICES_NOT_INITIALIZED;
+// 独立记录三路发射反馈结果，设备注册失败或丢帧不改变底盘和云台状态
+static int8_t shoot_feedback_status[CAN_DEVICES_SHOOT_MOTOR_COUNT] =
+{
+    CAN_DEVICES_NOT_INITIALIZED,
+    CAN_DEVICES_NOT_INITIALIZED,
+    CAN_DEVICES_NOT_INITIALIZED,
+};
+// 独立记录三路发射合并发送结果，不与底盘和云台发送状态混用
+static int8_t shoot_output_status = CAN_DEVICES_NOT_INITIALIZED;
 
 /**
  * @brief 运行 CAN 设备反馈采集和电流命令发送任务
@@ -41,64 +49,65 @@ void Task_can(void *argument)
 
     // 建立绝对周期基准，避免通信周期累计漂移
     uint32_t tick = osKernelGetTickCount();
-    uint64_t previous_time_us = BSP_TIME_Get();
     tick += delay_tick;
-    // 首次也等待完整周期后再测量，避免启动微秒时间小于周期时发生无符号下溢
+    // 首次也等待完整周期再开始收发，避免启动阶段与其他任务抢占总线
     osDelayUntil(tick);
     while (true)
     {
+        // 第一段：底盘命令、反馈与电流保持原有同组一致提交
         CANDevices_Command_t command;
         // 只读取本周期可用的最新命令，邮箱为空或异常时保留四路零电流默认值
         const bool command_received = CANTask_ReadLatestCommand(&command);
         // 刷新四路底盘反馈后应用本周期电流命令，保持同组命令一致提交
         CANDevices_UpdateFeedback(&can_devices_snapshot);
-        // 读取独立拨弹遥控邮箱，空邮箱保留缓存，读取异常撤销缓存有效性
-        DR16_State_t received_remote;
-        const osStatus_t remote_status = osMessageQueueGet(task_runtime.msgq.dr16_feeder_state,
-                                                          &received_remote, NULL, 0U);
-        if (remote_status == osOK)
-        {
-            feeder_remote_cache = received_remote;
-            feeder_remote_valid = true;
-        }
-        else if (remote_status != osErrorResource)
-        {
-            feeder_remote_valid = false;
-        }
-
-        // 获取完整新反馈，缓存时效由模块输入边界统一判断
-        MOTOR_RM_Feedback_t feeder_feedback =
-        {
-            0,
-        };
-        feeder_feedback_status = CANDevices_UpdateFeederFeedback(&feeder_feedback);
-        // 在读取快照后采集完整单调时间，模块集中处理帧龄、周期与状态，输出闸门统一撤驱
-        const uint64_t now_us = BSP_TIME_Get();
-        Feeder_UpdateFeedback(&feeder, &feeder_feedback, feeder_feedback_status == CAN_DEVICES_OK, now_us);
-        const float period_s = now_us >= previous_time_us ? (float)(now_us - previous_time_us) * 0.000001f : 0.0f;
-        previous_time_us = now_us;
-        Feeder_Control(&feeder, &feeder_remote_cache, feeder_remote_valid, now_us, period_s);
-        feeder_output_status = CANDevices_ApplyFeederCurrent(Feeder_DumpOutput(&feeder));
         if (!command_received)
         {
             command.sequence = can_devices_snapshot.sequence;
         }
-        // 提交底盘本周期四路电流，不与拨弹的独立帧组共用缓存
+        // 提交底盘四路电流，0x200 帧组与发射机构缓存互不影响
         CANDevices_ApplyCurrent(&command, &can_devices_snapshot);
-        // 只使用本周期取得的云台输出，邮箱为空或读取失败时立即回到零输出
+
+        // 第二段：三路发射反馈分投独立邮箱，只有取得新帧才覆盖邮箱最新值
+        shoot_feedback_status[CAN_DEVICES_SHOOT_FRIC1] =
+            CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_FRIC1, task_runtime.msgq.shoot_fric1_feedback);
+        shoot_feedback_status[CAN_DEVICES_SHOOT_FRIC2] =
+            CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_FRIC2, task_runtime.msgq.shoot_fric2_feedback);
+        shoot_feedback_status[CAN_DEVICES_SHOOT_TRIGGER] =
+            CANTask_PublishShootFeedback(CAN_DEVICES_SHOOT_TRIGGER, task_runtime.msgq.trigger_feedback);
+
+        // 第三段：只使用本周期取得的业务输出，邮箱为空或读取失败时对应电流按零处理
+        Shoot_Output_t shoot_output;
+        if (task_runtime.msgq.shoot_output == NULL ||
+            osMessageQueueGet(task_runtime.msgq.shoot_output, &shoot_output, NULL, 0U) != osOK)
+        {
+            shoot_output.current_a[CAN_DEVICES_SHOOT_FRIC1] = 0.0f;
+            shoot_output.current_a[CAN_DEVICES_SHOOT_FRIC2] = 0.0f;
+        }
+        float trigger_current_a = 0.0f;
+        if (task_runtime.msgq.trigger_output == NULL ||
+            osMessageQueueGet(task_runtime.msgq.trigger_output, &trigger_current_a, NULL, 0U) != osOK)
+        {
+            trigger_current_a = 0.0f;
+        }
         Gimbal_Output_t gimbal_output =
         {
             0,
         };
-        if (osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
+        if (task_runtime.msgq.gimbal_output == NULL ||
+            osMessageQueueGet(task_runtime.msgq.gimbal_output, &gimbal_output, NULL, 0U) != osOK)
         {
             gimbal_output.yaw_current_a = 0.0f;
             gimbal_output.pitch_current_a = 0.0f;
         }
-        // 两轴独立电流交给设备层写入同组槽位，再统一提交一帧
-        gimbal_output_status = CANDevices_ApplyGimbalCurrent(gimbal_output.yaw_current_a,
-                                                           gimbal_output.pitch_current_a);
-        // 发布包含本周期反馈与实际输出的最新设备快照
+
+        // 第四段：两路摩擦轮与拨弹电流合并为一帧 0x1FF，一次调用只发送一帧
+        const float fric1_current_a = shoot_output.current_a[CAN_DEVICES_SHOOT_FRIC1];
+        const float fric2_current_a = shoot_output.current_a[CAN_DEVICES_SHOOT_FRIC2];
+        shoot_output_status = CANDevices_ApplyShootCurrent(fric1_current_a, fric2_current_a, trigger_current_a);
+        // 第五段：两轴云台电流交给设备层写入同组槽位，再统一提交 0x2FE 帧
+        gimbal_output_status =
+            CANDevices_ApplyGimbalCurrent(gimbal_output.yaw_current_a, gimbal_output.pitch_current_a);
+        // 第六段：发布包含本周期反馈与实际输出的最新设备快照
         CANTask_PublishSnapshot();
         tick += delay_tick;
         // 等待至下一个绝对任务周期，保持稳定 CAN 通信频率
@@ -113,10 +122,8 @@ void Task_can(void *argument)
  */
 bool Task_can_Init(void)
 {
-    // 初始化两条 CAN 总线及底盘、云台和拨弹电机，允许单路注册失败后隔离运行
+    // 初始化两条 CAN 总线及底盘、云台与发射机构电机，允许单路注册失败后隔离运行
     CANDevices_Init(&can_devices_snapshot);
-    // 拨弹控制初始化失败保留模块安全状态，不阻断既有底盘和云台通信
-    feeder_init_status = Feeder_Init(&feeder, (float)CAN_TASK_FREQ);
     return can_devices_snapshot.initialized;
 }
 
@@ -199,4 +206,30 @@ static bool CANTask_PublishGimbalFeedback(uint8_t axis, osMessageQueueId_t queue
         }
     }
     return success;
+}
+
+/**
+ * @brief 将单路发射机构新反馈发布到对应的最新值邮箱
+ *
+ * @param[in] index 发射机构电机索引，0、1 为摩擦轮，2 为拨弹
+ * @param[in] queue 对应电机的容量为 1 的 MOTOR_RM_Feedback_t 邮箱
+ * @return 取得新帧且发布成功返回 CAN_DEVICES_OK，无新帧或邮箱操作失败返回设备错误码
+ */
+static int8_t CANTask_PublishShootFeedback(uint8_t index, osMessageQueueId_t queue)
+{
+    MOTOR_RM_Feedback_t feedback;
+
+    // 只接纳新帧，消费者根据反馈中的微秒时间戳识别离线与过期数据
+    const int8_t status = CANDevices_UpdateShootFeedback(index, &feedback);
+    if (status != CAN_DEVICES_OK)
+    {
+        return status;
+    }
+
+    // 邮箱保留最新一帧，邮箱未创建或写入失败按发送失败记录
+    if (queue == NULL || osMessageQueueReset(queue) != osOK || osMessageQueuePut(queue, &feedback, 0U, 0U) != osOK)
+    {
+        return CAN_DEVICES_ERROR;
+    }
+    return CAN_DEVICES_OK;
 }
