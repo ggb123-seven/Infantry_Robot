@@ -41,3 +41,14 @@ u     = J * [target_ddot - C * e_dot - K * s - epsilon * sat(s / surface_eps)]
 CMake 和 Keil 工程均已加入 `.c` 文件；pitch 和 SPEED 模式继续使用 PID。
 
 原作者：李欣睿、任轩呈、梅峻炜
+
+推导:
+ṡ = ë + C·ė = (ẍ − ẍ_ref) + C·ė = (u/J + δ − ẍ_ref) + C·ė
+令 ṡ = −K·s − ε·sign(s)：
+u = J·(ẍ_ref − C·ė − K·s − ε·sign(s) − δ)
+
+x      = 轴的真实角度           （IMU 测的）
+x_ref  = 参考轨迹角度           （target）
+e      = x − x_ref             （误差）
+ė      = 真实角速度 − 参考角速度
+ë      = 真实角加速度 − 参考角加速度
