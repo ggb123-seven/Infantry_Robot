@@ -192,7 +192,7 @@ const Power_Config_t power_config =
  * - speed_pid：速度内环，输入角速度误差 rad/s，输出电流 A
  *
  * angle_pid、speed_pid：PID 参数 KPID_Params_t，四个控制环字段含义相同
- * - k、p、i、d：并联结构增益和比例、积分、微分系数，等效增益 Kp=k·p、Ki=k·i、Kd=k·d
+ * - k、p、i、d：并联结构增益和比例、积分、微分系数，等效增益 Kp=k·p、Ki=k·i，微分项直接取 d（不乘 k）
  * - i_limit、out_limit：积分项和输出绝对值的限幅，积分限幅为 0 表示不积分
  * - d_cutoff_freq：微分项低通截止频率，单位：Hz，负数表示不滤波
  * - range：误差环绕周期，单位：rad，大于 0 时按周期折算角度误差
@@ -229,7 +229,7 @@ const Gimbal_Config_t gimbal_config =
             .k = 20.0f,
             .p = 1.2f,
             .i = 0.0f,
-            .d = 0.06f,
+            .d = 0.4f,
             .i_limit = 0.0f,
             .out_limit = 10.0f,
             .d_cutoff_freq = -1.0f,
